@@ -1,0 +1,78 @@
+# Dependencies
+node_modules/
+
+# Next.js
+# next-env.d.ts é gerado, mas o Next recomenda versioná-lo — não entra aqui.
+.next/
+out/
+
+# Build outputs
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Go — API
+apps/api/api
+apps/api/api.exe
+apps/api/*.exe
+apps/api/*.db
+apps/api/*.db-shm
+apps/api/*.db-wal
+apps/api/cmd/resetpwd_temp.go
+*.sqlite
+*.sqlite3
+
+# Turbo
+.turbo/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Backup outputs
+scripts/backups/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# HTTP archive / debug captures
+*.har
+
+# AI tooling / SDD workspace (local-only)
+.claude/
+openspec/
+CLAUDE.md
+.mcp.json
+
+# Drafts pessoais
+postagens/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# PWA generated files
+apps/web/public/sw.js
+apps/web/public/sw.js.map
+apps/web/public/workbox-*.js
+apps/web/public/workbox-*.js.map
+apps/web/public/worker-*.js
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

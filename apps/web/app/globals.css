@@ -1,0 +1,259 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-brand: 124 58 237;
+  --color-brand-light: 167 139 250;
+  --font-body: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  /* Prevents iOS text size adjustment after orientation change */
+  -webkit-text-size-adjust: 100%;
+  font-family: var(--font-body);
+}
+
+/* .font-mono respects the user's font choice instead of always using system mono */
+.font-mono {
+  font-family: var(--font-body);
+}
+
+/* Prevents Safari auto-zoom on input focus (triggered when font-size < 16px).
+   Uses a CSS variable so the editor can override it — but the value must stay
+   >= 16px or iOS Safari will zoom in. */
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
+input,
+textarea,
+select {
+  font-size: var(--input-font-size, 16px) !important;
+  /* Removes double-tap zoom delay — makes taps feel instant */
+  touch-action: manipulation;
+}
+
+/* ── TipTap / ProseMirror ───────────────────────────────────────────────────── */
+
+/* Base: inherit theme colors, no white box in dark mode */
+.ProseMirror {
+  background: transparent;
+  color: inherit;
+  outline: none;
+  min-height: 100%;
+  font-size: var(--input-font-size, 16px);
+}
+
+/* Placeholder */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: rgb(161 161 170); /* zinc-400 */
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* Typography — light mode */
+.ProseMirror h1 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 0.5rem; }
+.ProseMirror h2 { font-size: 1.25rem; font-weight: 700; margin: 0.875rem 0 0.5rem; }
+.ProseMirror h3 { font-size: 1.1rem; font-weight: 600; margin: 0.75rem 0 0.4rem; }
+.ProseMirror p { margin: 0.25rem 0; line-height: 1.65; }
+.ProseMirror ul { list-style: disc; padding-left: 2em; margin: 0.25rem 0; }
+.ProseMirror ol { list-style: decimal; padding-left: 2em; margin: 0.25rem 0; }
+.ProseMirror li { margin: 0.125rem 0; }
+.ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.ProseMirror li[data-type="taskItem"] { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.125rem 0; }
+.ProseMirror li[data-type="taskItem"] > label { display: flex; align-items: center; flex-shrink: 0; margin-top: 0.2rem; }
+.ProseMirror li[data-type="taskItem"] > label input[type="checkbox"] { accent-color: rgb(var(--color-brand)); cursor: pointer; width: 1rem; height: 1rem; }
+.ProseMirror li[data-type="taskItem"] > div { flex: 1; min-width: 0; }
+.ProseMirror li[data-type="taskItem"] > div > p { margin: 0; }
+.ProseMirror strong { font-weight: 700; }
+.ProseMirror em { font-style: italic; }
+.ProseMirror code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.875em;
+  background: rgb(244 244 245); /* zinc-100 */
+  color: rgb(39 39 42);         /* zinc-800 */
+  border-radius: 0.25rem;
+  padding: 0.1em 0.35em;
+}
+.ProseMirror pre {
+  background: rgb(244 244 245); /* zinc-100 */
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+}
+.ProseMirror pre code {
+  background: transparent;
+  color: rgb(39 39 42); /* zinc-800 */
+  padding: 0;
+  font-size: 0.875rem;
+}
+.ProseMirror blockquote {
+  border-left: 3px solid rgb(var(--color-brand));
+  padding-left: 1rem;
+  margin: 0.5rem 0;
+  color: rgb(113 113 122); /* zinc-500 */
+}
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid rgb(228 228 231); /* zinc-200 */
+  margin: 1rem 0;
+}
+
+/* Typography — dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .ProseMirror code {
+    background: rgb(39 39 42);   /* zinc-800 */
+    color: rgb(228 228 231);     /* zinc-200 */
+  }
+  .ProseMirror pre {
+    background: rgb(39 39 42);   /* zinc-800 */
+  }
+  .ProseMirror pre code {
+    color: rgb(228 228 231);     /* zinc-200 */
+  }
+  .ProseMirror blockquote {
+    color: rgb(161 161 170);     /* zinc-400 */
+  }
+  .ProseMirror hr {
+    border-top-color: rgb(63 63 70); /* zinc-700 */
+  }
+  .ProseMirror p.is-editor-empty:first-child::before {
+    color: rgb(113 113 122); /* zinc-500 */
+  }
+}
+
+/* Tables */
+.ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5rem 0;
+  font-size: 0.9em;
+}
+.ProseMirror th,
+.ProseMirror td {
+  border: 1px solid rgb(228 228 231); /* zinc-200 */
+  padding: 0.4rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+.ProseMirror th {
+  background: rgb(244 244 245); /* zinc-100 */
+  font-weight: 600;
+}
+.ProseMirror td p,
+.ProseMirror th p {
+  margin: 0;
+}
+
+/* Tables — dark mode */
+@media (prefers-color-scheme: dark) {
+  .ProseMirror th,
+  .ProseMirror td {
+    border-color: rgb(63 63 70); /* zinc-700 */
+  }
+  .ProseMirror th {
+    background: rgb(39 39 42); /* zinc-800 */
+  }
+}
+
+/* ── highlight.js — transparent bg so the wrapper div controls background */
+.hljs {
+  background: transparent !important;
+}
+
+/* dark mode token overrides (github-dark palette) */
+/* html prefix increases specificity over github.css bare .hljs rules */
+@media (prefers-color-scheme: dark) {
+  html .hljs { color: #c9d1d9; background: transparent; }
+  html .hljs-keyword,
+  html .hljs-selector-tag,
+  html .hljs-deletion { color: #ff7b72; }
+  html .hljs-string,
+  html .hljs-addition { color: #a5d6ff; }
+  html .hljs-attr { color: #79c0ff; }
+  html .hljs-comment,
+  html .hljs-quote { color: #8b949e; font-style: italic; }
+  html .hljs-number,
+  html .hljs-literal,
+  html .hljs-variable { color: #79c0ff; }
+  html .hljs-built_in,
+  html .hljs-type { color: #ffa657; }
+  html .hljs-title,
+  html .hljs-title.function_,
+  html .hljs-title.class_ { color: #d2a8ff; }
+  html .hljs-meta { color: #e3b341; }
+  html .hljs-tag { color: #7ee787; }
+  html .hljs-name { color: #7ee787; }
+  html .hljs-operator,
+  html .hljs-punctuation { color: #c9d1d9; }
+}
+
+/* ── Print / PDF export ─────────────────────────────────────────────────────── */
+
+@media print {
+  .app-sidebar,
+  .no-print {
+    display: none !important;
+  }
+
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  main {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* Force light, high-contrast output regardless of the active app theme */
+  * {
+    background-color: transparent !important;
+    color: #000 !important;
+    border-color: #ccc !important;
+    box-shadow: none !important;
+  }
+
+  a,
+  a:visited {
+    color: #000 !important;
+    text-decoration: underline;
+  }
+
+  /* Nothing may be clipped by screen-only scroll containers */
+  .code-block-pre,
+  pre {
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+  }
+
+  table,
+  [class*='overflow-x-auto'] {
+    overflow: visible !important;
+  }
+
+  img,
+  svg {
+    max-width: 100% !important;
+  }
+}

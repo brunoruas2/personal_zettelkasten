@@ -1,0 +1,19 @@
+{
+  "name": "@zettelkasten/db-web",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dexie": "^4.0.10"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  },
+  "peerDependencies": {
+    "@zettelkasten/core": "workspace:*"
+  }
+}
