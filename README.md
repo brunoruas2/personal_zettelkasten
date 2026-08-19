@@ -21,20 +21,23 @@ third-party service, no cloud account, no telemetry.
 git clone <repo-url> zettelkasten
 cd zettelkasten
 ./setup.sh     # installs deps, generates JWT_SECRET, builds everything, creates the admin
-./start.sh     # starts API (:3001) + web (:3000)
+./start.sh     # rebuilds, then starts API (:3001) + web (:3000)
 ```
 
 Open <http://localhost:3000> and sign in with the user you created during `setup.sh`.
 
-`setup.sh` is idempotent — run it again after a `git pull` to rebuild. An existing
-`apps/api/.env` is never overwritten.
+After that, `./start.sh` is all you need: it runs `pnpm install`, rebuilds the web app and
+the Go binary, and only then starts both — so a `git pull` is always live on the next run.
+Skip the rebuild with `./start.sh --no-build` to boot the existing build straight away.
+
+`setup.sh` is idempotent too, and an existing `apps/api/.env` is never overwritten.
 
 Both scripts are bash: they run on Linux, macOS, WSL and Git Bash on Windows.
 
 On a low-memory machine, cap the Node heap during the build:
 
 ```bash
-NODE_HEAP=384 ./setup.sh
+NODE_HEAP=384 ./setup.sh     # works on ./start.sh as well
 ```
 
 #### Adding more users
@@ -224,20 +227,23 @@ sem conta em nuvem, sem telemetria.
 git clone <url-do-repo> zettelkasten
 cd zettelkasten
 ./setup.sh     # instala deps, gera JWT_SECRET, compila tudo, cria o admin
-./start.sh     # sobe API (:3001) + web (:3000)
+./start.sh     # recompila e sobe API (:3001) + web (:3000)
 ```
 
 Abra <http://localhost:3000> e entre com o usuário criado no `setup.sh`.
 
-`setup.sh` é idempotente — pode rodar de novo depois de um `git pull` para recompilar. Um
-`apps/api/.env` já existente nunca é sobrescrito.
+Depois disso, só o `./start.sh` basta: ele roda `pnpm install`, recompila o app web e o
+binário Go, e só então sobe os dois — então um `git pull` já vale na próxima execução.
+Para pular a recompilação e subir o build existente, use `./start.sh --no-build`.
+
+`setup.sh` também é idempotente, e um `apps/api/.env` já existente nunca é sobrescrito.
 
 Os scripts são bash: rodam em Linux, macOS, WSL e Git Bash no Windows.
 
 Em máquina com pouca RAM, limite o heap do Node no build:
 
 ```bash
-NODE_HEAP=384 ./setup.sh
+NODE_HEAP=384 ./setup.sh     # vale para o ./start.sh também
 ```
 
 #### Criar mais usuários
