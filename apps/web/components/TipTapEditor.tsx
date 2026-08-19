@@ -27,6 +27,7 @@ import Suggestion, {
   type SuggestionProps,
 } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
+import type { Slice } from '@tiptap/pm/model';
 import type { Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
 
@@ -249,6 +250,37 @@ function normalizeMarkdownLinks(md: string): string {
 // to receive it — see TipTapEditor design doc for fix-tiptap-link-url-loss). Skips [[wiki links]].
 function escapeMarkdownLinksForParse(md: string): string {
   return md.replace(/(?<!\[)\[([^[\]\n]+)\]\(([^)\n]+?)\)(?!\])/g, '\\[$1\\]($2)');
+}
+
+// ── Code block clipboard ──────────────────────────────────────────────────────
+
+// tiptap-markdown's transformCopiedText replaces the clipboard's text/plain with
+// the Markdown serialization of the copied slice — which wraps a codeBlock in
+// ``` fences. ProseMirror pastes text/plain verbatim when the target is a code
+// context, so copying a line inside a ```plantuml block and pasting it back into
+// the same block injected the fences. These two helpers keep code slices raw.
+function isCodeOnlySlice(slice: Slice): boolean {
+  if (slice.content.childCount === 0) return false;
+  let codeOnly = true;
+  slice.content.forEach((node) => {
+    if (node.type.name !== 'codeBlock') codeOnly = false;
+  });
+  return codeOnly;
+}
+
+const FENCE_OPEN_RE = /^```[\w-]*\s*$/;
+const FENCE_CLOSE_RE = /^```\s*$/;
+
+// Strips the fences only when they delimit the whole payload — text carrying
+// fences in the middle is a Markdown excerpt where they are real content.
+function stripSingleFence(text: string): string {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  if (lines.length < 2) return text;
+  if (!FENCE_OPEN_RE.test(lines[0]) || !FENCE_CLOSE_RE.test(lines[lines.length - 1])) return text;
+  const inner = lines.slice(1, -1);
+  if (inner.some((line) => line.trimStart().startsWith('```'))) return text;
+  return inner.join('\n');
 }
 
 // ── TableBubbleMenu ───────────────────────────────────────────────────────────
@@ -628,6 +660,23 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         attributes: {
           spellcheck: spellCheck ? 'true' : 'false',
           class: 'tiptap-body',
+        },
+        // View-level props win over plugin props in EditorView.someProp, so this
+        // runs before tiptap-markdown's serializer. Returning '' is falsy, so
+        // non-code slices fall through to it and still copy as Markdown.
+        clipboardTextSerializer: (slice) =>
+          isCodeOnlySlice(slice)
+            ? slice.content.textBetween(0, slice.content.size, '\n')
+            : '',
+        // Safety net for text copied from outside the app that arrives fenced.
+        handlePaste: (view, event) => {
+          if (!view.state.selection.$from.parent.type.spec.code) return false;
+          const text = event.clipboardData?.getData('text/plain');
+          if (!text) return false;
+          const stripped = stripSingleFence(text);
+          if (stripped === text) return false; // nothing to strip — native paste
+          view.dispatch(view.state.tr.insertText(stripped).scrollIntoView());
+          return true;
         },
       },
       onCreate({ editor }) {
