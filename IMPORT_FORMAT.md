@@ -146,8 +146,9 @@ Um vault do Obsidian já é quase compatível: os `[[wiki links]]` têm a mesma 
   reduza para `[[Nota]]`. Atenção: `[[^Nota]]` (circunflexo no início) tem outro significado
   aqui, é o link de nota-pai.
 - Embeds (`![[Nota]]`) não são suportados; converta para link normal ou inline o conteúdo.
-- Anexos binários (imagens em `attachments/`) não são importados — hospede-os em outro lugar
-  e use `![alt](https://url)`.
+- Anexos binários (imagens em `attachments/`) não entram pelo import JSON. Para trazê-los,
+  monte um pacote `.zip` (veja [Imagens](#imagens)) ou cole as imagens no editor depois de
+  importar o texto. Imagens já hospedadas fora continuam funcionando com `![alt](https://url)`.
 
 ### Notion
 
@@ -173,10 +174,89 @@ O `body` aceita as extensões renderizadas pelo app: blocos de código com desta
 sintaxe, tabelas, listas de tarefas (`- [ ]`), e as cercas especiais ` ```plantuml `,
 ` ```chords ` e ` ```abc `. Escreva-as direto no `body`.
 
+## Imagens
+
+Imagens são referenciadas no `body` pelo scheme local:
+
+```markdown
+![legenda opcional](zk:img/0123456789abcdef0123456789abcdef)
+```
+
+O id são **32 caracteres hexadecimais** — o `sha256` do conteúdo comprimido, truncado.
+Isso é o que dá deduplicação e cache imutável de graça. Os bytes ficam num BLOB no SQLite
+do servidor e no IndexedDB do navegador; nunca no `body`.
+
+Toda imagem é comprimida no cliente antes de qualquer envio: lado maior no máximo
+**1200 px**, convertida para **WebP**, com a qualidade reduzida em degraus até caber em
+**120 KB**. SVG passa sem rasterizar. GIF animado não é aceito (a conversão achataria a
+animação no primeiro frame).
+
+### ⚠️ O export JSON não contém as imagens
+
+O envelope JSON ganha um array `images`, mas ele carrega **apenas metadados** — nunca os
+bytes:
+
+```json
+{
+  "images": [
+    { "id": "0123456789abcdef0123456789abcdef", "mime": "image/webp",
+      "width": 1200, "height": 900, "byte_len": 98304, "created_at": 1755500000000 }
+  ]
+}
+```
+
+O motivo é aritmética, não preguiça. Base64 infla 33%. Com o teto de 120 KB por imagem,
+mil imagens dariam cerca de **160 MB** de JSON — acima do limite de 50 MB do import, acima
+do heap de 384 MB usado no build, e acima do que a RAM do VPS aguenta serializar de uma vez.
+
+**Para backup completo, use o ZIP.**
+
+### Formato do pacote ZIP
+
+```
+zettelkasten-backup-2026-08-19.zip
+├── zettels.json        ← o mesmo envelope descrito acima
+└── images/
+    ├── 0123456789abcdef0123456789abcdef.webp
+    └── fedcba9876543210fedcba9876543210.png
+```
+
+O nome de cada arquivo é o id da imagem mais a extensão do seu tipo. No import, o id é lido
+do nome do arquivo — renomear quebra as referências do `body`.
+
+Tanto o export quanto o import do ZIP trabalham com memória constante: o export escreve
+direto na resposta lendo um blob por vez, e o import grava o upload num arquivo temporário
+antes de ler.
+
+### Ciclo de vida
+
+Uma imagem que deixa de ser referenciada por **qualquer** zettel do usuário não é apagada na
+hora: ela é marcada como órfã e só é removida de fato depois de **30 dias**. Se voltar a ser
+referenciada nesse período — um desfazer, ou um aparelho que passou semanas offline e só
+agora sincronizou o zettel que a cita — a marca é removida e nada se perde.
+
+O expurgo libera páginas dentro do arquivo `.db`, mas **não encolhe o arquivo**. Para
+devolver o espaço ao disco é preciso rodar `VACUUM` manualmente:
+
+```bash
+sqlite3 zettelkasten.db "VACUUM;"
+```
+
 ## Exportando
 
 | Rota | Saída |
 |---|---|
-| `GET /api/export/json` | Este mesmo envelope. Reimportável. |
-| `GET /api/export/markdown` | `.zip` com um `.md` por zettel (frontmatter `id`/`tags`/`created_at`/`updated_at`) + `index.json` com os links. |
-| `GET /api/backup/export?key=<64-hex>` | Igual ao JSON, autenticado por chave em vez de JWT — para cron. |
+| `GET /api/export/zip` | **Backup completo.** `zettels.json` + `images/`. Streamado. |
+| `GET /api/export/json` | Este mesmo envelope, **sem os bytes das imagens**. Reimportável. |
+| `GET /api/export/markdown` | `.zip` com um `.md` por zettel (frontmatter `id`/`tags`/`created_at`/`updated_at`) + `index.json` com os links + `images/`. As referências `zk:img/` são reescritas para caminhos relativos, então abre direto no Obsidian. |
+| `GET /api/backup/export?key=<64-hex>` | Autenticado por chave em vez de JWT — para cron. Aceita `&format=zip` para o backup completo. |
+
+## Importando
+
+| Rota | Entrada |
+|---|---|
+| `POST /api/import/json` | O envelope JSON. Até 50 MB. |
+| `POST /api/import/zip` | O pacote ZIP com texto e imagens. Até 500 MB. |
+
+> Em produção atrás do Nginx, confira que o `location /api/` tem `client_max_body_size`
+> configurado — o default de 1 MB corta o upload antes de ele chegar na API.

@@ -13,12 +13,17 @@ import (
 	"time"
 
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
+	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/models"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 )
 
 const maxImportBytes = 50 << 20 // 50 MB
+
+// maxImportZipBytes é maior que o do JSON porque o ZIP carrega os bytes de
+// imagem. O upload é gravado em arquivo temporário, nunca em RAM.
+const maxImportZipBytes = 500 << 20 // 500 MB
 
 // UserLookup allows the portability handler to resolve a backup key to a user
 // without importing the auth package directly.
@@ -29,25 +34,34 @@ type UserLookup interface {
 type Handler struct {
 	repo       *zettel.Repository
 	userLookup UserLookup
+	images     *images.Repository
 }
 
-func NewHandler(repo *zettel.Repository, userLookup UserLookup) *Handler {
-	return &Handler{repo: repo, userLookup: userLookup}
+func NewHandler(repo *zettel.Repository, userLookup UserLookup, imageRepo *images.Repository) *Handler {
+	return &Handler{repo: repo, userLookup: userLookup, images: imageRepo}
 }
 
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/export/json", h.exportJSON)
 	r.Get("/export/markdown", h.exportMarkdown)
+	r.Get("/export/zip", h.exportZip)
 	r.Post("/import/json", h.importJSON)
+	r.Post("/import/zip", h.importZip)
 	return r
 }
 
+// exportPayload é o envelope do export JSON. O campo images carrega apenas
+// METADADOS — os bytes nunca entram aqui. Base64 infla 33%: a 120 KB por
+// imagem, 1000 imagens dariam ~160 MB de JSON, acima do teto de import, do
+// heap do build e do que a RAM do VPS aguenta serializar. O backup completo é
+// o ZIP (GET /api/export/zip).
 type exportPayload struct {
 	Version    int             `json:"version"`
 	ExportedAt string          `json:"exported_at"`
 	Zettels    []models.Zettel `json:"zettels"`
 	Links      []models.Link   `json:"links"`
+	Images     []images.Meta   `json:"images,omitempty"`
 }
 
 // GET /api/backup/export?key=<64-hex-char-key>
@@ -67,6 +81,10 @@ func (h *Handler) BackupExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Query().Get("format") == "zip" {
+		h.exportZipForUser(w, user.ID)
+		return
+	}
 	h.exportJSONForUser(w, user.ID)
 }
 
@@ -98,6 +116,7 @@ func (h *Handler) exportJSONForUser(w http.ResponseWriter, userID string) {
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
 		Zettels:    zettels,
 		Links:      links,
+		Images:     h.imageManifest(userID),
 	}
 
 	date := time.Now().Format("2006-01-02")
@@ -133,6 +152,10 @@ func (h *Handler) exportMarkdown(w http.ResponseWriter, r *http.Request) {
 	zw := zip.NewWriter(w)
 	defer zw.Close()
 
+	// Referências zk:img/<id> viram caminhos relativos, para o pacote abrir em
+	// Obsidian e afins.
+	imgPaths := h.imagePathMap(userID)
+
 	seen := map[string]int{}
 	for _, z := range zettels {
 		base := sanitizeFilename(z.Title)
@@ -145,8 +168,11 @@ func (h *Handler) exportMarkdown(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
+		z.Body = rewriteImageRefs(z.Body, imgPaths)
 		writeMarkdownFile(f, z)
 	}
+
+	h.writeImageEntries(zw, userID)
 
 	indexFile, err := zw.Create("index.json")
 	if err == nil {
@@ -180,6 +206,7 @@ func (h *Handler) importJSON(w http.ResponseWriter, r *http.Request) {
 	// Rebuild links only for imported/updated zettels
 	for _, z := range done {
 		h.syncLinks(userID, z.ID, z.Body)
+		h.syncImageRefs(userID, z.ID, z.Body)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

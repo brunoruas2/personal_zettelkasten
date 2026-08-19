@@ -2,9 +2,28 @@ import Dexie, { type Table } from 'dexie';
 import type { Zettel, ZettelRow, Link, ZettelRepository as IZettelRepository } from '@zettelkasten/core';
 import { rowToZettel, zettelToRow } from '@zettelkasten/core';
 
+/**
+ * Imagem guardada localmente. O `blob` é um Blob nativo — Dexie persiste isso
+ * direto, então nada de base64 no IndexedDB.
+ *
+ * `syncState` é a própria fila de upload: a fila de zettels vive no
+ * localStorage (string-only, ~5 MB) e estouraria com bytes de imagem.
+ */
+export interface ImageRecord {
+  id: string;
+  blob: Blob;
+  mime: string;
+  width: number;
+  height: number;
+  byteLen: number;
+  createdAt: number;
+  syncState: 'pending' | 'synced';
+}
+
 class ZettelDb extends Dexie {
   zettels!: Table<ZettelRow, string>;
   links!: Table<Link, [string, string]>;
+  images!: Table<ImageRecord, string>;
 
   constructor() {
     super('zettelkasten');
@@ -19,6 +38,11 @@ class ZettelDb extends Dexie {
     this.version(12).stores({
       zettels: 'id, title, updated_at',
       links: '[sourceId+targetId], sourceId, targetId',
+    });
+    this.version(13).stores({
+      zettels: 'id, title, updated_at',
+      links: '[sourceId+targetId], sourceId, targetId',
+      images: 'id, syncState',
     });
   }
 }
@@ -107,9 +131,55 @@ export class ZettelRepository implements IZettelRepository {
   }
 
   async clearAll(): Promise<void> {
-    await db.transaction('rw', db.zettels, db.links, async () => {
+    // As imagens entram aqui também: sem isso, o logout deixaria blobs de uma
+    // sessão visíveis na seguinte.
+    await db.transaction('rw', db.zettels, db.links, db.images, async () => {
       await db.zettels.clear();
       await db.links.clear();
+      await db.images.clear();
     });
+  }
+}
+
+/**
+ * Acesso aos blobs de imagem. Fica fora de `ZettelRepository` de propósito: a
+ * interface daquele contrato mora em `packages/core`, e core não pode importar
+ * tipos de DOM — `Blob` é DOM.
+ */
+export class ImageStore {
+  async get(id: string): Promise<ImageRecord | undefined> {
+    return db.images.get(id);
+  }
+
+  async has(id: string): Promise<boolean> {
+    return (await db.images.where('id').equals(id).count()) > 0;
+  }
+
+  async put(record: ImageRecord): Promise<void> {
+    await db.images.put(record);
+  }
+
+  async delete(id: string): Promise<void> {
+    await db.images.delete(id);
+  }
+
+  async listIds(): Promise<string[]> {
+    return db.images.toCollection().primaryKeys();
+  }
+
+  async listPending(): Promise<ImageRecord[]> {
+    return db.images.where('syncState').equals('pending').toArray();
+  }
+
+  async markSynced(id: string): Promise<void> {
+    await db.images.update(id, { syncState: 'synced' });
+  }
+
+  async usedBytes(): Promise<number> {
+    let total = 0;
+    await db.images.each((r) => {
+      total += r.byteLen;
+    });
+    return total;
   }
 }

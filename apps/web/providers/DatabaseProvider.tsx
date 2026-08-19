@@ -10,6 +10,7 @@ import { syncService } from '../lib/sync';
 import { api } from '../lib/api';
 import { useSyncStore } from '../store/useSyncStore';
 import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
+import { uploadPending, prefetchImages } from '../lib/imageSync';
 const repo = new ZettelRepository();
 const controller = new ZettelController(repo);
 
@@ -112,8 +113,11 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         .catch(() => {});
 
       try {
-        // 1. Drain any writes queued while offline
+        // 1. Drain any writes queued while offline (zettels + imagens).
+        //    A fila de imagens vive no IndexedDB, não no localStorage: o
+        //    zettel_sync_queue é string-only e estouraria com bytes.
         await syncService.drainQueue();
+        void uploadPending();
 
         // 2. Push local IndexedDB data to server if this is the first sync ever
         //    (handles V1 → V2 migration for existing users)
@@ -133,6 +137,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         // 5. Refresh in-memory state with merged data
         await loadAll();
         cacheZettelRoutes();
+        void prefetchImages();
         triggerGraphLayoutWorker();
 
         // Register manual sync trigger for UI button
@@ -141,6 +146,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             await pullAll();
             await loadAll();
             cacheZettelRoutes();
+            void prefetchImages();
             triggerGraphLayoutWorker();
           } catch {
             // Network/auth errors are non-fatal — AuthError already redirects to /login
@@ -156,6 +162,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     const onOnline = () => {
       if (isAuthenticated) {
         syncService.drainQueue().then(() => loadAll()).catch(() => {});
+        void uploadPending();
       }
     };
     window.addEventListener('online', onOnline);
@@ -165,7 +172,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       if (isAuthenticated && document.visibilityState === 'visible') {
         pullAll()
           .then(() => loadAll())
-          .then(() => { cacheZettelRoutes(); triggerGraphLayoutWorker(); })
+          .then(() => { cacheZettelRoutes(); void prefetchImages(); triggerGraphLayoutWorker(); })
           .catch(() => {});
       }
     };

@@ -173,6 +173,34 @@ func migrate(db *sql.DB) error {
 			INSERT INTO zettels_fts(zettels_fts, rowid, title, body, tags)
 			VALUES ('delete', old.rowid, old.title, old.body, old.tags);
 		END;
+
+		-- Imagens ficam em tabela própria (nunca coluna em zettels): os triggers
+		-- zettels_* acima copiam title/body/tags para o índice FTS5 em todo
+		-- INSERT/UPDATE, e um BLOB ali dentro seria arrastado junto.
+		-- PK composta porque o id é o sha256 do conteúdo: dois usuários com a
+		-- mesma imagem colidiriam numa PK simples.
+		CREATE TABLE IF NOT EXISTS images (
+			id          TEXT NOT NULL,
+			user_id     TEXT NOT NULL REFERENCES users(id),
+			mime        TEXT NOT NULL,
+			width       INTEGER NOT NULL DEFAULT 0,
+			height      INTEGER NOT NULL DEFAULT 0,
+			byte_len    INTEGER NOT NULL,
+			data        BLOB NOT NULL,
+			created_at  INTEGER NOT NULL,
+			orphaned_at INTEGER,
+			PRIMARY KEY (user_id, id)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_images_orphaned ON images(orphaned_at);
+
+		CREATE TABLE IF NOT EXISTS image_refs (
+			image_id  TEXT NOT NULL,
+			zettel_id TEXT NOT NULL,
+			PRIMARY KEY (image_id, zettel_id)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_image_refs_zettel ON image_refs(zettel_id);
 	`)
 	return err
 }

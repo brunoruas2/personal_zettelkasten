@@ -43,6 +43,9 @@ export default function EditZettelPage() {
   const isDirtyRef = useRef(false);
   const { toolbarRef } = useKeyboardOffset();
   const editorRef = useRef<TipTapEditorHandle>(null);
+  // Imagens ainda comprimindo ou com upload em voo. Salvar com pendências
+  // gravaria um body referenciando blob que o servidor não tem.
+  const [pendingImages, setPendingImages] = useState(0);
 
   useEffect(() => {
     if (!controller || !id) return;
@@ -184,11 +187,11 @@ export default function EditZettelPage() {
   };
 
   const handleSave = useCallback(async () => {
-    if (!title.trim() || !id) return;
+    if (!title.trim() || !id || pendingImages > 0) return;
     await updateZettel(id, { title: title.trim(), body, tags });
     isDirtyRef.current = false;
     router.replace(`/zettel/${id}`);
-  }, [title, body, tags, id, updateZettel, router]);
+  }, [title, body, tags, id, pendingImages, updateZettel, router]);
 
   const handleSaveRef = useRef(handleSave);
   handleSaveRef.current = handleSave;
@@ -238,10 +241,12 @@ export default function EditZettelPage() {
           </div>
           <button
             onClick={handleSave}
-            disabled={!title.trim()}
+            disabled={!title.trim() || pendingImages > 0}
             className="rounded-xl bg-brand px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
           >
-            Salvar
+            {pendingImages > 0
+              ? `Aguardando ${pendingImages} imagem${pendingImages > 1 ? 'ns' : ''}…`
+              : 'Salvar'}
           </button>
         </div>
 
@@ -273,6 +278,7 @@ export default function EditZettelPage() {
               value={body}
               onChange={setBody}
               onEditorReady={setEditor}
+              onPendingImagesChange={setPendingImages}
               onExtract={handleExtractSelection}
               placeholder="Escreva aqui... use [[título]] para links ou / para inserir blocos"
               className="w-full"
@@ -309,6 +315,7 @@ export default function EditZettelPage() {
           previewOpen={previewOpen}
           onTogglePreview={previewOpen ? switchToEdit : switchToPreview}
           onInsertLink={() => setLinkPickerOpen(true)}
+          onInsertImage={() => editorRef.current?.pickImages()}
           onOpenCheatsheet={() => setCheatsheetOpen(true)}
           fontSize={editorFontSize}
           onFontSizeChange={setEditorFontSize}

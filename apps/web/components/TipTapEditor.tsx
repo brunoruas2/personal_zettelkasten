@@ -21,6 +21,7 @@ import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
+import Image from '@tiptap/extension-image';
 import { Markdown } from 'tiptap-markdown';
 import Suggestion, {
   type SuggestionKeyDownProps,
@@ -30,6 +31,9 @@ import { PluginKey } from '@tiptap/pm/state';
 import type { Slice } from '@tiptap/pm/model';
 import type { Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
+import { isImageFile, ImageCompressError } from '../lib/imageCompress';
+import { importImage } from '../lib/imageSync';
+import { ZK_IMG_PREFIX } from './ZettelImage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,6 +61,8 @@ export interface TipTapEditorHandle {
   focus: () => void;
   focusEnd: () => void;
   insertCodeBlock: (language: string, template?: string) => void;
+  /** Abre o seletor de arquivos de imagem (usado pela toolbar mobile). */
+  pickImages: () => void;
 }
 
 interface Props {
@@ -69,6 +75,8 @@ interface Props {
   zettels?: Zettel[];
   onEditorReady?: (editor: Editor) => void;
   onExtract?: (selectedText: string, range: { from: number; to: number }) => void;
+  /** Quantas imagens estão comprimindo ou com upload em voo. Usado para travar o Salvar. */
+  onPendingImagesChange?: (count: number) => void;
 }
 
 interface WikiPopupState {
@@ -91,6 +99,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { id: 'link', label: 'Link', description: 'Wiki link [[...]]', icon: '⟦⟧' },
   { id: 'tabela', label: 'Tabela', description: 'Insere tabela vazia', icon: '⊞' },
   { id: 'codigo', label: 'Código', description: 'Bloco de código genérico', icon: '{}' },
+  { id: 'imagem', label: 'Imagem', description: 'Importa imagem do dispositivo', icon: '🖼' },
 ];
 
 interface SlashPopupState {
@@ -247,9 +256,11 @@ function normalizeMarkdownLinks(md: string): string {
 
 // inverse of normalizeMarkdownLinks: escapes real [label](url) before it reaches markdown-it,
 // so the parser treats it as inert text instead of emitting <a> (the schema has no link mark
-// to receive it — see TipTapEditor design doc for fix-tiptap-link-url-loss). Skips [[wiki links]].
+// to receive it — see TipTapEditor design doc for fix-tiptap-link-url-loss). Skips [[wiki links]]
+// and ![alt](src): the schema DOES have an image node, so escaping images would turn them into
+// inert text and they would stop rendering.
 function escapeMarkdownLinksForParse(md: string): string {
-  return md.replace(/(?<!\[)\[([^[\]\n]+)\]\(([^)\n]+?)\)(?!\])/g, '\\[$1\\]($2)');
+  return md.replace(/(?<![[!])\[([^[\]\n]+)\]\(([^)\n]+?)\)(?!\])/g, '\\[$1\\]($2)');
 }
 
 // ── Code block clipboard ──────────────────────────────────────────────────────
@@ -281,6 +292,42 @@ function stripSingleFence(text: string): string {
   const inner = lines.slice(1, -1);
   if (inner.some((line) => line.trimStart().startsWith('```'))) return text;
   return inner.join('\n');
+}
+
+// ── Image import ──────────────────────────────────────────────────────────────
+
+// Comprime e insere cada arquivo. A referência gravada no body é
+// ![alt](zk:img/<id>) — os bytes ficam no IndexedDB e no SQLite, nunca inline.
+async function insertImageFiles(
+  editor: Editor,
+  files: File[],
+  dropPos: number | null,
+  onPendingDelta: (delta: number) => void,
+  onError: (msg: string) => void,
+): Promise<void> {
+  const images = files.filter(isImageFile);
+  if (images.length === 0) return;
+
+  let pos = dropPos;
+  for (const file of images) {
+    onPendingDelta(1);
+    try {
+      const { id } = await importImage(file);
+      const content = { type: 'image', attrs: { src: `${ZK_IMG_PREFIX}${id}`, alt: '' } };
+      if (pos === null) {
+        editor.chain().focus().insertContent(content).run();
+      } else {
+        editor.chain().focus().insertContentAt(pos, content).run();
+        pos = null; // as próximas seguem o cursor, já posicionado após a anterior
+      }
+    } catch (err) {
+      onError(
+        err instanceof ImageCompressError ? err.message : 'Falha ao importar a imagem.',
+      );
+    } finally {
+      onPendingDelta(-1);
+    }
+  }
 }
 
 // ── TableBubbleMenu ───────────────────────────────────────────────────────────
@@ -427,7 +474,7 @@ const CustomCodeBlock = CodeBlockExtension.extend({
 // ── TipTapEditor ──────────────────────────────────────────────────────────────
 
 export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
-  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onExtract }, ref) {
+  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onExtract, onPendingImagesChange }, ref) {
     const isExternalUpdate = useRef(false);
 
     // Keep current zettels accessible inside extensions without recreating them
@@ -447,6 +494,27 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
     // Refs to popup component keyboard handlers
     const wikiPopupRef = useRef<WikiPopupHandle>(null);
     const slashPopupRef = useRef<SlashPopupHandle>(null);
+
+    // ── Imagens ──
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [pendingImages, setPendingImages] = useState(0);
+    const [imageError, setImageError] = useState<string | null>(null);
+
+    // Ref estável: o slash command é criado uma vez só (useMemo com deps vazias)
+    // e não pode fechar sobre uma função recriada a cada render.
+    const pickImagesRef = useRef<() => void>(() => {});
+    pickImagesRef.current = () => fileInputRef.current?.click();
+
+    const onPendingImagesChangeRef = useRef(onPendingImagesChange);
+    onPendingImagesChangeRef.current = onPendingImagesChange;
+
+    const bumpPending = useRef((delta: number) => {
+      setPendingImages((n) => {
+        const next = Math.max(0, n + delta);
+        onPendingImagesChangeRef.current?.(next);
+        return next;
+      });
+    }).current;
 
     // Extensions — stable (empty deps), communicate via refs
     const extensions = useMemo(() => {
@@ -558,6 +626,11 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
                     attrs: { language: '' },
                     content: [],
                   }).run();
+                } else if (cmd.id === 'imagem') {
+                  // Remove o /... na mesma transação; o seletor de arquivo abre
+                  // depois e a inserção acontece quando a compressão termina.
+                  editor.chain().focus().deleteRange(range).run();
+                  pickImagesRef.current();
                 }
               },
               render: () => ({
@@ -642,6 +715,9 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         TaskListTightFix,
         ListKeymap,
         LeadingNodeEscape,
+        // allowBase64 desligado de propósito: bytes inline no body multiplicariam
+        // tamanho em cada salto (IndexedDB, fila de sync, SQLite, export, PDF).
+        Image.configure({ inline: false, allowBase64: false }),
         Markdown.configure({ html: false, transformCopiedText: true }),
         Placeholder.configure({ placeholder: placeholder ?? '' }),
         WikiLinkExtension,
@@ -652,6 +728,9 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
 
     const onEditorReadyRef = useRef(onEditorReady);
     onEditorReadyRef.current = onEditorReady;
+
+    // editorProps é montado antes de `editor` existir; a ref quebra o ciclo.
+    const editorRef = useRef<Editor | null>(null);
 
     const editor = useEditor({
       extensions,
@@ -670,7 +749,19 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
             : '',
         // Safety net for text copied from outside the app that arrives fenced.
         handlePaste: (view, event) => {
-          if (!view.state.selection.$from.parent.type.spec.code) return false;
+          const inCode = view.state.selection.$from.parent.type.spec.code;
+          // Arquivos de imagem são tratados antes do early-return de código:
+          // dentro de um code block a colagem de imagem não faz sentido, então
+          // só interceptamos fora dele.
+          if (!inCode) {
+            const files = Array.from(event.clipboardData?.files ?? []).filter(isImageFile);
+            if (files.length > 0 && editorRef.current) {
+              event.preventDefault();
+              void insertImageFiles(editorRef.current, files, null, bumpPending, setImageError);
+              return true;
+            }
+          }
+          if (!inCode) return false;
           const text = event.clipboardData?.getData('text/plain');
           if (!text) return false;
           const stripped = stripSingleFence(text);
@@ -678,8 +769,24 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
           view.dispatch(view.state.tr.insertText(stripped).scrollIntoView());
           return true;
         },
+        handleDrop: (view, event) => {
+          const dragEvent = event as DragEvent;
+          const files = Array.from(dragEvent.dataTransfer?.files ?? []).filter(isImageFile);
+          if (files.length === 0 || !editorRef.current) return false;
+          event.preventDefault();
+          const coords = view.posAtCoords({ left: dragEvent.clientX, top: dragEvent.clientY });
+          void insertImageFiles(
+            editorRef.current,
+            files,
+            coords?.pos ?? null,
+            bumpPending,
+            setImageError,
+          );
+          return true;
+        },
       },
       onCreate({ editor }) {
+        editorRef.current = editor;
         onEditorReadyRef.current?.(editor);
       },
       onUpdate({ editor }) {
@@ -719,7 +826,8 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
           })
           .run();
       },
-    }), [editor]);
+      pickImages() { pickImagesRef.current(); },
+    }), [editor, pickImagesRef]);
 
     return (
       <>
@@ -746,6 +854,35 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         )}
         {editor && <TableBubbleMenu editor={editor} />}
         {editor && onExtract && <SelectionExtractBubbleMenu editor={editor} onExtract={onExtract} />}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            e.target.value = ''; // permite reescolher o mesmo arquivo depois
+            if (files.length > 0 && editor) {
+              void insertImageFiles(editor, files, null, bumpPending, setImageError);
+            }
+          }}
+        />
+        {imageError && (
+          <div
+            role="alert"
+            className="mt-2 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+          >
+            <span>{imageError}</span>
+            <button
+              type="button"
+              onClick={() => setImageError(null)}
+              className="shrink-0 font-medium underline"
+            >
+              Fechar
+            </button>
+          </div>
+        )}
       </>
     );
   },

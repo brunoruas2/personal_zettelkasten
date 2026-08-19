@@ -74,6 +74,19 @@ const server = createServer((req, res) => {
     return json(res, []);
   }
 
+  // Imagens — o prefetch roda depois de todo sync, então precisa de manifesto
+  // vazio para não poluir o log dos testes offline.
+  if (path === '/api/images/manifest' && method === 'GET') {
+    return json(res, { images: [], used_bytes: 0, quota_bytes: 250 * 1024 * 1024 });
+  }
+  if (path.startsWith('/api/images/') && method === 'GET') {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'not found' }));
+  }
+  if (path.startsWith('/api/images/') && (method === 'POST' || method === 'DELETE')) {
+    return json(res, {});
+  }
+
   // Admin / invites / passkeys — default empty OK
   json(res, {});
 });

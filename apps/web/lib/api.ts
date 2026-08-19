@@ -82,6 +82,11 @@ export const api = {
   postText: (path: string, body: string) =>
     request(path, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' } }),
 
+  // Bytes crus (upload de imagem). O Content-Type default de request() é
+  // sobrescrito pelo headers passado aqui, e o auto-refresh de 401 continua valendo.
+  postBinary: (path: string, blob: Blob, mime: string, extra?: Record<string, string>) =>
+    request(path, { method: 'POST', body: blob, headers: { 'Content-Type': mime, ...extra } }),
+
   put: (path: string, body: unknown) =>
     request(path, { method: 'PUT', body: JSON.stringify(body) }),
 

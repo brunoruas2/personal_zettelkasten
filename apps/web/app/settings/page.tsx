@@ -10,6 +10,7 @@ import { useZettelStore } from '../../store/useZettelStore';
 import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 import { TagInput } from '../../components/TagInput';
 import { CLUSTER_COLORS, type NodeColorRule } from '../../lib/graphColors';
+import { isPrefetchEnabled, setPrefetchEnabled, prefetchImages } from '../../lib/imageSync';
 
 const CHUNK = 50
 
@@ -40,7 +41,8 @@ type BackupKeyState =
 export default function SettingsPage() {
   const router = useRouter()
   const offlineRouter = useOfflineRouter()
-  const [exporting, setExporting] = useState<'json' | 'markdown' | null>(null)
+  const [exporting, setExporting] = useState<'json' | 'markdown' | 'zip' | null>(null)
+  const [imagePrefetch, setImagePrefetch] = useState(true)
   const [exportError, setExportError] = useState<string | null>(null)
   const [importState, setImportState] = useState<ImportState>({ status: 'idle' })
   const fileRef = useRef<HTMLInputElement>(null)
@@ -75,6 +77,7 @@ export default function SettingsPage() {
   useEffect(() => {
     setThemeId(getSavedThemeId())
     setFontId(getSavedFontId())
+    setImagePrefetch(isPrefetchEnabled())
   }, [])
 
   useEffect(() => {
@@ -205,6 +208,18 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleExportZip() {
+    setExporting('zip')
+    setExportError(null)
+    try {
+      await downloadFile('/api/export/zip', `zettelkasten-backup-${today()}.zip`)
+    } catch {
+      setExportError('Erro ao exportar. Tente novamente.')
+    } finally {
+      setExporting(null)
+    }
+  }
+
   async function handleExportMarkdown() {
     setExporting('markdown')
     setExportError(null)
@@ -224,7 +239,43 @@ export default function SettingsPage() {
     setImportState({ status: 'validating' })
     // Yield to the renderer so the loading overlay paints before heavy file I/O starts
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    await runImport(file)
+    if (file.name.toLowerCase().endsWith('.zip')) {
+      await runImportZip(file)
+    } else {
+      await runImport(file)
+    }
+  }
+
+  // O ZIP sobe inteiro de uma vez: o servidor grava em arquivo temporário e lê
+  // com streaming, então não há por que fatiar em lotes como no JSON.
+  async function runImportZip(file: File) {
+    setImportState({ status: 'importing', current: 0, total: 1 })
+    try {
+      const res = await api.postBinary('/api/import/zip', file, 'application/zip')
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !body) {
+        setImportState({
+          status: 'done',
+          imported: 0,
+          skipped: 0,
+          errors: [body?.error ?? `Erro HTTP ${res.status}`],
+        })
+        return
+      }
+      const imported = body.imported ?? 0
+      if (imported > 0) {
+        localStorage.setItem('zettel_last_sync_at', '0')
+        syncNow?.()
+      }
+      setImportState({
+        status: 'done',
+        imported,
+        skipped: body.skipped ?? 0,
+        errors: Array.isArray(body.errors) ? body.errors : [],
+      })
+    } catch {
+      setImportState({ status: 'done', imported: 0, skipped: 0, errors: ['Erro de rede durante o import.'] })
+    }
   }
 
   async function runImport(file: File) {
@@ -453,6 +504,29 @@ export default function SettingsPage() {
             </p>
           </section>
 
+          {/* Imagens */}
+          <section>
+            <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Imagens</h2>
+            <p className="mb-4 text-sm text-zinc-500">
+              As imagens ficam guardadas no aparelho para funcionar offline. Com o pré-carregamento ligado,
+              elas são baixadas em segundo plano após cada sincronização — assim um zettel que você nunca
+              abriu neste aparelho já aparece com imagem quando você estiver sem conexão.
+            </p>
+            <label className="flex cursor-pointer items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+              <input
+                type="checkbox"
+                checked={imagePrefetch}
+                onChange={(e) => {
+                  setImagePrefetch(e.target.checked)
+                  setPrefetchEnabled(e.target.checked)
+                  if (e.target.checked) void prefetchImages()
+                }}
+                className="h-4 w-4 accent-brand"
+              />
+              Pré-carregar imagens para uso offline
+            </label>
+          </section>
+
           {/* Mapa de conexões */}
           <section>
             <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Mapa de conexões</h2>
@@ -589,13 +663,14 @@ export default function SettingsPage() {
           <section>
             <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Importar dados</h2>
             <p className="mb-4 text-sm text-zinc-500">
-              Aceita arquivos <code className="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-xs">.json</code> exportados por este sistema.
+              Aceita <code className="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-xs">.zip</code> (texto + imagens)
+              ou <code className="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-xs">.json</code> (só texto), exportados por este sistema.
               Zettels com erro são pulados individualmente — os demais são importados normalmente.
             </p>
             <input
               ref={fileRef}
               type="file"
-              accept=".json"
+              accept=".json,.zip"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -603,7 +678,7 @@ export default function SettingsPage() {
               onClick={() => fileRef.current?.click()}
               className="rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 active:scale-95 transition-all"
             >
-              Selecionar arquivo .json
+              Selecionar arquivo
             </button>
           </section>
 
@@ -726,7 +801,21 @@ export default function SettingsPage() {
           <section>
             <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Exportar dados</h2>
             <p className="mb-4 text-sm text-zinc-500">Baixe todos os seus zettels para backup ou para usar em outro aplicativo.</p>
-            <div className="flex gap-3">
+            <div className="mb-3 flex flex-wrap gap-3">
+              <button
+                onClick={handleExportZip}
+                disabled={exporting !== null}
+                className="rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+              >
+                {exporting === 'zip' ? 'Gerando...' : 'Backup completo (.zip)'}
+              </button>
+            </div>
+            <p className="mb-4 text-xs text-zinc-500">
+              O backup <strong>.zip</strong> é o único que inclui as imagens. O <strong>.json</strong> leva
+              apenas o texto e os metadados das imagens — embutir os bytes em base64 inflaria o arquivo
+              a ponto de não ser importável de volta.
+            </p>
+            <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleExportMarkdown}
                 disabled={exporting !== null}
@@ -739,7 +828,7 @@ export default function SettingsPage() {
                 disabled={exporting !== null}
                 className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {exporting === 'json' ? 'Gerando...' : 'Baixar como JSON'}
+                {exporting === 'json' ? 'Gerando...' : 'Baixar como JSON (sem imagens)'}
               </button>
               <button
                 onClick={() => offlineRouter.push('/export/pdf')}

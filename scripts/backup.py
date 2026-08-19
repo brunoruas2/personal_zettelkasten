@@ -1,7 +1,12 @@
 """
 Zettelkasten — backup automático local
 =======================================
-Bate no endpoint /api/backup/export e salva o JSON localmente.
+Bate no endpoint /api/backup/export e salva o backup localmente.
+
+Por padrão baixa o formato .zip, que é o único backup completo: leva os zettels
+e os bytes das imagens. O .json leva apenas texto e metadados das imagens —
+embutir os bytes em base64 inflaria o arquivo a ponto de não ser importável.
+
 Mantém os N backups mais recentes e descarta os mais antigos.
 
 Configuração
@@ -13,6 +18,7 @@ com os mesmos nomes (útil para não deixar a chave no código):
   ZETTEL_BACKUP_KEY  — chave de 64 hex gerada em Configurações > Chave de backup
   ZETTEL_BACKUP_DIR  — pasta onde os arquivos serão salvos
   ZETTEL_BACKUP_KEEP — quantos arquivos manter (padrão: 30)
+  ZETTEL_BACKUP_FORMAT — 'zip' (padrão, completo) ou 'json' (só texto)
 
 Uso
 ---
@@ -33,6 +39,7 @@ Agendamento no Windows (Task Scheduler)
 import os
 import sys
 import time
+import shutil
 import logging
 import argparse
 from datetime import datetime
@@ -75,6 +82,7 @@ DIR = str(
     else Path(__file__).parent / _dir_env
 )
 KEEP = int(os.environ.get("ZETTEL_BACKUP_KEEP", "30"))   # nº de arquivos a manter
+FORMAT = os.environ.get("ZETTEL_BACKUP_FORMAT", "zip").lower()  # zip (completo) ou json
 # ---------------------------------------------------------------------------
 
 logging.basicConfig(
@@ -91,21 +99,25 @@ def run_backup() -> bool:
         log.error("ZETTEL_BACKUP_KEY não configurada. Edite o script ou defina a variável de ambiente.")
         return False
 
-    endpoint = f"{URL.rstrip('/')}/api/backup/export?key={KEY}"
+    ext = "zip" if FORMAT == "zip" else "json"
+    endpoint = f"{URL.rstrip('/')}/api/backup/export?key={KEY}&format={ext}"
     out_dir  = Path(DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = f"zettelkasten-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+    filename = f"zettelkasten-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.{ext}"
     out_path = out_dir / filename
 
     log.info("Conectando em %s ...", URL)
     try:
         req = urllib.request.Request(endpoint, headers={"User-Agent": "zettel-backup/1.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             if resp.status != 200:
                 log.error("Servidor retornou HTTP %s", resp.status)
                 return False
-            data = resp.read()
+            # Streaming direto para o disco: um backup com imagens pode ter
+            # centenas de MB e não cabe confortavelmente na memória.
+            with open(out_path, "wb") as fh:
+                shutil.copyfileobj(resp, fh, length=64 * 1024)
     except urllib.error.HTTPError as e:
         log.error("HTTP %s — %s", e.code, e.reason)
         if e.code == 401:
@@ -118,8 +130,7 @@ def run_backup() -> bool:
         log.error("Erro inesperado: %s", e)
         return False
 
-    out_path.write_bytes(data)
-    size_kb = len(data) / 1024
+    size_kb = out_path.stat().st_size / 1024
     log.info("Salvo: %s  (%.1f KB)", out_path, size_kb)
 
     prune(out_dir)
@@ -128,7 +139,11 @@ def run_backup() -> bool:
 
 def prune(out_dir: Path) -> None:
     """Remove backups mais antigos, mantendo os KEEP mais recentes."""
-    files = sorted(out_dir.glob("zettelkasten-*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+    files = sorted(
+        [f for f in out_dir.glob("zettelkasten-*") if f.suffix in (".json", ".zip")],
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
+    )
     to_delete = files[KEEP:]
     for f in to_delete:
         f.unlink()

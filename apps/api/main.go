@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
 	"github.com/brunofullstack/zettelkasten/api/internal/db"
+	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/portability"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
@@ -27,6 +29,7 @@ func main() {
 	waRPID := getenv("WEBAUTHN_RP_ID", "localhost")
 	waRPName := getenv("WEBAUTHN_RP_NAME", "Zettelkasten")
 	waRPOrigin := getenv("WEBAUTHN_RP_ORIGIN", "http://localhost:3000")
+	imageQuota := getenvInt64("IMAGE_QUOTA_BYTES", 250<<20)
 
 	database, err := db.Open(dbPath)
 	if err != nil {
@@ -43,9 +46,14 @@ func main() {
 	authRepo := auth.NewRepository(database)
 	authHandler := auth.NewHandler(authRepo, jwtSecret, wa, sessions)
 
+	imageRepo := images.NewRepository(database)
+	imageHandler := images.NewHandler(imageRepo, imageQuota)
+
 	zettelRepo := zettel.NewRepository(database)
-	zettelHandler := zettel.NewHandler(zettelRepo)
-	portabilityHandler := portability.NewHandler(zettelRepo, authRepo)
+	zettelHandler := zettel.NewHandler(zettelRepo, imageRepo)
+	portabilityHandler := portability.NewHandler(zettelRepo, authRepo, imageRepo)
+
+	startOrphanPurge(imageRepo)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -66,6 +74,15 @@ func main() {
 		r.Mount("/api/admin", authHandler.AdminRoutes())
 		r.Mount("/api/zettels", zettelHandler.Routes())
 		r.Mount("/api", portabilityHandler.Routes())
+
+		// Imagens: registradas inline porque o Mount em "/api" acima impede um
+		// Mount novo no mesmo prefixo (chi entra em pânico com prefixos
+		// sobrepostos). Mesmo padrão do /api/links abaixo.
+		// A rota estática precede a paramétrica.
+		r.Get("/api/images/manifest", imageHandler.Manifest)
+		r.Post("/api/images/{id}", imageHandler.Upload)
+		r.Get("/api/images/{id}", imageHandler.Get)
+		r.Delete("/api/images/{id}", imageHandler.Delete)
 
 		r.Get("/api/links", func(w http.ResponseWriter, req *http.Request) {
 			links, err := zettelRepo.GetAllLinks(auth.GetUserID(req))
@@ -119,6 +136,44 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getenvInt64(key string, fallback int64) int64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		log.Printf("invalid %s=%q, using default %d", key, v, fallback)
+		return fallback
+	}
+	return n
+}
+
+// startOrphanPurge apaga imagens órfãs há mais que a carência, no boot e a cada
+// 24 h. Libera páginas dentro do .db mas não encolhe o arquivo — recuperar
+// espaço em disco exige VACUUM manual.
+func startOrphanPurge(repo *images.Repository) {
+	purge := func() {
+		cutoff := time.Now().UnixMilli() - images.OrphanGraceMillis
+		n, err := repo.PurgeOrphans(cutoff)
+		if err != nil {
+			log.Printf("orphan image purge failed: %v", err)
+			return
+		}
+		if n > 0 {
+			log.Printf("purged %d orphaned image(s)", n)
+		}
+	}
+	purge()
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			purge()
+		}
+	}()
 }
 
 func corsMiddleware(allowedOrigin string) func(http.Handler) http.Handler {

@@ -13,6 +13,11 @@ server {
 
     # Go API — deve vir antes do bloco / para ter precedência
     location /api/ {
+        # Sem isso vale o default do nginx (1 MB), que corta o import de backup
+        # (.json até 50 MB, .zip até 500 MB) antes de a requisição chegar no Go.
+        # O teto por imagem continua sendo os 512 KB validados no handler.
+        client_max_body_size 512m;
+
         proxy_pass         http://127.0.0.1:3001;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;

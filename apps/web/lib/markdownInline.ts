@@ -1,6 +1,9 @@
 // Groups: 1=wikiTarget 2=wikiLabel 3=bold 4=italic 5=code 6=strike 7=imgAlt 8=imgUrl 9=bareImgUrl 10=linkText 11=linkUrl 12=bareUrl 13=autolinkUrl
+// O grupo 8 aceita http(s) e o scheme local zk:img/<id>. A alternância usa
+// grupo NÃO-CAPTURANTE de propósito: capturar aqui deslocaria a numeração
+// 1-13 acima e quebraria buildLineOffsetMap.
 export const INLINE_RE =
-  /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|~~(.+?)~~|!\[([^\]]*)\]\((https?:\/\/[^)]+)\)|(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:[?#]\S*)?)|(?<!!)\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s<>"]+)|<(https?:\/\/[^>\s]+)>/gi;
+  /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|~~(.+?)~~|!\[([^\]]*)\]\(((?:https?:\/\/|zk:img\/)[^)]+)\)|(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:[?#]\S*)?)|(?<!!)\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s<>"]+)|<(https?:\/\/[^>\s]+)>/gi;
 
 /**
  * Maps each boundary position in the rendered (marker-free) text of a line

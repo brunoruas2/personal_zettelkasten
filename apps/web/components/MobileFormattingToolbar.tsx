@@ -11,6 +11,7 @@ interface Props {
   previewOpen: boolean;
   onTogglePreview: () => void;
   onInsertLink: () => void;
+  onInsertImage: () => void;
   onOpenCheatsheet: () => void;
   fontSize: number;
   onFontSizeChange: (size: number) => void;
@@ -43,6 +44,7 @@ export function MobileFormattingToolbar({
   previewOpen,
   onTogglePreview,
   onInsertLink,
+  onInsertImage,
   onOpenCheatsheet,
   fontSize,
   onFontSizeChange,
@@ -186,6 +188,14 @@ export function MobileFormattingToolbar({
           className={`${base} ${inactive} text-brand text-xl leading-none`}
         >
           ♩
+        </button>
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onInsertImage}
+          aria-label="Inserir imagem"
+          className={`${base} ${inactive} text-brand text-xl leading-none`}
+        >
+          🖼
         </button>
 
         <Divider />

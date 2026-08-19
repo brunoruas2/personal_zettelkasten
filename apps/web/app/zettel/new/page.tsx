@@ -43,6 +43,9 @@ export default function NewZettelPage() {
   const isDirtyRef = useRef(false);
   const { toolbarRef } = useKeyboardOffset();
   const editorRef = useRef<TipTapEditorHandle>(null);
+  // Imagens ainda comprimindo ou com upload em voo. Salvar com pendências
+  // gravaria um body referenciando blob que o servidor não tem.
+  const [pendingImages, setPendingImages] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => titleRef.current?.focus(), 100);
@@ -184,11 +187,11 @@ export default function NewZettelPage() {
   };
 
   const handleSave = useCallback(async () => {
-    if (!title.trim()) return;
+    if (!title.trim() || pendingImages > 0) return;
     await createZettel({ title: title.trim(), body, tags });
     isDirtyRef.current = false;
     router.push('/');
-  }, [title, body, tags, createZettel, router]);
+  }, [title, body, tags, pendingImages, createZettel, router]);
 
   const handleSaveRef = useRef(handleSave);
   handleSaveRef.current = handleSave;
@@ -238,10 +241,12 @@ export default function NewZettelPage() {
           </div>
           <button
             onClick={handleSave}
-            disabled={!title.trim()}
+            disabled={!title.trim() || pendingImages > 0}
             className="rounded-xl bg-brand px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
           >
-            Salvar
+            {pendingImages > 0
+              ? `Aguardando ${pendingImages} imagem${pendingImages > 1 ? 'ns' : ''}…`
+              : 'Salvar'}
           </button>
         </div>
 
@@ -275,6 +280,7 @@ export default function NewZettelPage() {
               value={body}
               onChange={setBody}
               onEditorReady={setEditor}
+              onPendingImagesChange={setPendingImages}
               onExtract={handleExtractSelection}
               placeholder="Escreva aqui... use [[título]] para links ou / para inserir blocos"
               className="w-full"
@@ -311,6 +317,7 @@ export default function NewZettelPage() {
           previewOpen={previewOpen}
           onTogglePreview={previewOpen ? switchToEdit : switchToPreview}
           onInsertLink={() => setLinkPickerOpen(true)}
+          onInsertImage={() => editorRef.current?.pickImages()}
           onOpenCheatsheet={() => setCheatsheetOpen(true)}
           fontSize={editorFontSize}
           onFontSizeChange={setEditorFontSize}

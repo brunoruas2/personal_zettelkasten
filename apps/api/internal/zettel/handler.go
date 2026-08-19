@@ -4,20 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
+	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/models"
 	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct {
-	repo *Repository
+	repo   *Repository
+	images *images.Repository
 }
 
-func NewHandler(repo *Repository) *Handler {
-	return &Handler{repo: repo}
+func NewHandler(repo *Repository, imageRepo *images.Repository) *Handler {
+	return &Handler{repo: repo, images: imageRepo}
 }
 
 func (h *Handler) Routes() chi.Router {
@@ -109,6 +112,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.syncLinks(userID, z.ID, z.Body)
+	h.syncImageRefs(userID, z.ID, z.Body)
 
 	created, _ := h.repo.GetByID(userID, z.ID)
 	w.WriteHeader(http.StatusCreated)
@@ -153,6 +157,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.syncLinks(userID, id, z.Body)
+	h.syncImageRefs(userID, id, z.Body)
 
 	updated, _ := h.repo.GetByID(userID, id)
 	jsonOK(w, updated)
@@ -161,7 +166,8 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 // DELETE /api/zettels/:id
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	userID := auth.GetUserID(r)
-	if err := h.repo.Delete(userID, chi.URLParam(r, "id"), time.Now().UnixMilli()); err != nil {
+	id := chi.URLParam(r, "id")
+	if err := h.repo.Delete(userID, id, time.Now().UnixMilli()); err != nil {
 		if err.Error() == "not found" {
 			jsonError(w, http.StatusNotFound, "not found")
 			return
@@ -169,6 +175,8 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Corpo vazio: solta todas as referências de imagem deste zettel.
+	h.syncImageRefs(userID, id, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -196,6 +204,7 @@ func (h *Handler) rebuildLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, z := range zettels {
 		h.syncLinks(userID, z.ID, z.Body)
+		h.syncImageRefs(userID, z.ID, z.Body)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -216,6 +225,33 @@ func (h *Handler) syncLinks(userID, sourceID, body string) {
 		links = append(links, l)
 	}
 	_ = h.repo.UpsertLinks(sourceID, links)
+}
+
+// imageRefRE casa as referências de imagem no corpo: ![alt](zk:img/<32 hex>).
+var imageRefRE = regexp.MustCompile(`zk:img/([0-9a-f]{32})`)
+
+// ParseImageIDs extrai os ids de imagem referenciados por um corpo, sem repetir.
+func ParseImageIDs(body string) []string {
+	matches := imageRefRE.FindAllStringSubmatch(body, -1)
+	seen := make(map[string]struct{}, len(matches))
+	ids := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if _, dup := seen[m[1]]; dup {
+			continue
+		}
+		seen[m[1]] = struct{}{}
+		ids = append(ids, m[1])
+	}
+	return ids
+}
+
+// syncImageRefs reescreve as referências de imagem do zettel e reconcilia
+// orphaned_at. Roda nos mesmos pontos que syncLinks.
+func (h *Handler) syncImageRefs(userID, zettelID, body string) {
+	if h.images == nil {
+		return
+	}
+	_ = h.images.SyncRefs(userID, zettelID, ParseImageIDs(body), time.Now().UnixMilli())
 }
 
 // --- helpers ---

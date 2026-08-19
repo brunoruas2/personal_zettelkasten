@@ -75,7 +75,11 @@ go run ./cmd/createuser/main.go -username <name> -password <password> -role memb
 - WYSIWYG editor (TipTap) with a mobile formatting toolbar and `/` commands
 - Special blocks: PlantUML, chord sheets with transposition, ABC sheet music, syntax-
   highlighted code, tables and task lists
-- JSON and Markdown (`.zip`) export, PDF export, bulk import — see [IMPORT_FORMAT.md](IMPORT_FORMAT.md)
+- **Images** — paste, drag-and-drop or pick a file; compressed in the browser to WebP
+  (≤ 1200 px, ≤ 120 KB) and stored as a BLOB in the same SQLite file. No external host,
+  and they render offline from IndexedDB
+- ZIP (full backup, includes images), JSON and Markdown export, PDF export, bulk import —
+  see [IMPORT_FORMAT.md](IMPORT_FORMAT.md)
 - **Backup key** — a key-authenticated URL for scheduled cron backups
 - Tags, full-text search (FTS5), backlinks, orphan filter, per-user default template
 - Multi-user, invite-based
@@ -189,8 +193,8 @@ python scripts/backup.py --loop 60     # every 60 minutes
 Or straight from cron:
 
 ```bash
-0 3 * * * curl -s "https://your-domain.com/api/backup/export?key=<key>" \
-  -o "/backups/zettelkasten-$(date +\%Y-\%m-\%d).json"
+0 3 * * * curl -s "https://your-domain.com/api/backup/export?key=<key>&format=zip" \
+  -o "/backups/zettelkasten-$(date +\%Y-\%m-\%d).zip"
 ```
 
 > `/api/backup/export` requires no login — **the key is the only authentication factor**.
@@ -198,9 +202,13 @@ Or straight from cron:
 
 ### Import
 
-`POST /api/import/json` accepts the same envelope the export produces. The full schema,
-with conversion guides from Obsidian, Notion, Roam and Logseq, is in
-[IMPORT_FORMAT.md](IMPORT_FORMAT.md).
+`POST /api/import/zip` accepts the full backup package (notes + images);
+`POST /api/import/json` accepts the text-only envelope. The full schema, with conversion
+guides from Obsidian, Notion, Roam and Logseq, is in [IMPORT_FORMAT.md](IMPORT_FORMAT.md).
+
+> The **JSON export never contains image bytes** — base64 would inflate a 1000-image vault
+> to roughly 160 MB, past the import limit and past what the VPS can serialize. The ZIP is
+> the only complete backup.
 
 ### License
 
@@ -281,7 +289,11 @@ go run ./cmd/createuser/main.go -username <nome> -password <senha> -role member
 - Editor WYSIWYG (TipTap) com barra de formatação para mobile e comandos por `/`
 - Blocos especiais: PlantUML, cifras com transposição, partituras ABC, código com destaque
   de sintaxe, tabelas e listas de tarefas
-- Export JSON e Markdown (`.zip`), export em PDF, import em lote — ver [IMPORT_FORMAT.md](IMPORT_FORMAT.md)
+- **Imagens** — cole, arraste ou escolha um arquivo; comprimidas no navegador para WebP
+  (≤ 1200 px, ≤ 120 KB) e guardadas como BLOB no mesmo SQLite. Sem host externo, e
+  renderizam offline direto do IndexedDB
+- Export em ZIP (backup completo, com imagens), JSON e Markdown, export em PDF, import em
+  lote — ver [IMPORT_FORMAT.md](IMPORT_FORMAT.md)
 - **Chave de backup** — URL autenticada por chave, para backup agendado por cron
 - Tags, busca full-text (FTS5), backlinks, filtro de órfãs, template padrão por usuário
 - Multi-usuário com convites
@@ -393,8 +405,8 @@ python scripts/backup.py --loop 60     # a cada 60 minutos
 Ou direto no cron:
 
 ```bash
-0 3 * * * curl -s "https://seu-dominio.com/api/backup/export?key=<chave>" \
-  -o "/backups/zettelkasten-$(date +\%Y-\%m-\%d).json"
+0 3 * * * curl -s "https://seu-dominio.com/api/backup/export?key=<chave>&format=zip" \
+  -o "/backups/zettelkasten-$(date +\%Y-\%m-\%d).zip"
 ```
 
 > O endpoint `/api/backup/export` não exige login — **a chave é o único fator de
@@ -403,9 +415,13 @@ Ou direto no cron:
 
 ### Import
 
-`POST /api/import/json` aceita o mesmo envelope produzido pelo export. O schema completo,
-com guias de conversão a partir de Obsidian, Notion, Roam e Logseq, está em
-[IMPORT_FORMAT.md](IMPORT_FORMAT.md).
+`POST /api/import/zip` aceita o pacote completo (notas + imagens); `POST /api/import/json`
+aceita o envelope só de texto. O schema completo, com guias de conversão a partir de
+Obsidian, Notion, Roam e Logseq, está em [IMPORT_FORMAT.md](IMPORT_FORMAT.md).
+
+> O **export JSON nunca contém os bytes das imagens** — em base64, um cofre de mil imagens
+> passaria de 160 MB, acima do limite de import e do que o VPS aguenta serializar. O ZIP é
+> o único backup completo.
 
 ### Licença
 
