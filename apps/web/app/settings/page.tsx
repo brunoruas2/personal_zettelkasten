@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
 import { useSyncStore } from '../../store/useSyncStore';
@@ -10,7 +10,7 @@ import { useZettelStore } from '../../store/useZettelStore';
 import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 import { TagInput } from '../../components/TagInput';
 import { CLUSTER_COLORS, type NodeColorRule } from '../../lib/graphColors';
-import { isPrefetchEnabled, setPrefetchEnabled, prefetchImages } from '../../lib/imageSync';
+import { isPrefetchEnabled, setPrefetchEnabled, prefetchImages, imageStore } from '../../lib/imageSync';
 
 const CHUNK = 50
 
@@ -31,6 +31,12 @@ async function downloadFile(path: string, filename: string) {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+// `local: true` significa que os números vieram do IndexedDB deste aparelho —
+// só o subconjunto de imagens já baixado aqui, sem quota conhecida.
+type ImageUsage =
+  | { status: 'loading' }
+  | { status: 'ready'; bytes: number; count: number; quotaBytes: number | null; local: boolean }
 
 type BackupKeyState =
   | { status: 'loading' }
@@ -64,6 +70,7 @@ export default function SettingsPage() {
   const setGraphExcludedTags = useZettelStore((s) => s.setGraphExcludedTags)
   const [excludedTagsSaved, setExcludedTagsSaved] = useState(false)
   const zettels = useZettelStore((s) => s.zettels)
+  const [imageUsage, setImageUsage] = useState<ImageUsage>({ status: 'loading' })
 
   // Node color rules — synced to server
   const graphNodeColors = useZettelStore((s) => s.graphNodeColors)
@@ -90,6 +97,58 @@ export default function SettingsPage() {
       .then((data) => setBackupKey({ status: data?.active ? 'active' : 'none' }))
       .catch(() => setBackupKey({ status: 'none' }))
   }, [])
+
+  // O texto sai da store, não do servidor: já está inteiro em memória e assim
+  // acompanha um import sem precisar de refetch.
+  const zettelUsage = useMemo(() => {
+    const encoder = new TextEncoder()
+    let bytes = 0
+    for (const z of zettels) {
+      bytes += encoder.encode(z.title + z.body + z.tags.join(' ')).length
+    }
+    return { count: zettels.length, bytes }
+  }, [zettels])
+
+  // As imagens vêm do servidor: este aparelho pode ter só parte delas (prefetch
+  // desligado, aparelho novo), então o total local reportaria menos que a conta.
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadLocal() {
+      try {
+        const [bytes, ids] = await Promise.all([imageStore.usedBytes(), imageStore.listIds()])
+        if (!cancelled) {
+          setImageUsage({ status: 'ready', bytes, count: ids.length, quotaBytes: null, local: true })
+        }
+      } catch {
+        if (!cancelled) {
+          setImageUsage({ status: 'ready', bytes: 0, count: 0, quotaBytes: null, local: true })
+        }
+      }
+    }
+
+    api.get('/api/images/manifest')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        if (!data) return loadLocal()
+        setImageUsage({
+          status: 'ready',
+          bytes: data.used_bytes ?? 0,
+          count: Array.isArray(data.images) ? data.images.length : 0,
+          quotaBytes: data.quota_bytes ?? null,
+          local: false,
+        })
+      })
+      .catch(() => { if (!cancelled) void loadLocal() })
+
+    return () => { cancelled = true }
+  }, [])
+
+  const totalBytes = zettelUsage.bytes + (imageUsage.status === 'ready' ? imageUsage.bytes : 0)
+  const quotaPct = imageUsage.status === 'ready' && imageUsage.quotaBytes
+    ? Math.min(100, (imageUsage.bytes / imageUsage.quotaBytes) * 100)
+    : null
 
   async function handleGenerateBackupKey() {
     const bytes = crypto.getRandomValues(new Uint8Array(32))
@@ -504,6 +563,71 @@ export default function SettingsPage() {
             </p>
           </section>
 
+          {/* Armazenamento */}
+          <section>
+            <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Armazenamento</h2>
+            <p className="mb-4 text-sm text-zinc-500">
+              Quanto sua base ocupa hoje. O texto é medido neste aparelho; as imagens vêm da sua conta no servidor.
+            </p>
+
+            <div className="rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 py-3">
+              {/* Zettels */}
+              <div className="flex items-baseline justify-between gap-3 py-1.5">
+                <span className="text-sm text-zinc-700 dark:text-zinc-300">Zettels</span>
+                <span className="flex items-baseline gap-3 text-sm">
+                  <span className="text-zinc-400">{zettelUsage.count} {zettelUsage.count === 1 ? 'nota' : 'notas'}</span>
+                  <span className="font-medium tabular-nums text-zinc-700 dark:text-zinc-300">{formatBytes(zettelUsage.bytes)}</span>
+                </span>
+              </div>
+
+              {/* Imagens */}
+              <div className="flex items-baseline justify-between gap-3 py-1.5">
+                <span className="text-sm text-zinc-700 dark:text-zinc-300">Imagens</span>
+                {imageUsage.status === 'loading' ? (
+                  <span className="h-4 w-28 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+                ) : (
+                  <span className="flex items-baseline gap-3 text-sm">
+                    <span className="text-zinc-400">
+                      {imageUsage.count} {imageUsage.count === 1 ? 'arquivo' : 'arquivos'}
+                    </span>
+                    <span className="font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
+                      {formatBytes(imageUsage.bytes)}
+                      {imageUsage.quotaBytes != null && (
+                        <span className="font-normal text-zinc-400"> de {formatBytes(imageUsage.quotaBytes)}</span>
+                      )}
+                    </span>
+                  </span>
+                )}
+              </div>
+
+              {quotaPct != null && (
+                <div className="pb-1.5">
+                  <div className="h-2 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        quotaPct > 95 ? 'bg-red-500' : quotaPct >= 80 ? 'bg-amber-500' : 'bg-brand'
+                      }`}
+                      style={{ width: `${Math.max(quotaPct, 1)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-right text-xs text-zinc-400 tabular-nums">{Math.round(quotaPct)}%</p>
+                </div>
+              )}
+
+              {imageUsage.status === 'ready' && imageUsage.local && (
+                <p className="pb-1.5 text-xs text-zinc-400">
+                  Sem conexão com o servidor — mostrando apenas as imagens guardadas neste aparelho.
+                </p>
+              )}
+
+              {/* Total */}
+              <div className="mt-1 flex items-baseline justify-between gap-3 border-t border-zinc-200 dark:border-zinc-800 pt-2.5">
+                <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Total</span>
+                <span className="text-sm font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{formatBytes(totalBytes)}</span>
+              </div>
+            </div>
+          </section>
+
           {/* Imagens */}
           <section>
             <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Imagens</h2>
@@ -659,29 +783,6 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* Import */}
-          <section>
-            <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Importar dados</h2>
-            <p className="mb-4 text-sm text-zinc-500">
-              Aceita <code className="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-xs">.zip</code> (texto + imagens)
-              ou <code className="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-xs">.json</code> (só texto), exportados por este sistema.
-              Zettels com erro são pulados individualmente — os demais são importados normalmente.
-            </p>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".json,.zip"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 active:scale-95 transition-all"
-            >
-              Selecionar arquivo
-            </button>
-          </section>
-
           {/* Backup key */}
           <section>
             <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Chave de backup automático</h2>
@@ -797,6 +898,29 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          {/* Import */}
+          <section>
+            <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Importar dados</h2>
+            <p className="mb-4 text-sm text-zinc-500">
+              Aceita <code className="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-xs">.zip</code> (texto + imagens)
+              ou <code className="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-xs">.json</code> (só texto), exportados por este sistema.
+              Zettels com erro são pulados individualmente — os demais são importados normalmente.
+            </p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,.zip"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 active:scale-95 transition-all"
+            >
+              Selecionar arquivo
+            </button>
+          </section>
+
           {/* Export */}
           <section>
             <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Exportar dados</h2>
@@ -847,4 +971,15 @@ export default function SettingsPage() {
 
 function today() {
   return new Date().toISOString().slice(0, 10)
+}
+
+// Base 1024 porque é assim que o servidor conta a quota (`250<<20`); em base
+// 1000 os 250 MB de quota apareceriam como 262,1 MB.
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  const kb = n / 1024
+  if (kb < 1024) return `${Math.round(kb)} KB`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb.toFixed(1).replace('.', ',')} MB`
+  return `${(mb / 1024).toFixed(1).replace('.', ',')} GB`
 }
