@@ -50,6 +50,9 @@ type State = 'loading' | 'ready' | 'missing'
  *
  * O `<img src>` é sempre um object URL do blob local, nunca a URL da API: uma
  * tag `<img>` não manda `Authorization: Bearer`, e o backend só aceita header.
+ *
+ * Só o preview usa isto. No editor a imagem vira um chip compacto — ver
+ * ImageChipNodeView em TipTapEditor.tsx.
  */
 export function ZettelImage({ id, alt }: { id: string; alt: string }) {
   const [url, setUrl] = React.useState<string | null>(null)

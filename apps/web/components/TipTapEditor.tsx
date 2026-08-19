@@ -471,6 +471,48 @@ const CustomCodeBlock = CodeBlockExtension.extend({
   },
 });
 
+// ── Image chip ────────────────────────────────────────────────────────────────
+
+// No editor a imagem vira um chip compacto em vez da imagem de verdade. Dois
+// motivos: `<img src="zk:img/...">` não carrega (o navegador não conhece o
+// scheme) e o nó ficava com altura zero — uma linha em branco invisível, que
+// não dava nem para selecionar e apagar. Resolver o blob aqui também obrigaria
+// a ler o IndexedDB a cada montagem enquanto se digita.
+function ImageChipNodeView({ node, selected }: {
+  node: { attrs: { src?: string; alt?: string } };
+  selected: boolean;
+}) {
+  const src = node.attrs.src ?? '';
+  const alt = node.attrs.alt ?? '';
+  const id = src.startsWith(ZK_IMG_PREFIX) ? src.slice(ZK_IMG_PREFIX.length) : src;
+
+  return (
+    <NodeViewWrapper as="div" className="my-2">
+      <span
+        contentEditable={false}
+        title={alt || src}
+        className={`inline-flex select-none items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+          selected
+            ? 'border-brand bg-brand/10 text-brand'
+            : 'border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+        }`}
+      >
+        <span aria-hidden>🖼</span>
+        <span className="font-medium">{alt || 'Imagem'}</span>
+        <code className="rounded bg-black/5 px-1 py-0.5 text-xs dark:bg-white/10">
+          {id.slice(0, 8)}
+        </code>
+      </span>
+    </NodeViewWrapper>
+  );
+}
+
+const ImageChip = Image.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageChipNodeView);
+  },
+});
+
 // ── TipTapEditor ──────────────────────────────────────────────────────────────
 
 export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
@@ -717,7 +759,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         LeadingNodeEscape,
         // allowBase64 desligado de propósito: bytes inline no body multiplicariam
         // tamanho em cada salto (IndexedDB, fila de sync, SQLite, export, PDF).
-        Image.configure({ inline: false, allowBase64: false }),
+        ImageChip.configure({ inline: false, allowBase64: false }),
         Markdown.configure({ html: false, transformCopiedText: true }),
         Placeholder.configure({ placeholder: placeholder ?? '' }),
         WikiLinkExtension,
