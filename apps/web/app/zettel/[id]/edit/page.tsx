@@ -241,6 +241,23 @@ export default function EditZettelPage() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  // Compara `e.code` (tecla física) e não `e.key`: em layouts onde Alt compõe
+  // caractere — o Option do macOS — `Alt+T` chega como `†` e a comparação por
+  // caractere rejeitaria o atalho. Os atalhos vizinhos ainda usam `e.key`.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.code !== 'KeyT') return;
+      // Sem heading o drawer não abre, e alternar aqui gravaria
+      // `zettel_toc_open` em silêncio — o sumário apareceria aberto no próximo
+      // zettel que tivesse headings.
+      if (!hasHeadings) return;
+      e.preventDefault();
+      toggleToc();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [hasHeadings]);
+
   return (
     <>
       {/* O recuo do drawer vive no wrapper: no mesmo elemento que tem `mx-auto`
