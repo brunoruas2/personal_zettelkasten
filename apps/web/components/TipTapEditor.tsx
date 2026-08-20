@@ -32,6 +32,7 @@ import { PluginKey } from '@tiptap/pm/state';
 import type { Slice } from '@tiptap/pm/model';
 import type { Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
+import { useDiagramLayout } from '../lib/diagramLayout';
 import { isImageFile, ImageCompressError } from '../lib/imageCompress';
 import { importImage, ImageUploadError } from '../lib/imageSync';
 import { ZK_IMG_PREFIX } from './ZettelImage';
@@ -414,6 +415,10 @@ function CodeBlockNodeView({ node, updateAttributes }: {
   const language = node.attrs.language ?? '';
   const isPlantUml = language === 'plantuml';
 
+  // Chamado sempre, mesmo para blocos não-plantuml: o early return abaixo não
+  // pode ficar antes de um hook.
+  const diagramLayout = useDiagramLayout();
+
   // Debounced so a live PlantUML preview doesn't re-render on every keystroke —
   // the render engine (plantuml-render-client) serializes renders in a queue.
   const [debouncedSource, setDebouncedSource] = useState(node.textContent);
@@ -460,16 +465,24 @@ function CodeBlockNodeView({ node, updateAttributes }: {
     );
   }
 
+  // Strings completas por variante — `lg:${...}` montado em runtime nunca chega
+  // ao CSS gerado, o Tailwind varre o source estaticamente. Abaixo de `lg` as
+  // duas variantes empilham; o que muda é só o que as variantes `lg:` fazem.
+  const side = diagramLayout === 'side';
+  const wrapperClass = side
+    ? 'my-2 flex flex-col lg:flex-row rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-hidden'
+    : 'my-2 flex flex-col rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-hidden';
+  const codeColClass = side
+    ? 'lg:w-1/2 min-w-0 overflow-x-auto'
+    : 'w-full min-w-0 overflow-x-auto';
+  const previewColClass = side
+    ? 'lg:w-1/2 min-w-0 max-h-64 lg:max-h-none overflow-y-auto p-2 border-t border-zinc-200 dark:border-zinc-700 lg:border-t-0 lg:border-l'
+    : 'w-full min-w-0 max-h-64 lg:max-h-[32rem] overflow-y-auto p-2 border-t border-zinc-200 dark:border-zinc-700';
+
   return (
-    <NodeViewWrapper
-      as="div"
-      className="my-2 flex flex-col lg:flex-row rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-hidden"
-    >
-      <div className="lg:w-1/2 min-w-0 overflow-x-auto">{codeArea}</div>
-      <div
-        contentEditable={false}
-        className="lg:w-1/2 min-w-0 max-h-64 lg:max-h-none overflow-y-auto p-2 border-t border-zinc-200 dark:border-zinc-700 lg:border-t-0 lg:border-l"
-      >
+    <NodeViewWrapper as="div" className={wrapperClass}>
+      <div className={codeColClass}>{codeArea}</div>
+      <div contentEditable={false} className={previewColClass}>
         <PlantUmlBlock source={debouncedSource} />
       </div>
     </NodeViewWrapper>

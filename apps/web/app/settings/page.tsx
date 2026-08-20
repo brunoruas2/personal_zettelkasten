@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { useSyncStore } from '../../store/useSyncStore';
 import { THEMES, applyTheme, getSavedThemeId, type ThemeId } from '../../lib/theme';
 import { FONTS, applyFont, getSavedFontId, type FontId } from '../../lib/font';
+import { DIAGRAM_LAYOUTS, applyDiagramLayout, getSavedDiagramLayoutId, type DiagramLayoutId } from '../../lib/diagramLayout';
 import { useZettelStore } from '../../store/useZettelStore';
 import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 import { TagInput } from '../../components/TagInput';
@@ -66,6 +67,7 @@ export default function SettingsPage() {
   const [backupUrlCopied, setBackupUrlCopied] = useState(false)
   const [themeId, setThemeId] = useState<ThemeId>('purple')
   const [fontId, setFontId] = useState<FontId>('system')
+  const [diagramLayoutId, setDiagramLayoutId] = useState<DiagramLayoutId>('side')
   const graphExcludedTags = useZettelStore((s) => s.graphExcludedTags)
   const setGraphExcludedTags = useZettelStore((s) => s.setGraphExcludedTags)
   const [excludedTagsSaved, setExcludedTagsSaved] = useState(false)
@@ -85,6 +87,7 @@ export default function SettingsPage() {
   useEffect(() => {
     setThemeId(getSavedThemeId())
     setFontId(getSavedFontId())
+    setDiagramLayoutId(getSavedDiagramLayoutId())
     setImagePrefetch(isPrefetchEnabled())
   }, [])
 
@@ -563,6 +566,31 @@ export default function SettingsPage() {
             </div>
             <p className="mt-3 text-xs text-zinc-400">
               {FONTS.find(f => f.id === fontId)?.label} · salvo neste dispositivo
+            </p>
+
+            <p className="mb-3 mt-6 text-sm text-zinc-500">Diagramas no editor.</p>
+            <div className="flex gap-3 flex-wrap">
+              {DIAGRAM_LAYOUTS.map((layout) => {
+                const isActive = diagramLayoutId === layout.id;
+                return (
+                  <button
+                    key={layout.id}
+                    onClick={() => { setDiagramLayoutId(layout.id); applyDiagramLayout(layout.id); }}
+                    title={layout.description}
+                    className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm transition-all ${
+                      isActive
+                        ? 'border-brand bg-brand/10 font-semibold text-brand dark:bg-brand/20'
+                        : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-500'
+                    }`}
+                  >
+                    <span aria-hidden className="text-lg leading-none">{layout.id === 'side' ? '⇹' : '⇳'}</span>
+                    <span>{layout.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-xs text-zinc-400">
+              {DIAGRAM_LAYOUTS.find(l => l.id === diagramLayoutId)?.label} · salvo neste dispositivo · vale a partir de telas largas
             </p>
           </section>
 
