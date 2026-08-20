@@ -69,6 +69,13 @@ interface ListNode {
   children: ListNode[];
 }
 
+// Linha em branco gravada pelo editor para preservar um parágrafo vazio: só o
+// NBSP (ver BLANK_LINE_SENTINEL em TipTapEditor.tsx). Markdown não tem como
+// representar parágrafo vazio de outro jeito.
+function isBlankLineSentinel(line: string): boolean {
+  return line.trim() === '' && line.includes('\u00A0');
+}
+
 function buildNestedList(
   flatItems: Array<{ indent: number; text: string; ordered: boolean; checked?: boolean }>,
 ): ListNode[] {
@@ -528,8 +535,23 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
       continue;
     }
 
+    // Linha em branco vira espaçador. A sentinela U+00A0 que o editor grava
+    // para preservar parágrafos vazios também cai aqui (String.trim() trata
+    // NBSP como whitespace), então nunca chega ao renderInline nem aparece como
+    // caractere no preview. Como o serializador separa blocos por linha em
+    // branco, cada sentinela vem ladeada por linhas vazias — contar as três
+    // triplicaria o respiro, então só a sentinela conta no grupo. O `i++`
+    // mantém uma linha por iteração, preservando o mapa de offsets usado pelos
+    // blocos `chords`.
     if (line.trim() === '') {
-      blocks.push(<div key={`sp${i}`} className="h-2" />);
+      if (isBlankLineSentinel(line)) {
+        blocks.push(<div key={`sp${i}`} className="h-6" aria-hidden />);
+      } else if (
+        !isBlankLineSentinel(lines[i - 1] ?? '') &&
+        !isBlankLineSentinel(lines[i + 1] ?? '')
+      ) {
+        blocks.push(<div key={`sp${i}`} className="h-2" aria-hidden />);
+      }
       i++; continue;
     }
 

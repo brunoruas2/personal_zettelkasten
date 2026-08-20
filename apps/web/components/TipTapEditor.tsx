@@ -22,6 +22,7 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import Image from '@tiptap/extension-image';
+import Paragraph from '@tiptap/extension-paragraph';
 import { Markdown } from 'tiptap-markdown';
 import Suggestion, {
   type SuggestionKeyDownProps,
@@ -32,7 +33,7 @@ import type { Slice } from '@tiptap/pm/model';
 import type { Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
 import { isImageFile, ImageCompressError } from '../lib/imageCompress';
-import { importImage } from '../lib/imageSync';
+import { importImage, ImageUploadError } from '../lib/imageSync';
 import { ZK_IMG_PREFIX } from './ZettelImage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -321,8 +322,13 @@ async function insertImageFiles(
         pos = null; // as próximas seguem o cursor, já posicionado após a anterior
       }
     } catch (err) {
+      // ImageUploadError = o servidor recusou de vez. A inserção acima não
+      // chegou a acontecer (importImage lança antes), então o corpo não fica
+      // com uma referência a bytes que só existem neste aparelho.
       onError(
-        err instanceof ImageCompressError ? err.message : 'Falha ao importar a imagem.',
+        err instanceof ImageCompressError || err instanceof ImageUploadError
+          ? err.message
+          : 'Falha ao importar a imagem.',
       );
     } finally {
       onPendingDelta(-1);
@@ -507,11 +513,99 @@ function ImageChipNodeView({ node, selected }: {
   );
 }
 
+// tiptap-markdown herda `defaultMarkdownSerializer.nodes.image`, que só faz
+// `state.write("![alt](src)")`. Isso é correto no schema padrão, onde a imagem
+// é inline — mas aqui ela é registrada com `inline: false` (ver a lista de
+// extensões), ou seja, é um nó de bloco. Sem `closeBlock`, `state.closed` nunca
+// é setado, o `flushClose()` do bloco seguinte não emite `\n\n` e o próximo
+// bloco sai colado na mesma linha (`![alt](zk:img/x)# Título`) — o heading vira
+// texto cru no preview. A guarda `isInline` mantém a serialização correta caso
+// a config volte um dia para imagem inline.
 const ImageChip = Image.extend({
   addNodeView() {
     return ReactNodeViewRenderer(ImageChipNodeView);
   },
+  addStorage() {
+    return {
+      ...this.parent?.(),
+      markdown: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        serialize(state: any, node: any) {
+          const alt = state.esc(node.attrs.alt || '');
+          const src = String(node.attrs.src || '').replace(/[()]/g, '\\$&');
+          const title = node.attrs.title
+            ? ` "${String(node.attrs.title).replace(/"/g, '\\"')}"`
+            : '';
+          state.write(`![${alt}](${src}${title})`);
+          if (!node.type.isInline) state.closeBlock(node);
+        },
+        parse: {
+          // markdown-it cuida do parse
+        },
+      },
+    };
+  },
 });
+
+// ── Linha em branco ───────────────────────────────────────────────────────────
+
+// Markdown não representa parágrafo vazio: o serializador colapsa qualquer
+// número deles num único `\n\n` e o markdown-it descarta linhas em branco no
+// parse — uma linha em branco intencional sumia ao salvar. O NBSP é o menor
+// caractere que sobrevive aos dois lados (`html: false` descarta `<br>`) e não
+// colide com nenhuma sintaxe markdown. `state.write()` não escapa, então ele
+// sai literal no body.
+const BLANK_LINE_SENTINEL = '\u00A0';
+
+const CustomParagraph = Paragraph.extend({
+  addStorage() {
+    return {
+      ...this.parent?.(),
+      markdown: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        serialize(state: any, node: any, parent: any) {
+          // Só no nível do doc: parágrafo vazio dentro de list item ou
+          // blockquote é estrutura, não linha em branco — marcá-lo deixaria um
+          // NBSP visível dentro do item. Célula de tabela nem passa por aqui
+          // (o serializer de table chama renderInline direto no conteúdo).
+          const isBlankLine = node.content.size === 0 && parent?.type?.name === 'doc';
+          if (isBlankLine) state.write(BLANK_LINE_SENTINEL);
+          else state.renderInline(node);
+          state.closeBlock(node);
+        },
+        parse: {
+          // markdown-it cuida do parse
+        },
+      },
+    };
+  },
+});
+
+// O markdown-it transforma a linha de sentinela em `<p> </p>`, ou seja, um
+// parágrafo com um caractere de texto. Sem desfazer isso, o cursor encostaria
+// num caractere invisível (Backspace apagaria o NBSP antes do parágrafo). Roda
+// depois de cada setContent, fora do histórico para o Ctrl+Z não trazer o NBSP
+// de volta.
+function normalizeSentinelParagraphs(editor: Editor): void {
+  const ranges: Array<{ from: number; to: number }> = [];
+  // Só filhos diretos do doc, espelhando a regra do CustomParagraph: NBSP
+  // dentro de list item ou blockquote é conteúdo do usuário, não sentinela.
+  editor.state.doc.forEach((node, offset) => {
+    if (node.type.name !== 'paragraph') return;
+    if (node.textContent === BLANK_LINE_SENTINEL) {
+      ranges.push({ from: offset + 1, to: offset + 1 + node.content.size });
+    }
+  });
+  if (ranges.length === 0) return;
+
+  const tr = editor.state.tr;
+  // De trás para frente: apagar o último range não desloca os anteriores.
+  for (let i = ranges.length - 1; i >= 0; i--) {
+    tr.delete(ranges[i].from, ranges[i].to);
+  }
+  tr.setMeta('addToHistory', false);
+  editor.view.dispatch(tr);
+}
 
 // ── TipTapEditor ──────────────────────────────────────────────────────────────
 
@@ -746,7 +840,10 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
       });
 
       return [
-        StarterKit.configure({ codeBlock: false, link: false }),
+        // paragraph desligado no StarterKit para o CustomParagraph assumir a
+        // serialização markdown (parágrafo vazio → sentinela NBSP).
+        StarterKit.configure({ codeBlock: false, link: false, paragraph: false }),
+        CustomParagraph,
         CustomCodeBlock,
         Table.configure({ resizable: false }),
         TableRow,
@@ -829,6 +926,13 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
       },
       onCreate({ editor }) {
         editorRef.current = editor;
+        // O `content:` inicial já passou pelo markdown-it: as sentinelas viraram
+        // parágrafos com um NBSP dentro. isExternalUpdate silencia o onUpdate da
+        // transação — o valor serializado seria idêntico ao recebido de qualquer
+        // forma, mas não faz sentido notificar mudança que o usuário não fez.
+        isExternalUpdate.current = true;
+        normalizeSentinelParagraphs(editor);
+        isExternalUpdate.current = false;
         onEditorReadyRef.current?.(editor);
       },
       onUpdate({ editor }) {
@@ -848,6 +952,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
       const anchor = editor.state.selection.anchor;
       isExternalUpdate.current = true;
       editor.commands.setContent(escapeMarkdownLinksForParse(value));
+      normalizeSentinelParagraphs(editor);
       isExternalUpdate.current = false;
       const maxPos = editor.state.doc.content.size;
       editor.commands.setTextSelection(Math.min(anchor, maxPos));
