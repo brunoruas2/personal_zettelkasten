@@ -162,6 +162,7 @@ export function MarkdownCheatsheet({ open, onClose }: Props) {
             <Row syntax="Alt+H" desc="Abre/fecha este guia de formatação (fora do campo de texto)" />
             <Row syntax="Alt+E" desc="Abrir modo de edição (na visualização do zettel)" />
             <Row syntax="Alt+T" desc="Abre/fecha o sumário (na leitura e no editor)" />
+            <Row syntax="Alt+F" desc="Vai para o fim do conteúdo (na leitura e no editor)" />
           </Section>
         </div>
       </div>

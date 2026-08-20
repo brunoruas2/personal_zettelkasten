@@ -16,6 +16,7 @@ import { useKeyboardOffset } from '../../../hooks/useKeyboardOffset';
 import { api } from '../../../lib/api';
 import { buildExtractedZettel, defaultExtractTitle } from '../../../lib/extractSelection';
 import { TocDrawer } from '../../../components/TocDrawer';
+import { ScrollEdgeButton, scrollToEnd } from '../../../components/ScrollEdgeButton';
 import { extractHeadings } from '../../../lib/toc';
 import { useEditorModeScrollSync } from '../../../hooks/useEditorModeScrollSync';
 import type { Zettel } from '@zettelkasten/core';
@@ -216,6 +217,16 @@ export default function NewZettelPage() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [hasHeadings]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.code !== 'KeyF') return;
+      e.preventDefault();
+      scrollToEnd(tocContainerRef.current);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [tocContainerRef]);
+
   return (
     <>
       {/* O recuo do drawer vive no wrapper: no mesmo elemento que tem `mx-auto`
@@ -365,6 +376,15 @@ export default function NewZettelPage() {
         onConfirm={handleConfirmExtract}
         onClose={() => setExtractPending(null)}
       />
+      {/* Acima da toolbar fixa no mobile; no desktop a toolbar não existe.
+          Com o sumário aberto desloca para não ficar embaixo do drawer. */}
+      <div
+        className={`fixed right-4 z-10 bottom-[var(--fab-offset)] lg:bottom-6 ${tocOpen && hasHeadings ? 'lg:right-[17rem]' : ''}`}
+        style={{ '--fab-offset': `calc(1.5rem + ${TOOLBAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))` } as React.CSSProperties}
+      >
+        <ScrollEdgeButton anchorRef={tocContainerRef} revision={`${previewOpen}:${body}`} />
+      </div>
+
       <TocDrawer
         open={tocOpen}
         onClose={toggleToc}

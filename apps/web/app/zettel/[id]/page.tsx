@@ -7,6 +7,7 @@ import { useZettelStore } from '../../../store/useZettelStore';
 import { MarkdownRenderer } from '../../../components/MarkdownRenderer';
 import { OfflineLink } from '../../../components/OfflineLink';
 import { TocDrawer } from '../../../components/TocDrawer';
+import { ScrollEdgeButton, scrollToEnd } from '../../../components/ScrollEdgeButton';
 import { useOfflineRouter } from '../../../hooks/useOfflineRouter';
 import { extractHeadings } from '../../../lib/toc';
 import type { Zettel } from '@zettelkasten/core';
@@ -98,6 +99,16 @@ export default function ZettelDetailPage() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [hasHeadings]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.code !== 'KeyF') return;
+      e.preventDefault();
+      scrollToEnd(contentRef.current);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleLinkPress = async (title: string) => {
     if (!controller) return;
@@ -298,12 +309,15 @@ export default function ZettelDetailPage() {
     </div>
     </div>
 
-      {/* FABs — new + edit, mobile only */}
-      <div className="fixed bottom-6 right-4 z-10 flex gap-3 lg:hidden">
+      {/* Canto inferior direito: rolagem sempre, novo + editar só no mobile.
+          Com o sumário aberto no desktop a fileira desloca para não ficar
+          embaixo do drawer, que é z-50 contra o z-10 daqui. */}
+      <div className={`fixed bottom-6 right-4 z-10 flex gap-3 ${tocOpen && hasHeadings ? 'lg:right-[17rem]' : ''}`}>
+        <ScrollEdgeButton anchorRef={contentRef} revision={zettel.body} />
         <button
           onClick={() => offlineRouter.push('/zettel/new')}
           aria-label="Novo zettel"
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-700 text-white shadow-lg hover:opacity-90 dark:bg-zinc-600"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-700 text-white shadow-lg hover:opacity-90 dark:bg-zinc-600 lg:hidden"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -312,7 +326,7 @@ export default function ZettelDetailPage() {
         <button
           onClick={() => offlineRouter.replace(`/zettel/${id}/edit`)}
           aria-label="Editar zettel"
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg hover:opacity-90"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg hover:opacity-90 lg:hidden"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
