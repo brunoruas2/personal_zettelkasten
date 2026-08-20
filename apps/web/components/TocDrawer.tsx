@@ -19,9 +19,6 @@ interface TocEntry {
   el: HTMLElement;
 }
 
-/** Fração da altura do container de scroll que delimita a faixa do scroll spy. */
-const SPY_BAND = 0.3;
-
 /**
  * `revision` muda a cada tecla, mas a lista quase nunca muda junto. Sem esta
  * comparação, todo caractere digitado geraria um array novo, e o efeito do
@@ -81,7 +78,10 @@ export function TocDrawer({ open, onClose, contentRef, scrollRef, revision }: Pr
       const box = root?.getBoundingClientRect();
       const top = box ? box.top : 0;
       const height = box ? box.height : window.innerHeight;
-      const limit = top + height * SPY_BAND;
+      // Borda inferior do container: o laço para no primeiro heading que ainda
+      // não entrou na tela, então o ativo é o último que entrou — a seção mais
+      // baixa das visíveis, e não a mais alta.
+      const limit = top + height;
 
       let active = 0;
       for (let i = 0; i < entries.length; i++) {
@@ -91,9 +91,10 @@ export function TocDrawer({ open, onClose, contentRef, scrollRef, revision }: Pr
       setActiveIndex(active);
     };
 
+    // Sem recorte: o gatilho precisa disparar sempre que um heading entra ou
+    // sai da tela, não só ao cruzar uma faixa parcial.
     const io = new IntersectionObserver(compute, {
       root: scrollRef?.current ?? null,
-      rootMargin: `0px 0px -${Math.round((1 - SPY_BAND) * 100)}% 0px`,
     });
     entries.forEach((entry) => io.observe(entry.el));
     return () => io.disconnect();
