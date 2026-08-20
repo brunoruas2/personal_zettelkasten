@@ -37,17 +37,6 @@ export function Sidebar() {
   const [orphanOnly, setOrphanOnly] = useState(false);
   const [noTagOnly, setNoTagOnly] = useState(false);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
-  const [sidebarRight, setSidebarRight] = useState(false);
-
-  useEffect(() => {
-    setSidebarRight(localStorage.getItem('zettel_sidebar_pos') === 'right');
-  }, []);
-
-  const toggleSidebarPos = () => {
-    const next = !sidebarRight;
-    setSidebarRight(next);
-    localStorage.setItem('zettel_sidebar_pos', next ? 'right' : 'left');
-  };
   const router = useRouter();
   const offlineRouter = useOfflineRouter();
   const pathname = usePathname();
@@ -92,27 +81,12 @@ export function Sidebar() {
   if (pathname === '/login') return null;
 
   return (
-    <aside className={`app-sidebar hidden lg:flex flex-col w-80 shrink-0 h-screen bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 ${sidebarRight ? 'lg:order-last border-l' : 'border-r'}`}>
+    <aside className="app-sidebar hidden lg:flex flex-col w-80 shrink-0 h-screen bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800">
       {/* Header */}
       <div className="px-4 pt-5 pb-3 shrink-0">
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Zettelkasten</h1>
           <div className="flex items-center gap-0.5">
-            <button
-              onClick={toggleSidebarPos}
-              className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 transition-colors"
-              title={sidebarRight ? 'Mover sidebar para esquerda' : 'Mover sidebar para direita'}
-            >
-              {sidebarRight ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/>
-                </svg>
-              )}
-            </button>
             <Link
               href="/"
               className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 transition-colors"

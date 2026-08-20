@@ -24,6 +24,7 @@ import langC from 'highlight.js/lib/languages/c';
 import langCsharp from 'highlight.js/lib/languages/csharp';
 import langLua from 'highlight.js/lib/languages/lua';
 import { INLINE_RE } from '../lib/markdownInline';
+import { headingIdsByLine } from '../lib/toc';
 
 hljs.registerLanguage('javascript', langJavascript);
 hljs.registerLanguage('typescript', langTypescript);
@@ -341,6 +342,9 @@ function renderInline(
 }
 
 export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, onBodyChange }: Props) {
+  // Âncoras da Table of Contents. O mapa vem de `lib/toc.ts`, a mesma fonte que
+  // alimenta o TocDrawer, para que id da lista e id do DOM nunca divirjam.
+  const headingIds = React.useMemo(() => headingIdsByLine(body), [body]);
   const lines = body.split('\n');
   const lineStartOffsets: number[] = [];
   {
@@ -411,15 +415,15 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
     const h3 = line.match(/^### (.+)/);
 
     if (h1) {
-      blocks.push(<h1 key={`h${i}`} className="mb-1 mt-2 text-2xl font-extrabold text-zinc-900 dark:text-zinc-100">{h1[1]}</h1>);
+      blocks.push(<h1 key={`h${i}`} id={headingIds.get(i)} className="mb-1 mt-2 scroll-mt-6 text-2xl font-extrabold text-zinc-900 dark:text-zinc-100">{h1[1]}</h1>);
       i++; continue;
     }
     if (h2) {
-      blocks.push(<h2 key={`h${i}`} className="mb-1 mt-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">{h2[1]}</h2>);
+      blocks.push(<h2 key={`h${i}`} id={headingIds.get(i)} className="mb-1 mt-2 scroll-mt-6 text-xl font-bold text-zinc-900 dark:text-zinc-100">{h2[1]}</h2>);
       i++; continue;
     }
     if (h3) {
-      blocks.push(<h3 key={`h${i}`} className="mb-0.5 mt-1.5 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{h3[1]}</h3>);
+      blocks.push(<h3 key={`h${i}`} id={headingIds.get(i)} className="mb-0.5 mt-1.5 scroll-mt-6 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{h3[1]}</h3>);
       i++; continue;
     }
 

@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useZettelStore } from '../../../store/useZettelStore';
 import { MarkdownRenderer } from '../../../components/MarkdownRenderer';
 import { OfflineLink } from '../../../components/OfflineLink';
+import { TocDrawer } from '../../../components/TocDrawer';
 import { useOfflineRouter } from '../../../hooks/useOfflineRouter';
+import { extractHeadings } from '../../../lib/toc';
 import type { Zettel } from '@zettelkasten/core';
 
 export default function ZettelDetailPage() {
@@ -17,6 +19,25 @@ export default function ZettelDetailPage() {
   const [zettel, setZettel] = useState<Zettel | null>(null);
   const [backlinks, setBacklinks] = useState<Zettel[]>([]);
   const [readFontSize, setReadFontSize] = useState(16);
+  const [tocOpen, setTocOpen] = useState(false);
+
+  const hasHeadings = useMemo(
+    () => extractHeadings(zettel?.body ?? '').length > 0,
+    [zettel?.body],
+  );
+
+  // Lido só depois da montagem para não divergir do HTML do servidor.
+  useEffect(() => {
+    setTocOpen(localStorage.getItem('zettel_toc_open') === '1');
+  }, []);
+
+  const toggleToc = () => {
+    setTocOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem('zettel_toc_open', next ? '1' : '0');
+      return next;
+    });
+  };
 
   useEffect(() => {
     const saved = parseInt(localStorage.getItem('zettel_read_font_size') ?? '', 10);
@@ -105,7 +126,7 @@ export default function ZettelDetailPage() {
 
   return (
     <>
-    <div className="mx-auto max-w-2xl px-4 pb-20 pt-4 lg:max-w-4xl lg:pt-8">
+    <div className={`mx-auto max-w-2xl px-4 pb-20 pt-4 lg:max-w-4xl lg:pt-8 ${tocOpen && hasHeadings ? 'lg:mr-64' : ''}`}>
       {/* Nav */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3 lg:hidden">
@@ -127,6 +148,19 @@ export default function ZettelDetailPage() {
         </div>
         <div className="hidden lg:block" />
         <div className="flex items-center gap-3">
+          {hasHeadings && (
+            <button
+              onClick={toggleToc}
+              className={tocOpen ? 'text-brand' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'}
+              title="Sumário"
+              aria-expanded={tocOpen}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="9" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="9" y1="18" x2="21" y2="18" />
+                <circle cx="4" cy="6" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="4" cy="18" r="1" />
+              </svg>
+            </button>
+          )}
           <button
             onClick={() => offlineRouter.replace(`/zettel/${id}/edit`)}
             className="hidden lg:block text-brand hover:opacity-80"
@@ -263,6 +297,8 @@ export default function ZettelDetailPage() {
           </svg>
         </button>
       </div>
+
+      <TocDrawer open={tocOpen} body={zettel.body} onClose={toggleToc} />
     </>
   );
 }
