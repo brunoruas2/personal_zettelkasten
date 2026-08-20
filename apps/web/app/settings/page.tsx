@@ -10,7 +10,7 @@ import { useZettelStore } from '../../store/useZettelStore';
 import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 import { TagInput } from '../../components/TagInput';
 import { CLUSTER_COLORS, type NodeColorRule } from '../../lib/graphColors';
-import { isPrefetchEnabled, setPrefetchEnabled, prefetchImages, imageStore } from '../../lib/imageSync';
+import { isPrefetchEnabled, setPrefetchEnabled, prefetchImages, imageStore, countRejectedImages } from '../../lib/imageSync';
 
 const CHUNK = 50
 
@@ -71,6 +71,7 @@ export default function SettingsPage() {
   const [excludedTagsSaved, setExcludedTagsSaved] = useState(false)
   const zettels = useZettelStore((s) => s.zettels)
   const [imageUsage, setImageUsage] = useState<ImageUsage>({ status: 'loading' })
+  const [rejectedImages, setRejectedImages] = useState(0)
 
   // Node color rules — synced to server
   const graphNodeColors = useZettelStore((s) => s.graphNodeColors)
@@ -126,6 +127,8 @@ export default function SettingsPage() {
         }
       }
     }
+
+    void countRejectedImages().then((n) => { if (!cancelled) setRejectedImages(n) })
 
     api.get('/api/images/manifest')
       .then((r) => (r.ok ? r.json() : null))
@@ -617,6 +620,13 @@ export default function SettingsPage() {
               {imageUsage.status === 'ready' && imageUsage.local && (
                 <p className="pb-1.5 text-xs text-zinc-400">
                   Sem conexão com o servidor — mostrando apenas as imagens guardadas neste aparelho.
+                </p>
+              )}
+
+              {rejectedImages > 0 && (
+                <p className="pb-1.5 text-xs text-amber-600 dark:text-amber-400">
+                  {rejectedImages} {rejectedImages === 1 ? 'imagem não pôde ser enviada' : 'imagens não puderam ser enviadas'} ao
+                  servidor — {rejectedImages === 1 ? 'ela existe' : 'elas existem'} apenas neste aparelho e não {rejectedImages === 1 ? 'entra' : 'entram'} no backup.
                 </p>
               )}
 

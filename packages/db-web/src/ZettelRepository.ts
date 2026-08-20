@@ -17,7 +17,9 @@ export interface ImageRecord {
   height: number;
   byteLen: number;
   createdAt: number;
-  syncState: 'pending' | 'synced';
+  // `rejected` é terminal: o servidor recusou de forma permanente (quota,
+  // tamanho, formato) e re-tentar não muda o resultado.
+  syncState: 'pending' | 'synced' | 'rejected';
 }
 
 class ZettelDb extends Dexie {
@@ -173,6 +175,14 @@ export class ImageStore {
 
   async markSynced(id: string): Promise<void> {
     await db.images.update(id, { syncState: 'synced' });
+  }
+
+  async markRejected(id: string): Promise<void> {
+    await db.images.update(id, { syncState: 'rejected' });
+  }
+
+  async countRejected(): Promise<number> {
+    return db.images.where('syncState').equals('rejected').count();
   }
 
   async usedBytes(): Promise<number> {

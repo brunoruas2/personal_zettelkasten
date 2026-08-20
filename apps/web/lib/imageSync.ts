@@ -7,6 +7,45 @@ export const imageStore = new ImageStore()
 const PREFETCH_KEY = 'zettel_image_prefetch'
 const PREFETCH_BATCH = 3
 
+export type ImageUploadCause = 'quota' | 'too_large' | 'invalid' | 'unknown'
+
+const UPLOAD_ERROR_MESSAGES: Record<ImageUploadCause, string> = {
+  quota: 'Sua cota de imagens está esgotada. Apague imagens antigas ou peça mais espaço antes de enviar esta.',
+  too_large: 'Esta imagem passa de 512 KB mesmo depois da compressão e não pôde ser enviada.',
+  invalid: 'O servidor não aceitou este arquivo de imagem.',
+  unknown: 'Não foi possível enviar a imagem para o servidor.',
+}
+
+/** Recusa permanente do servidor: re-tentar não muda o resultado. */
+export class ImageUploadError extends Error {
+  readonly cause: ImageUploadCause
+
+  constructor(cause: ImageUploadCause) {
+    super(UPLOAD_ERROR_MESSAGES[cause])
+    this.name = 'ImageUploadError'
+    this.cause = cause
+  }
+}
+
+/**
+ * A causa sai do corpo da resposta, mas quem decide se vale re-tentar é a
+ * família do status — casar string de backend para decisão de controle quebra
+ * silenciosamente quando alguém reescreve um `jsonError`.
+ */
+async function uploadCause(res: Response): Promise<ImageUploadCause> {
+  let error = ''
+  try {
+    const body = await res.json()
+    error = typeof body?.error === 'string' ? body.error : ''
+  } catch {
+    return 'unknown'
+  }
+  if (error.includes('quota')) return 'quota'
+  if (error.includes('512 KB')) return 'too_large'
+  if (error.includes('format') || error.includes('hash') || error.includes('empty')) return 'invalid'
+  return 'unknown'
+}
+
 export interface ImageManifestEntry {
   id: string
   mime: string
@@ -19,6 +58,10 @@ export interface ImageManifestEntry {
 /**
  * Comprime e grava localmente, já disparando o upload.
  * O registro nasce `pending`; só vira `synced` quando o servidor confirma.
+ *
+ * Lança `ImageUploadError` se o servidor recusar de forma permanente — o
+ * chamador não deve inserir a referência `zk:img/` no corpo nesse caso, ou o
+ * zettel apontaria para bytes que só existem neste aparelho.
  */
 export async function importImage(file: File): Promise<CompressedImage> {
   const compressed = await compressImage(file)
@@ -38,21 +81,35 @@ export async function importImage(file: File): Promise<CompressedImage> {
   return compressed
 }
 
-/** Envia um pendente. Silencioso em falha — fica na fila para a próxima rodada. */
+/**
+ * Envia um pendente. Falha transitória (rede, 5xx) é silenciosa e o registro
+ * fica na fila; recusa permanente (4xx) marca `rejected` e lança.
+ *
+ * 401 fica de fora da classificação: `api.ts` já o converte em `AuthError`
+ * depois de tentar o refresh, e depois do login a mesma imagem sobe normalmente
+ * — marcá-la `rejected` seria perda de dado.
+ */
 async function uploadOne(id: string): Promise<boolean> {
   const record = await imageStore.get(id)
-  if (!record || record.syncState === 'synced') return true
+  if (!record || record.syncState === 'synced' || record.syncState === 'rejected') return true
 
   try {
     const res = await api.postBinary(`/api/images/${id}`, record.blob, record.mime, {
       'X-Image-Width': String(record.width),
       'X-Image-Height': String(record.height),
     })
-    if (!res.ok) return false
+    if (!res.ok) {
+      if (res.status >= 400 && res.status < 500) {
+        const cause = await uploadCause(res)
+        await imageStore.markRejected(id)
+        throw new ImageUploadError(cause)
+      }
+      return false
+    }
     await imageStore.markSynced(id)
     return true
   } catch (err) {
-    if (err instanceof AuthError) throw err
+    if (err instanceof AuthError || err instanceof ImageUploadError) throw err
     return false
   }
 }
@@ -71,9 +128,21 @@ export async function uploadPending(): Promise<void> {
   for (const record of pending) {
     try {
       await uploadOne(record.id)
-    } catch {
-      return // AuthError: sessão morreu, não adianta insistir
+    } catch (err) {
+      // Recusa permanente já foi marcada `rejected`; segue a fila. Só AuthError
+      // interrompe — sem sessão, nenhuma das próximas vai passar.
+      if (err instanceof ImageUploadError) continue
+      return
     }
+  }
+}
+
+/** Quantas imagens o servidor recusou de vez. Consultado por /settings. */
+export async function countRejectedImages(): Promise<number> {
+  try {
+    return await imageStore.countRejected()
+  } catch {
+    return 0
   }
 }
 
