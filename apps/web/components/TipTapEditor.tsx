@@ -59,7 +59,12 @@ export function escapeLeadingBlock(editor: Editor): boolean {
 }
 
 export interface TipTapEditorHandle {
-  focus: () => void;
+  /**
+   * Sem argumento, foca no início do documento — é o que o Enter no título
+   * espera. Com `opts`, mantém a seleção onde está e repassa as opções ao
+   * comando, para focar sem arrastar a rolagem junto.
+   */
+  focus: (opts?: { scrollIntoView?: boolean }) => void;
   focusEnd: () => void;
   insertCodeBlock: (language: string, template?: string) => void;
   /** Abre o seletor de arquivos de imagem (usado pela toolbar mobile). */
@@ -959,7 +964,10 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
     }, [value, editor]);
 
     useImperativeHandle(ref, () => ({
-      focus() { editor?.commands.focus('start'); },
+      focus(opts?: { scrollIntoView?: boolean }) {
+        if (opts) editor?.commands.focus(undefined, opts);
+        else editor?.commands.focus('start');
+      },
       focusEnd() { editor?.commands.focus('end'); },
       insertCodeBlock(language: string, template = '') {
         if (!editor) return;

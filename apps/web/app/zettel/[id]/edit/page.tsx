@@ -17,13 +17,9 @@ import { useKeyboardOffset } from '../../../../hooks/useKeyboardOffset';
 import { buildExtractedZettel, defaultExtractTitle } from '../../../../lib/extractSelection';
 import { TocDrawer } from '../../../../components/TocDrawer';
 import { extractHeadings } from '../../../../lib/toc';
+import { useEditorModeScrollSync } from '../../../../hooks/useEditorModeScrollSync';
 import type { Zettel } from '@zettelkasten/core';
 
-function getCursorFraction(text: string, cursor: number): number {
-  const lines = text.split('\n');
-  if (lines.length <= 1) return 0;
-  return (text.slice(0, cursor).split('\n').length - 1) / (lines.length - 1);
-}
 
 export default function EditZettelPage() {
   const { id } = useParams<{ id: string }>();
@@ -63,11 +59,17 @@ export default function EditZettelPage() {
   // sumário precisa apontar para o container do modo visível — a troca de
   // identidade do ref é o que faz o TocDrawer reconsultar.
   const tocContainerRef = previewOpen ? previewRef : editorScrollRef;
-  const savedCursorRef = useRef(0);
+
   const originalValuesRef = useRef<{ title: string; body: string; tags: string[] } | null>(null);
   const isDirtyRef = useRef(false);
   const { toolbarRef } = useKeyboardOffset();
   const editorRef = useRef<TipTapEditorHandle>(null);
+  const { captureAnchor } = useEditorModeScrollSync({
+    previewOpen,
+    previewRef,
+    editorScrollRef,
+    editorRef,
+  });
   // Imagens ainda comprimindo ou com upload em voo. Salvar com pendências
   // gravaria um body referenciando blob que o servidor não tem.
   const [pendingImages, setPendingImages] = useState(0);
@@ -122,11 +124,14 @@ export default function EditZettelPage() {
   };
 
   const switchToPreview = () => {
-    savedCursorRef.current = 0;
+    captureAnchor();
     setPreviewOpen(true);
   };
 
-  const switchToEdit = () => setPreviewOpen(false);
+  const switchToEdit = () => {
+    captureAnchor();
+    setPreviewOpen(false);
+  };
 
   const editorState = useEditorState({
     editor,
@@ -152,53 +157,6 @@ export default function EditZettelPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewOpen]);
 
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    if (previewOpen) {
-      const doScroll = () => {
-        if (!previewRef.current || !body.trim()) return;
-        const fraction = getCursorFraction(body, savedCursorRef.current);
-        const el = previewRef.current;
-        el.scrollTop = Math.max(0, el.scrollHeight * fraction - el.clientHeight * 0.3);
-      };
-
-      let done = false;
-      let settleTimer: ReturnType<typeof setTimeout>;
-      const vv = window.visualViewport;
-
-      const onVVResize = () => {
-        clearTimeout(settleTimer);
-        settleTimer = setTimeout(() => {
-          if (done) return;
-          done = true;
-          vv?.removeEventListener('resize', onVVResize);
-          clearTimeout(timer);
-          doScroll();
-        }, 100);
-      };
-
-      if (vv) vv.addEventListener('resize', onVVResize);
-
-      timer = setTimeout(() => {
-        if (done) return;
-        done = true;
-        vv?.removeEventListener('resize', onVVResize);
-        clearTimeout(settleTimer);
-        doScroll();
-      }, 500);
-
-      return () => {
-        done = true;
-        vv?.removeEventListener('resize', onVVResize);
-        clearTimeout(timer);
-        clearTimeout(settleTimer);
-      };
-    } else {
-      timer = setTimeout(() => editorRef.current?.focus(), 50);
-    }
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewOpen]);
 
   const handleLinkPress = async (linkTitle: string) => {
     if (!controller) return;
