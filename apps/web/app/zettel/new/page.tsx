@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { type Editor, useEditorState } from '@tiptap/react';
 import { useOfflineRouter } from '../../../hooks/useOfflineRouter';
 import { useZettelStore } from '../../../store/useZettelStore';
@@ -15,6 +15,8 @@ import { ChordKeypad, KEYPAD_HEIGHT } from '../../../components/ChordKeypad';
 import { useKeyboardOffset } from '../../../hooks/useKeyboardOffset';
 import { api } from '../../../lib/api';
 import { buildExtractedZettel, defaultExtractTitle } from '../../../lib/extractSelection';
+import { TocDrawer } from '../../../components/TocDrawer';
+import { extractHeadings } from '../../../lib/toc';
 import type { Zettel } from '@zettelkasten/core';
 
 function getCursorFraction(text: string, cursor: number): number {
@@ -38,6 +40,29 @@ export default function NewZettelPage() {
   const [chordKeypadOpen, setChordKeypadOpen] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
+  const [tocOpen, setTocOpen] = useState(false);
+
+  const hasHeadings = useMemo(() => extractHeadings(body).length > 0, [body]);
+
+  // Mesma chave da leitura: ligar o sumário aqui deixa ligado lá. Lida só
+  // depois da montagem para não divergir do HTML do servidor.
+  useEffect(() => {
+    setTocOpen(localStorage.getItem('zettel_toc_open') === '1');
+  }, []);
+
+  const toggleToc = () => {
+    setTocOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem('zettel_toc_open', next ? '1' : '0');
+      return next;
+    });
+  };
+
+  // O preview e o editor ficam os dois montados (só `hidden` alterna), então o
+  // sumário precisa apontar para o container do modo visível — a troca de
+  // identidade do ref é o que faz o TocDrawer reconsultar.
+  const tocContainerRef = previewOpen ? previewRef : editorScrollRef;
   const savedCursorRef = useRef(0);
   const originalBodyRef = useRef('');
   const isDirtyRef = useRef(false);
@@ -218,6 +243,11 @@ export default function NewZettelPage() {
 
   return (
     <>
+      {/* O recuo do drawer vive no wrapper: no mesmo elemento que tem `mx-auto`
+          ele fixaria a margem direita e a coluna encostaria no drawer em vez de
+          centralizar. O `lg:h-full` precisa ser repetido aqui para a cadeia de
+          altura continuar chegando ao container. */}
+      <div className={`h-[100dvh] lg:h-full ${tocOpen && hasHeadings ? 'lg:pr-64' : ''}`}>
       <div className="mx-auto max-w-2xl px-4 pt-4 flex flex-col h-[100dvh] lg:max-w-4xl lg:pt-6 lg:pb-4 lg:h-full">
         {/* Nav */}
         <div className="mb-5 flex items-center justify-between">
@@ -225,7 +255,21 @@ export default function NewZettelPage() {
             Cancelar
           </button>
           <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 lg:hidden">Novo Zettel</span>
-          <div className="hidden lg:flex rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+          <div className="hidden lg:flex items-center gap-2">
+          {hasHeadings && (
+            <button
+              onClick={toggleToc}
+              className={tocOpen ? 'text-brand' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'}
+              title="Sumário"
+              aria-expanded={tocOpen}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="9" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="9" y1="18" x2="21" y2="18" />
+                <circle cx="4" cy="6" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="4" cy="18" r="1" />
+              </svg>
+            </button>
+          )}
+          <div className="flex rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
             <button
               onClick={switchToEdit}
               className={`px-3 py-1.5 transition-colors ${!previewOpen ? 'bg-brand text-white' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}
@@ -238,6 +282,7 @@ export default function NewZettelPage() {
             >
               Preview
             </button>
+          </div>
           </div>
           <button
             onClick={handleSave}
@@ -272,6 +317,7 @@ export default function NewZettelPage() {
 
         <div className={`relative flex-1 min-h-0 flex flex-col ${previewOpen ? 'hidden' : ''}`}>
           <div
+            ref={editorScrollRef}
             className="flex-1 min-h-0 overflow-y-auto"
             style={{ '--input-font-size': `${editorFontSize}px` } as React.CSSProperties}
           >
@@ -304,6 +350,7 @@ export default function NewZettelPage() {
         )}
         <div aria-hidden className="shrink-0 lg:hidden" style={{ height: `calc(${showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))` }} />
       </div>
+      </div>
 
       {showChordKeypad ? (
         <ChordKeypad
@@ -324,6 +371,9 @@ export default function NewZettelPage() {
           toolbarRef={toolbarRef}
           chordKeypadOpen={chordKeypadOpen}
           onToggleChordKeypad={() => setChordKeypadOpen((v) => !v)}
+          hasHeadings={hasHeadings}
+          tocOpen={tocOpen}
+          onToggleToc={toggleToc}
         />
       )}
 
@@ -339,6 +389,13 @@ export default function NewZettelPage() {
         defaultTitle={extractPending ? defaultExtractTitle(extractPending.selectedText) : ''}
         onConfirm={handleConfirmExtract}
         onClose={() => setExtractPending(null)}
+      />
+      <TocDrawer
+        open={tocOpen}
+        onClose={toggleToc}
+        contentRef={tocContainerRef}
+        scrollRef={tocContainerRef}
+        revision={body}
       />
     </>
   );

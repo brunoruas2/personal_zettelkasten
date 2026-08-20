@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useZettelStore } from '../../../store/useZettelStore';
@@ -20,6 +20,7 @@ export default function ZettelDetailPage() {
   const [backlinks, setBacklinks] = useState<Zettel[]>([]);
   const [readFontSize, setReadFontSize] = useState(16);
   const [tocOpen, setTocOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const hasHeadings = useMemo(
     () => extractHeadings(zettel?.body ?? '').length > 0,
@@ -126,7 +127,11 @@ export default function ZettelDetailPage() {
 
   return (
     <>
-    <div className={`mx-auto max-w-2xl px-4 pb-20 pt-4 lg:max-w-4xl lg:pt-8 ${tocOpen && hasHeadings ? 'lg:mr-64' : ''}`}>
+    {/* O recuo do drawer vive no wrapper: aplicado no mesmo elemento que tem
+        `mx-auto`, ele fixaria a margem direita e só a esquerda seguiria `auto`,
+        encostando a coluna no drawer em vez de centralizar. */}
+    <div className={tocOpen && hasHeadings ? 'lg:pr-64' : ''}>
+    <div className="mx-auto max-w-2xl px-4 pb-20 pt-4 lg:max-w-4xl lg:pt-8">
       {/* Nav */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3 lg:hidden">
@@ -227,7 +232,7 @@ export default function ZettelDetailPage() {
         <h1 className="flex-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">{zettel.title}</h1>
       </div>
 
-      <div>
+      <div ref={contentRef}>
         <MarkdownRenderer body={zettel.body} onLinkPress={handleLinkPress} onBodyChange={handleChordsBodyChange} />
       </div>
 
@@ -274,6 +279,7 @@ export default function ZettelDetailPage() {
         </p>
       )}
     </div>
+    </div>
 
       {/* FABs — new + edit, mobile only */}
       <div className="fixed bottom-6 right-4 z-10 flex gap-3 lg:hidden">
@@ -298,7 +304,9 @@ export default function ZettelDetailPage() {
         </button>
       </div>
 
-      <TocDrawer open={tocOpen} body={zettel.body} onClose={toggleToc} />
+      {/* scrollRef nulo: no desktop quem rola é o <main>, que é h-screen, então
+          a faixa do spy medida do viewport dá o mesmo resultado. */}
+      <TocDrawer open={tocOpen} onClose={toggleToc} contentRef={contentRef} revision={zettel.body} />
     </>
   );
 }

@@ -1,20 +1,41 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { extractHeadings } from '../lib/toc';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
 interface Props {
   open: boolean;
-  body: string;
   onClose: () => void;
+  /** Container onde procurar os headings — o do modo atualmente visível. */
+  contentRef: RefObject<HTMLElement | null>;
+  /** Elemento que rola. `null` quando quem rola é o documento. */
+  scrollRef?: RefObject<HTMLElement | null> | null;
+  /** Muda quando o conteúdo muda; só serve para disparar a re-consulta. */
+  revision: string;
 }
 
-/** Fração da altura do viewport que delimita a faixa de detecção do scroll spy. */
+interface TocEntry {
+  text: string;
+  level: number;
+  el: HTMLElement;
+}
+
+/** Fração da altura do container de scroll que delimita a faixa do scroll spy. */
 const SPY_BAND = 0.3;
 
-export function TocDrawer({ open, body, onClose }: Props) {
-  const items = useMemo(() => extractHeadings(body), [body]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+/**
+ * `revision` muda a cada tecla, mas a lista quase nunca muda junto. Sem esta
+ * comparação, todo caractere digitado geraria um array novo, e o efeito do
+ * spy recriaria o IntersectionObserver e zeraria o destaque.
+ */
+function sameEntries(a: TocEntry[], b: TocEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((entry, i) => entry.el === b[i].el && entry.text === b[i].text && entry.level === b[i].level);
+}
+
+export function TocDrawer({ open, onClose, contentRef, scrollRef, revision }: Props) {
+  const [entries, setEntries] = useState<TocEntry[]>([]);
+  const entriesRef = useRef<TocEntry[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
@@ -25,35 +46,58 @@ export function TocDrawer({ open, body, onClose }: Props) {
     return () => mq.removeEventListener('change', sync);
   }, []);
 
-  // Scroll spy. O `<main>` do desktop é `h-screen`, então sua caixa visível
-  // coincide com o viewport — um único observer com `root: null` serve aos dois
-  // breakpoints. O observer é só o gatilho; o item ativo é recalculado do DOM
-  // para ficar determinístico quando várias seções curtas entram na faixa no
-  // mesmo frame.
+  // Itens e alvos saem da MESMA consulta, no container do modo ativo. Nas
+  // páginas de editor o preview e o editor ficam os dois montados (só a classe
+  // `hidden` alterna), então resolver por `document.getElementById` acharia os
+  // headings do container escondido — nó em display:none não rola e tem rect
+  // zerado. `contentRef` troca de identidade quando o modo troca, o que faz
+  // este efeito rodar de novo.
   useEffect(() => {
-    if (!open || items.length === 0) return;
+    if (!open) return;
+    const root = contentRef.current;
+    const found = root
+      ? Array.from(root.querySelectorAll<HTMLElement>('h1, h2, h3')).map((el) => ({
+          text: (el.textContent ?? '').trim(),
+          level: Number(el.tagName.slice(1)),
+          el,
+        }))
+      : [];
+    if (sameEntries(entriesRef.current, found)) return;
+    entriesRef.current = found;
+    setEntries(found);
+    setActiveIndex(0);
+  }, [open, revision, contentRef]);
 
-    const els = items
-      .map((item) => document.getElementById(item.id))
-      .filter((el): el is HTMLElement => el !== null);
-    if (els.length === 0) return;
+  // Scroll spy. O observer é só o gatilho barato; o item ativo é recalculado
+  // dos rects para ficar determinístico quando várias seções curtas entram na
+  // faixa no mesmo frame. A faixa é medida do topo do container de scroll — na
+  // leitura ele preenche o viewport, no editor não (nav e título acima,
+  // toolbar abaixo).
+  useEffect(() => {
+    if (!open || entries.length === 0) return;
 
     const compute = () => {
-      const limit = window.innerHeight * SPY_BAND;
-      let active = els[0].id;
-      for (const el of els) {
-        if (el.getBoundingClientRect().top > limit) break;
-        active = el.id;
+      const root = scrollRef?.current ?? null;
+      const box = root?.getBoundingClientRect();
+      const top = box ? box.top : 0;
+      const height = box ? box.height : window.innerHeight;
+      const limit = top + height * SPY_BAND;
+
+      let active = 0;
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].el.getBoundingClientRect().top > limit) break;
+        active = i;
       }
-      setActiveId(active);
+      setActiveIndex(active);
     };
 
     const io = new IntersectionObserver(compute, {
+      root: scrollRef?.current ?? null,
       rootMargin: `0px 0px -${Math.round((1 - SPY_BAND) * 100)}% 0px`,
     });
-    els.forEach((el) => io.observe(el));
+    entries.forEach((entry) => io.observe(entry.el));
     return () => io.disconnect();
-  }, [open, items]);
+  }, [open, entries, scrollRef]);
 
   // Trava de scroll do fundo, só no overlay mobile. iOS ignora overflow:hidden
   // no body — o jeito confiável é position:fixed com o offset salvo (mesmo
@@ -81,24 +125,27 @@ export function TocDrawer({ open, body, onClose }: Props) {
     return () => document.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
-  if (!open || items.length === 0) return null;
+  const jump = useCallback(
+    (index: number) => {
+      const el = entries[index]?.el;
+      if (!el) return;
+      setActiveIndex(index);
 
-  const jump = (id: string) => {
-    const scroll = () =>
-      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const scroll = () => el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (isDesktop) {
+        scroll();
+        return;
+      }
+      // No mobile o drawer fecha primeiro. A limpeza da trava de scroll faz um
+      // `window.scrollTo` de volta ao offset salvo, então o salto precisa vir
+      // depois dela para não ser desfeito.
+      onClose();
+      setTimeout(scroll, 80);
+    },
+    [entries, isDesktop, onClose],
+  );
 
-    if (isDesktop) {
-      setActiveId(id);
-      scroll();
-      return;
-    }
-    // No mobile o drawer fecha primeiro. A limpeza da trava de scroll faz um
-    // `window.scrollTo` de volta ao offset salvo, então o salto precisa vir
-    // depois dela para não ser desfeito.
-    setActiveId(id);
-    onClose();
-    setTimeout(scroll, 80);
-  };
+  if (!open || entries.length === 0) return null;
 
   return (
     <>
@@ -122,20 +169,20 @@ export function TocDrawer({ open, body, onClose }: Props) {
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2 py-3">
-          {items.map((item) => {
-            const active = item.id === activeId;
+          {entries.map((entry, index) => {
+            const active = index === activeIndex;
             return (
               <button
-                key={item.id}
-                onClick={() => jump(item.id)}
+                key={index}
+                onClick={() => jump(index)}
                 className={`block w-full rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
                   active
                     ? 'bg-brand/10 font-semibold text-brand dark:text-brand-light'
                     : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
                 }`}
-                style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }}
+                style={{ paddingLeft: `${(entry.level - 1) * 12 + 8}px` }}
               >
-                <span className="line-clamp-2">{item.text}</span>
+                <span className="line-clamp-2">{entry.text}</span>
               </button>
             );
           })}

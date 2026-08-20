@@ -18,6 +18,10 @@ interface Props {
   toolbarRef: RefObject<HTMLDivElement | null>;
   chordKeypadOpen: boolean;
   onToggleChordKeypad: () => void;
+  /** Falso quando o texto não tem heading algum — o botão de sumário some. */
+  hasHeadings: boolean;
+  tocOpen: boolean;
+  onToggleToc: () => void;
 }
 
 const NoteIcon = () => (
@@ -32,6 +36,13 @@ const EyeIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
     <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
     <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+const TocIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+    <line x1="9" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="9" y1="18" x2="21" y2="18" />
+    <circle cx="4" cy="6" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="4" cy="18" r="1" />
   </svg>
 );
 
@@ -51,6 +62,9 @@ export function MobileFormattingToolbar({
   toolbarRef,
   chordKeypadOpen,
   onToggleChordKeypad,
+  hasHeadings,
+  tocOpen,
+  onToggleToc,
 }: Props) {
   const state = useEditorState({
     editor,
@@ -106,7 +120,17 @@ export function MobileFormattingToolbar({
   if (previewOpen) {
     return (
       <div ref={toolbarRef} className={wrapClass} style={wrapStyle}>
-        <div className="flex flex-1 items-center justify-end px-3">
+        <div className="flex flex-1 items-center justify-end gap-1 px-3">
+          {hasHeadings && (
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onToggleToc}
+              aria-label="Sumário"
+              className={`${base} ${tocOpen ? active : inactive}`}
+            >
+              <TocIcon />
+            </button>
+          )}
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={onTogglePreview}
@@ -264,6 +288,16 @@ export function MobileFormattingToolbar({
             className={`${base} ${inactive} text-brand text-lg leading-none`}
           >
             ↑¶
+          </button>
+        )}
+        {hasHeadings && (
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onToggleToc}
+            aria-label="Sumário"
+            className={`${base} ${inactive} ${tocOpen ? 'text-brand' : ''}`}
+          >
+            <TocIcon />
           </button>
         )}
         <button
