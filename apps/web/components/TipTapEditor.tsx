@@ -241,33 +241,83 @@ const SlashCommandPopup = forwardRef<SlashPopupHandle, SlashPopupState>(
   },
 );
 
-// tiptap-markdown escapes [ as \[ when serializing; this restores [[wiki links]]
-function normalizeWikiLinks(md: string): string {
-  return md.replace(/\\\[\\\[([^\n]*?)\\\]\\\]/g, '[[$1]]');
-}
-
 // ProseMirror serializes bare URLs as <url> (CommonMark autolink); strip the angle brackets
 function normalizeAutolinks(md: string): string {
   return md.replace(/<(https?:\/\/[^>\s]+)>/g, '$1');
 }
 
-// tiptap-markdown escapes literal * as \* when serializing; this restores it
-function normalizeAsterisks(md: string): string {
-  return md.replace(/\\\*/g, '*');
+// prosemirror-markdown escapa ` * \ ~ [ ] _ em todo texto de parágrafo (esc(), to_markdown).
+// O MarkdownRenderer não desfaz escape nenhum, então o backslash aparece na tela. Aqui
+// desfazemos os quatro que o INLINE_RE trata como sintaxe. Fora do conjunto de propósito:
+// ` (desescapar crase solta abriria um code span onde o usuário queria crase literal),
+// _ (o esc() já pula _ intra-palavra e o renderer não trata _ como ênfase) e \\ (é o
+// mecanismo do escape, não o sintoma). Substitui três normalizadores pontuais anteriores —
+// \[\[wiki\]\], \[label\](url) e \* — que eram casos particulares desta mesma regra.
+const ESCAPED_MARKER_RE = /\\([[\]*~])/g;
+
+// Dentro de code fence e code span o serializador não escapa nada, então um backslash ali
+// foi escrito pelo usuário: `/\[x\]/` num bloco js é um regex, e reescrevê-lo para `/[x]/`
+// mudaria o código sem quebrar nada na hora. Por isso a varredura pula esses contextos.
+function unescapeInlineMarkers(md: string): string {
+  let inFence = false;
+  return md
+    .split('\n')
+    .map((line) => {
+      // ^\s* cobre fence indentado como conteúdo de item de lista
+      if (/^\s*(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+      return unescapeOutsideCodeSpans(line);
+    })
+    .join('\n');
 }
 
-// tiptap-markdown escapes [label](url) typed as literal text (no Link mark) as \[label\](url) or \[label\]\(url\); this restores it
-function normalizeMarkdownLinks(md: string): string {
-  return md.replace(/\\\[([^\]\n]+)\\\]\\?\(([^)\n]+?)\\?\)/g, '[$1]($2)');
+// Percorre a linha alternando entre texto e code spans delimitados por crases. Uma crase
+// sem par fecha a linha como código: na dúvida, não mexe.
+function unescapeOutsideCodeSpans(line: string): string {
+  let out = '';
+  let i = 0;
+  while (i < line.length) {
+    const tick = line.indexOf('`', i);
+    if (tick === -1) {
+      out += line.slice(i).replace(ESCAPED_MARKER_RE, '$1');
+      break;
+    }
+    out += line.slice(i, tick).replace(ESCAPED_MARKER_RE, '$1');
+
+    let runLen = 0;
+    while (line[tick + runLen] === '`') runLen++;
+    const fence = '`'.repeat(runLen);
+    const close = line.indexOf(fence, tick + runLen);
+    if (close === -1) {
+      out += line.slice(tick);
+      break;
+    }
+    out += line.slice(tick, close + runLen);
+    i = close + runLen;
+  }
+  return out;
 }
 
-// inverse of normalizeMarkdownLinks: escapes real [label](url) before it reaches markdown-it,
-// so the parser treats it as inert text instead of emitting <a> (the schema has no link mark
-// to receive it — see TipTapEditor design doc for fix-tiptap-link-url-loss). Skips [[wiki links]]
-// and ![alt](src): the schema DOES have an image node, so escaping images would turn them into
-// inert text and they would stop rendering.
+// inverse of unescapeInlineMarkers on the way in: escapes real [label](url) before it reaches
+// markdown-it, so the parser treats it as inert text instead of emitting <a> (the schema has no
+// link mark to receive it — see TipTapEditor design doc for fix-tiptap-link-url-loss). Skips
+// [[wiki links]] and ![alt](src): the schema DOES have an image node, so escaping images would
+// turn them into inert text and they would stop rendering.
 function escapeMarkdownLinksForParse(md: string): string {
   return md.replace(/(?<![[!])\[([^[\]\n]+)\]\(([^)\n]+?)\)(?!\])/g, '\\[$1\\]($2)');
+}
+
+// Único ponto de saída do editor para markdown. Os dois call sites (onUpdate e o useEffect de
+// sync externo) precisam produzir exatamente a mesma string: o useEffect compara o serializado
+// com `value` para decidir se dá setContent, e qualquer divergência entre as duas cadeias vira
+// loop de re-set ou mudança perdida.
+function serializeToMarkdown(editor: Editor): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = (editor.storage as any).markdown.getMarkdown() as string;
+  return unescapeInlineMarkers(normalizeAutolinks(raw));
 }
 
 // ── Code block clipboard ──────────────────────────────────────────────────────
@@ -955,17 +1005,14 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
       },
       onUpdate({ editor }) {
         if (isExternalUpdate.current) return;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const md = normalizeMarkdownLinks(normalizeAsterisks(normalizeWikiLinks(normalizeAutolinks((editor.storage as any).markdown.getMarkdown() as string))));
-        onChange(md);
+        onChange(serializeToMarkdown(editor));
       },
     });
 
     // Sync external value changes without resetting caret mid-typing
     useEffect(() => {
       if (!editor) return;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const current = normalizeMarkdownLinks(normalizeAsterisks(normalizeWikiLinks(normalizeAutolinks((editor.storage as any).markdown.getMarkdown() as string))));
+      const current = serializeToMarkdown(editor);
       if (current.trim() === value.trim()) return;
       const anchor = editor.state.selection.anchor;
       isExternalUpdate.current = true;
