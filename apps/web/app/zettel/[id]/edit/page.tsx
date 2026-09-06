@@ -63,7 +63,7 @@ export default function EditZettelPage() {
 
   const originalValuesRef = useRef<{ title: string; body: string; tags: string[] } | null>(null);
   const isDirtyRef = useRef(false);
-  const { toolbarRef } = useKeyboardOffset();
+  const { toolbarRef, offset: keyboardOffset, recompute: recomputeKeyboardOffset } = useKeyboardOffset();
   const editorRef = useRef<TipTapEditorHandle>(null);
   const { captureAnchor } = useEditorModeScrollSync({
     previewOpen,
@@ -332,7 +332,9 @@ export default function EditZettelPage() {
             suggestions={Array.from(new Set(zettels.flatMap((z) => z.tags)))}
           />
         )}
-        <div aria-hidden className="shrink-0 lg:hidden" style={{ height: `calc(${showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))` }} />
+        {/* Reserva a barra do rodapé mais o que o teclado nativo ocupa, para o
+            fim do bloco continuar alcançável por scroll com o keypad aberto. */}
+        <div aria-hidden className="shrink-0 lg:hidden" style={{ height: `calc(${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom, 0px))` }} />
       </div>
       </div>
 
@@ -341,6 +343,8 @@ export default function EditZettelPage() {
           editor={editor}
           active={showChordKeypad}
           onRequestClose={() => setChordKeypadOpen(false)}
+          keyboardOffset={keyboardOffset}
+          onRecomputeOffset={recomputeKeyboardOffset}
         />
       ) : (
         <MobileFormattingToolbar

@@ -3,19 +3,39 @@
 import { useEffect } from 'react';
 import { type Editor } from '@tiptap/react';
 
-export const KEYPAD_HEIGHT = 280;
+/**
+ * Altura das cinco linhas de teclas, sem a safe area: 5 × 44 px de tecla,
+ * 4 gaps de 6 px, 6 px de padding no topo e 20 px embaixo. A safe area é
+ * somada por fora (ver `height` abaixo) — descontá-la de dentro, como o
+ * `box-sizing: border-box` faz quando ela vive só no padding, comprime a
+ * última linha em aparelhos com barra de gestos.
+ */
+export const KEYPAD_HEIGHT = 270;
 
 interface Props {
   editor: Editor | null;
   active: boolean;
   onRequestClose: () => void;
+  /** Altura ocupada pelo teclado nativo, medida pela página. */
+  keyboardOffset: number;
+  /** Força uma remedição do viewport fora dos eventos de `visualViewport`. */
+  onRecomputeOffset: () => void;
 }
 
 const ROOTS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const QUALITIES = ['#', 'b', 'm', '7', 'maj7', 'dim', 'aug'];
 const EXTENSIONS = ['sus2', 'sus4', '/', '[', ']'];
 
-export function ChordKeypad({ editor, active, onRequestClose }: Props) {
+export function ChordKeypad({ editor, active, onRequestClose, keyboardOffset, onRecomputeOffset }: Props) {
+  // O keypad monta com o teclado nativo ainda aberto, e o `blur()` abaixo o
+  // fecha sem gesto do usuário — situação em que o iOS nem sempre emite
+  // `resize` do visual viewport. Remedir no mount e depois do refoco cobre
+  // isso; no pior caso sobra uma faixa vazia embaixo, e não um keypad fora
+  // da tela.
+  useEffect(() => {
+    onRecomputeOffset();
+  }, [onRecomputeOffset]);
+
   useEffect(() => {
     if (!editor || !active) return;
     const dom = editor.view.dom as HTMLElement;
@@ -24,13 +44,16 @@ export function ChordKeypad({ editor, active, onRequestClose }: Props) {
     const wasFocused = document.activeElement === dom;
     if (wasFocused) {
       dom.blur();
-      requestAnimationFrame(() => dom.focus());
+      requestAnimationFrame(() => {
+        dom.focus();
+        onRecomputeOffset();
+      });
     }
     return () => {
       if (prev) dom.setAttribute('inputmode', prev);
       else dom.removeAttribute('inputmode');
     };
-  }, [editor, active]);
+  }, [editor, active, onRecomputeOffset]);
 
   function insertText(text: string) {
     // Insere via node de texto direto (não string/HTML) — o parser HTML do
@@ -58,7 +81,10 @@ export function ChordKeypad({ editor, active, onRequestClose }: Props) {
     onRequestClose();
     if (dom) {
       dom.blur();
-      requestAnimationFrame(() => dom.focus());
+      requestAnimationFrame(() => {
+        dom.focus();
+        onRecomputeOffset();
+      });
     }
   }
 
@@ -80,8 +106,12 @@ export function ChordKeypad({ editor, active, onRequestClose }: Props) {
 
   return (
     <div
-      className="fixed bottom-0 left-0 lg:left-80 right-0 z-10 flex flex-col gap-1.5 border-t border-zinc-200 bg-white px-2 pt-1.5 dark:border-zinc-800 dark:bg-zinc-950 lg:hidden"
-      style={{ height: KEYPAD_HEIGHT, paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)' }}
+      className="fixed left-0 lg:left-80 right-0 z-10 flex flex-col gap-1.5 border-t border-zinc-200 bg-white px-2 pt-1.5 dark:border-zinc-800 dark:bg-zinc-950 lg:hidden"
+      style={{
+        bottom: keyboardOffset,
+        height: `calc(${KEYPAD_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)',
+      }}
     >
       <div className="flex flex-1 items-center justify-between gap-1">
         {ROOTS.map((r) => key(r, () => insertText(r), 'flex-1'))}
