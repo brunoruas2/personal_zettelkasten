@@ -384,7 +384,7 @@ export default function NewZettelPage() {
           Com o sumário aberto desloca para não ficar embaixo do drawer. */}
       <div
         className={`fixed right-4 z-10 bottom-[var(--fab-offset)] lg:bottom-6 ${tocOpen && hasHeadings ? 'lg:right-[17rem]' : ''}`}
-        style={{ '--fab-offset': `calc(1.5rem + ${TOOLBAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))` } as React.CSSProperties}
+        style={{ '--fab-offset': `calc(1.5rem + ${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom, 0px))` } as React.CSSProperties}
       >
         <ScrollEdgeButton anchorRef={tocContainerRef} revision={`${previewOpen}:${body}`} />
       </div>
