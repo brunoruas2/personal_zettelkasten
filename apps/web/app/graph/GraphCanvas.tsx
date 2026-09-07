@@ -8,14 +8,37 @@ import { buildNodeColorMap, buildNebulaMap } from '../../lib/graphColors';
 import { loadLayoutCache, isLayoutCacheValid } from '../../lib/graphLayoutCache';
 import { CreateFromNodeModal } from '../../components/CreateFromNodeModal';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer';
+import { buildStars, drawStarfield } from './starfield';
+import { getNebulaSprite, NEBULA_WORLD_RADIUS } from './nebulaSprites';
 
-const PREVIEW_DELAY_MS = 0;
+/**
+ * Permanência do cursor sobre o nó antes de abrir o preview. Com 0, atravessar
+ * nós durante um pan disparava dois renders React e um parse de markdown por nó
+ * cruzado.
+ */
+const PREVIEW_DELAY_MS = 120;
 const PREVIEW_BODY_LIMIT = 1000;
 const PREVIEW_PANEL_SIZE = { w: 320, h: 260 };
+
+const TAU = Math.PI * 2;
+
+/** Intervalo entre atualizações da cintilação das estrelas (~15fps). */
+const TWINKLE_INTERVAL_MS = 66;
+
+/**
+ * Margem, em unidades do mundo, somada à área visível antes do culling. Precisa
+ * cobrir o raio da névoa (80) mais a folga do label, para que um nó logo além da
+ * borda ainda desenhe o que dele invade a tela.
+ */
+const CULL_PADDING = 100;
+
+const NEBULA_SPRITE_SIZE = NEBULA_WORLD_RADIUS * 2;
 
 interface GraphNode {
   id: string;
   title: string;
+  /** Título já truncado para exibição — evita alocar string por frame. */
+  label: string;
   tags: string[];
   color: string;
   connections: number;
@@ -23,6 +46,13 @@ interface GraphNode {
   y?: number;
   vx?: number;
   vy?: number;
+}
+
+interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+  /** Maior contagem de conexões do grafo — base do LOD dos labels. */
+  maxConn: number;
 }
 
 interface GraphLink {
@@ -35,17 +65,45 @@ interface LegendItem {
   color: string;
 }
 
+const LABEL_MAX_CHARS = 28;
+
+function truncateLabel(title: string): string {
+  return title.length > LABEL_MAX_CHARS ? title.slice(0, LABEL_MAX_CHARS - 1) + '…' : title;
+}
+
 export function GraphCanvas() {
-  const { zettels, links, controller, graphExcludedTags, graphNodeColors, createZettel, updateZettel } = useZettelStore();
+  // Selectors individuais: com o destructure do store inteiro o componente
+  // re-renderizava a cada mutação, inclusive de campos que o mapa não usa
+  // (isLoading, activeTag, resultados de busca).
+  const zettels = useZettelStore((s) => s.zettels);
+  const links = useZettelStore((s) => s.links);
+  const controller = useZettelStore((s) => s.controller);
+  const graphExcludedTags = useZettelStore((s) => s.graphExcludedTags);
+  const graphNodeColors = useZettelStore((s) => s.graphNodeColors);
+  const createZettel = useZettelStore((s) => s.createZettel);
+  const updateZettel = useZettelStore((s) => s.updateZettel);
   const router = useOfflineRouter();
   const routerRef = useRef(router);
   routerRef.current = router;
   const searchParams = useSearchParams();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number>(0);
-  const simulationRef = useRef<{ simulation: any; data: { nodes: GraphNode[]; links: GraphLink[] } } | null>(null);
+  const simulationRef = useRef<{ simulation: any; data: GraphData } | null>(null);
+
+  // Dimensões do canvas em cache. Antes cada evento de mousemove podia disparar
+  // até quatro getBoundingClientRect() (hitTest + os três testes de badge).
+  const canvasRectRef = useRef({ left: 0, top: 0, width: 0, height: 0 });
+
+  // Uma camada suja é repintada no próximo frame; um frame sem nada sujo não
+  // desenha nada. Marcar sempre por markDirty/markBgDirty, nunca por atribuição
+  // direta — é o que mantém rastreável quem acorda o loop.
+  const dirtyRef = useRef(true);
+  const bgDirtyRef = useRef(true);
+  const markDirty = useCallback(() => { dirtyRef.current = true; }, []);
+  const markBgDirty = useCallback(() => { bgDirtyRef.current = true; }, []);
 
   const transformRef = useRef({ x: 0, y: 0, scale: 1 });
   const dragRef = useRef<{ active: boolean; nodeIndex: number; startX: number; startY: number; isPan: boolean }>({
@@ -64,7 +122,7 @@ export function GraphCanvas() {
 
   // Snapshot fed to the heavy setup effect — only replaced when a full
   // simulation rebuild is actually warranted (see the sync effect below).
-  const [setupData, setSetupData] = useState<{ nodes: GraphNode[]; links: GraphLink[] } | null>(null);
+  const [setupData, setSetupData] = useState<GraphData | null>(null);
   const zettelsRef = useRef(zettels);
   useEffect(() => {
     zettelsRef.current = zettels;
@@ -93,7 +151,9 @@ export function GraphCanvas() {
       hoverTimerRef.current = null;
     }
     hoveredNodeIdRef.current = null;
-    setPreview(null);
+    // Retornar a mesma referência faz o React abortar o re-render — evita um
+    // render por nó atravessado quando não há preview aberto.
+    setPreview((p) => (p === null ? p : null));
   }, []);
 
   const getNodeRadius = useCallback((node: GraphNode) => {
@@ -101,7 +161,11 @@ export function GraphCanvas() {
   }, []);
 
   const { graphData, legend, nebulaMap } = useMemo(() => {
-    const empty = { graphData: { nodes: [] as GraphNode[], links: [] as GraphLink[] }, legend: [] as LegendItem[], nebulaMap: new Map<string, string>() };
+    const empty = {
+      graphData: { nodes: [] as GraphNode[], links: [] as GraphLink[], maxConn: 1 } as GraphData,
+      legend: [] as LegendItem[],
+      nebulaMap: new Map<string, string>(),
+    };
     if (!controller) return empty;
 
     const filtered = graphExcludedTags.length
@@ -167,10 +231,18 @@ export function GraphCanvas() {
     const nodes: GraphNode[] = finalFiltered.map((z) => ({
       id: z.id,
       title: z.title,
+      label: truncateLabel(z.title),
       tags: z.tags,
       color: colorMap.get(z.id) ?? brandColor,
       connections: connCount.get(z.id) ?? 0,
     }));
+
+    // Laço em vez de Math.max(...nodes.map(...)): o spread alocava um array e o
+    // passava como argumentos a cada frame.
+    let maxConn = 1;
+    for (const n of nodes) {
+      if (n.connections > maxConn) maxConn = n.connections;
+    }
 
     const graphLinks: GraphLink[] = finalFilteredLinks.map((l) => ({
       source: l.sourceId,
@@ -182,8 +254,23 @@ export function GraphCanvas() {
       color: rule.color,
     }));
 
-    return { graphData: { nodes, links: graphLinks }, legend: legendItems, nebulaMap };
+    return { graphData: { nodes, links: graphLinks, maxConn }, legend: legendItems, nebulaMap };
   }, [zettels, links, controller, graphExcludedTags, graphNodeColors, focusOriginId]);
+
+  // Recalcular isso em todo render varre a lista inteira de zettels por causa
+  // de um modal que quase sempre está fechado.
+  const tagSuggestions = useMemo(
+    () => Array.from(new Set(zettels.flatMap((z) => z.tags))),
+    [zettels],
+  );
+
+  // O loop de desenho lê a névoa por ref: assim uma regra de cor nova aparece
+  // sem depender de o efeito pesado ser recriado.
+  const nebulaMapRef = useRef(nebulaMap);
+  useEffect(() => {
+    nebulaMapRef.current = nebulaMap;
+    markDirty();
+  }, [nebulaMap, markDirty]);
 
   // Decides, on every graphData change, whether the running simulation can
   // absorb the change in place (pure node addition — e.g. a zettel created
@@ -221,6 +308,7 @@ export function GraphCanvas() {
       const fresh = freshById.get(oldNode.id);
       if (fresh) {
         oldNode.title = fresh.title;
+        oldNode.label = fresh.label;
         oldNode.tags = fresh.tags;
         oldNode.color = fresh.color;
         oldNode.connections = fresh.connections;
@@ -262,10 +350,12 @@ export function GraphCanvas() {
 
     sim.data.nodes = [...oldNodes, ...addedNodes];
     sim.data.links = graphData.links.map((l) => ({ ...l }));
+    sim.data.maxConn = graphData.maxConn;
     sim.simulation.nodes(sim.data.nodes);
     (sim.simulation.force('link') as any).links(sim.data.links);
     sim.simulation.alpha(0.3).restart();
-  }, [graphData, focusOriginId]);
+    markDirty();
+  }, [graphData, focusOriginId, markDirty]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -273,7 +363,11 @@ export function GraphCanvas() {
     if (!canvas || !container || !setupData || setupData.nodes.length === 0) return;
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const bgCanvas = bgCanvasRef.current;
+    // Camada de fundo é opaca: nada por baixo dela, então alpha: false permite
+    // ao navegador pular a composição com transparência.
+    const bgCtx = bgCanvas ? bgCanvas.getContext('2d', { alpha: false }) : null;
+    if (!ctx || !bgCanvas || !bgCtx) return;
 
     // cancelled flag + asyncCleanup let the sync cleanup function reach inside
     // the async .then() callback. Without this, cancelAnimationFrame and
@@ -283,23 +377,47 @@ export function GraphCanvas() {
     let cancelled = false;
     let asyncCleanup: (() => void) | undefined;
 
+    const stars = buildStars();
+
     const resize = () => {
       const rect = container.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      for (const [el, c] of [[canvas, ctx], [bgCanvas, bgCtx]] as const) {
+        el.width = rect.width * dpr;
+        el.height = rect.height * dpr;
+        el.style.width = `${rect.width}px`;
+        el.style.height = `${rect.height}px`;
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      // Os dois canvases preenchem o container, então o rect dele serve aos
+      // testes de acerto — que assim param de consultar o layout por evento.
+      canvasRectRef.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+      markDirty();
+      markBgDirty();
     };
     resize();
-    window.addEventListener('resize', resize);
+
+    // ResizeObserver pega mudança só do container (a legenda de clusters
+    // aparecendo, por exemplo), que o listener de window não vê; o listener de
+    // window continua por causa de rotação de tela e teclado virtual no mobile.
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleResize = () => {
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null;
+        resize();
+      }, 100);
+    };
+    const resizeObserver = new ResizeObserver(scheduleResize);
+    resizeObserver.observe(container);
+    window.addEventListener('resize', scheduleResize);
 
     import('d3-force').then((d3) => {
       if (cancelled) return;
-      const data = {
+      const data: GraphData = {
         nodes: setupData.nodes.map((n) => ({ ...n })) as GraphNode[],
         links: setupData.links.map((l) => ({ ...l })) as GraphLink[],
+        maxConn: setupData.maxConn,
       };
 
       const width = container.getBoundingClientRect().width;
@@ -332,42 +450,49 @@ export function GraphCanvas() {
         simulation.alpha(0.1);
       }
 
+      // O tick é emitido exatamente quando as posições mudam, e a d3 para de
+      // emitir quando a simulação esfria — é o que deixa o loop dormir sem
+      // ninguém precisar consultar alpha() por frame.
+      simulation.on('tick', markDirty);
+
       simulationRef.current = { simulation, data };
 
-      const draw = () => {
-        const { width: w, height: h } = canvas.getBoundingClientRect();
+      const drawBackground = (now: number) => {
+        const { width: w, height: h } = canvasRectRef.current;
+        const { x: tx, y: ty } = transformRef.current;
+        bgCtx.fillStyle = '#0d1117';
+        bgCtx.fillRect(0, 0, w, h);
+        drawStarfield(bgCtx, stars, w, h, tx, ty, now);
+      };
+
+      // Reaproveitados entre frames para não realocar a cada desenho.
+      const visibleIdx: number[] = [];
+      const visibleR: number[] = [];
+      const fillPaths = new Map<string, Path2D>();
+      const strokePaths = new Map<string, Path2D>();
+
+      const drawGraph = () => {
+        const { width: w, height: h } = canvasRectRef.current;
         const { x: tx, y: ty, scale } = transformRef.current;
         const hovIdx = hoverRef.current;
+        const nodes = data.nodes;
+        const hovNode = hovIdx >= 0 ? nodes[hovIdx] ?? null : null;
 
+        // Transparente: o campo de estrelas está no canvas de baixo.
         ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#0d1117';
-        ctx.fillRect(0, 0, w, h);
-
-        // Starfield — twinkling + parallax depth layers
-        const t = Date.now() * 0.001;
-        for (let i = 0; i < 200; i++) {
-          const baseX = ((42 * (i + 1) * 9301 + 49297) % 233280) / 233280;
-          const baseY = ((42 * (i + 1) * 7919 + 12345) % 233280) / 233280;
-          // Three depth layers with different parallax speeds
-          const depth = i % 3; // 0 = far, 1 = mid, 2 = near
-          const parallax = [0.03, 0.07, 0.13][depth];
-          const sx = ((baseX * w + tx * parallax) % w + w) % w;
-          const sy = ((baseY * h + ty * parallax) % h + h) % h;
-          const brightness = ((i * 3571) % 100) / 100;
-          const twinkle = 0.55 + 0.45 * Math.sin(t * (0.4 + (i % 7) * 0.25) + i * 2.399);
-          ctx.fillStyle = `rgba(255,255,255,${(0.04 + brightness * 0.14) * twinkle})`;
-          ctx.beginPath();
-          ctx.arc(sx, sy, 0.4 + brightness * 0.9, 0, Math.PI * 2);
-          ctx.fill();
-        }
 
         ctx.save();
         ctx.translate(tx, ty);
         ctx.scale(scale, scale);
 
+        // Área visível em coordenadas do mundo — base do culling.
+        const x0 = -tx / scale - CULL_PADDING;
+        const y0 = -ty / scale - CULL_PADDING;
+        const x1 = (w - tx) / scale + CULL_PADDING;
+        const y1 = (h - ty) / scale + CULL_PADDING;
+
         const hoveredConnections = new Set<string>();
-        if (hovIdx >= 0) {
-          const hovNode = data.nodes[hovIdx];
+        if (hovNode) {
           for (const link of data.links) {
             const src = link.source as GraphNode;
             const tgt = link.target as GraphNode;
@@ -376,198 +501,250 @@ export function GraphCanvas() {
           }
         }
 
-        // Cluster nebula — Gaussian splat per node, drawn before links and nodes
-        // alpha encoded directly in color stops so globalAlpha stays at 1
-        for (const node of data.nodes) {
+        // Índices dos nós visíveis. Guardamos o índice ORIGINAL: hoverRef e
+        // dragRef.nodeIndex referenciam nós por posição no array, então filtrar
+        // para um array novo faria hover e arraste agirem sobre o nó errado.
+        visibleIdx.length = 0;
+        visibleR.length = 0;
+        for (let i = 0; i < nodes.length; i++) {
+          const node = nodes[i];
           if (node.x == null || node.y == null) continue;
-          const nebulaColor = nebulaMap.get(node.id);
-          if (!nebulaColor) continue;
-          const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, 80);
-          gradient.addColorStop(0, nebulaColor + '26'); // ~15% alpha at center
-          gradient.addColorStop(1, nebulaColor + '00'); // transparent at edge
-          ctx.beginPath();
-          ctx.arc(node.x, node.y, 80, 0, Math.PI * 2);
-          ctx.fillStyle = gradient;
-          ctx.fill();
+          if (node.x < x0 || node.x > x1 || node.y < y0 || node.y > y1) continue;
+          visibleIdx.push(i);
+          visibleR.push(getNodeRadius(node));
         }
 
-        // Links
+        // Névoa de cluster — sprite por cor, desenhado antes de links e nós
+        for (let k = 0; k < visibleIdx.length; k++) {
+          const node = nodes[visibleIdx[k]];
+          const nebulaColor = nebulaMapRef.current.get(node.id);
+          if (!nebulaColor) continue;
+          const sprite = getNebulaSprite(nebulaColor);
+          if (!sprite) continue;
+          ctx.drawImage(
+            sprite,
+            node.x! - NEBULA_WORLD_RADIUS,
+            node.y! - NEBULA_WORLD_RADIUS,
+            NEBULA_SPRITE_SIZE,
+            NEBULA_SPRITE_SIZE,
+          );
+        }
+
+        // Links — dois paths acumulados, um stroke por estilo
+        const normalPath = new Path2D();
+        const highlightPath = new Path2D();
         for (const link of data.links) {
           const src = link.source as GraphNode;
           const tgt = link.target as GraphNode;
-          if (src.x == null || tgt.x == null) continue;
+          if (src.x == null || src.y == null || tgt.x == null || tgt.y == null) continue;
+          if (Math.max(src.x, tgt.x) < x0 || Math.min(src.x, tgt.x) > x1) continue;
+          if (Math.max(src.y, tgt.y) < y0 || Math.min(src.y, tgt.y) > y1) continue;
 
-          const isHighlighted = hovIdx >= 0 && (
-            src.id === data.nodes[hovIdx]?.id ||
-            tgt.id === data.nodes[hovIdx]?.id
-          );
-
-          ctx.beginPath();
-          ctx.moveTo(src.x, src.y!);
-          ctx.lineTo(tgt.x, tgt.y!);
-          ctx.strokeStyle = isHighlighted ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.06)';
-          ctx.lineWidth = isHighlighted ? 1.5 : 0.5;
-          ctx.stroke();
+          const path = hovNode && (src.id === hovNode.id || tgt.id === hovNode.id)
+            ? highlightPath
+            : normalPath;
+          path.moveTo(src.x, src.y);
+          path.lineTo(tgt.x, tgt.y);
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.lineWidth = 0.5;
+        ctx.stroke(normalPath);
+        if (hovNode) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+          ctx.lineWidth = 1.5;
+          ctx.stroke(highlightPath);
         }
 
-        // Nodes — circles first, labels in a second pass to avoid overlap
-        const maxConn = Math.max(...data.nodes.map((n) => n.connections), 1);
-
-        data.nodes.forEach((node, i) => {
-          if (node.x == null || node.y == null) return;
-          const r = getNodeRadius(node);
-          const isHovered = i === hovIdx;
-          const isConnected = hovIdx >= 0 && hoveredConnections.has(node.id);
-          const dimmed = hovIdx >= 0 && !isHovered && !isConnected;
-
-          if (isHovered || isConnected) {
-            const gradient = ctx.createRadialGradient(node.x, node.y, r * 0.5, node.x, node.y, r * 3);
+        // Brilho radial do nó em hover e dos seus vizinhos
+        if (hovNode) {
+          for (let k = 0; k < visibleIdx.length; k++) {
+            const i = visibleIdx[k];
+            const node = nodes[i];
+            if (i !== hovIdx && !hoveredConnections.has(node.id)) continue;
+            const r = visibleR[k];
+            const gradient = ctx.createRadialGradient(node.x!, node.y!, r * 0.5, node.x!, node.y!, r * 3);
             gradient.addColorStop(0, node.color + '60');
             gradient.addColorStop(1, node.color + '00');
             ctx.beginPath();
-            ctx.arc(node.x, node.y, r * 3, 0, Math.PI * 2);
+            ctx.arc(node.x!, node.y!, r * 3, 0, TAU);
             ctx.fillStyle = gradient;
             ctx.fill();
           }
+        }
 
+        // Círculos — agrupados por estilo, um fill/stroke por bucket. Cada arc
+        // precisa de um moveTo antes, senão o subpath se liga ao anterior por
+        // uma reta.
+        fillPaths.clear();
+        strokePaths.clear();
+        for (let k = 0; k < visibleIdx.length; k++) {
+          const i = visibleIdx[k];
+          if (i === hovIdx) continue; // desenhado à parte: raio e traço diferentes
+          const node = nodes[i];
+          const r = visibleR[k];
+          const dimmed = hovNode !== null && !hoveredConnections.has(node.id);
+          const fillStyle = dimmed ? node.color + '30' : node.color;
+          const strokeStyle = dimmed ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.2)';
+
+          let fillPath = fillPaths.get(fillStyle);
+          if (!fillPath) {
+            fillPath = new Path2D();
+            fillPaths.set(fillStyle, fillPath);
+          }
+          fillPath.moveTo(node.x! + r, node.y!);
+          fillPath.arc(node.x!, node.y!, r, 0, TAU);
+
+          let strokePath = strokePaths.get(strokeStyle);
+          if (!strokePath) {
+            strokePath = new Path2D();
+            strokePaths.set(strokeStyle, strokePath);
+          }
+          strokePath.moveTo(node.x! + r, node.y!);
+          strokePath.arc(node.x!, node.y!, r, 0, TAU);
+        }
+        for (const [style, path] of fillPaths) {
+          ctx.fillStyle = style;
+          ctx.fill(path);
+        }
+        ctx.lineWidth = 0.5;
+        for (const [style, path] of strokePaths) {
+          ctx.strokeStyle = style;
+          ctx.stroke(path);
+        }
+
+        const hovR = hovNode ? getNodeRadius(hovNode) : 0;
+        if (hovNode && hovNode.x != null && hovNode.y != null) {
+          const r = hovR * 1.4;
           ctx.beginPath();
-          ctx.arc(node.x, node.y, isHovered ? r * 1.4 : r, 0, Math.PI * 2);
-          ctx.fillStyle = dimmed ? node.color + '30' : node.color;
+          ctx.arc(hovNode.x, hovNode.y, r, 0, TAU);
+          ctx.fillStyle = hovNode.color;
           ctx.fill();
-
-          ctx.strokeStyle = dimmed ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.2)';
-          ctx.lineWidth = isHovered ? 2 : 0.5;
+          ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+          ctx.lineWidth = 2;
           ctx.stroke();
-        });
+        }
 
-        // Labels — second pass so text is always on top of circles
-        // LOD: threshold decreases as scale increases → more labels appear when zoomed in
-        const labelThreshold = maxConn * 0.2 / scale;
+        // Labels — segunda passada, para o texto ficar sempre sobre os círculos.
+        // LOD: o threshold cai conforme o zoom sobe, revelando mais labels.
+        const labelThreshold = data.maxConn * 0.2 / scale;
+        const fontSize = 10 / scale;
+        const labelOffset = 13 / scale;
         ctx.textAlign = 'center';
         ctx.shadowColor = 'rgba(0,0,0,0.9)';
         ctx.shadowBlur = 3;
+        // Uma string de fonte por frame: fontSize só depende do scale, e trocar
+        // ctx.font é uma das mudanças de estado mais caras do contexto 2D.
+        ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
 
-        data.nodes.forEach((node, i) => {
-          if (node.x == null || node.y == null) return;
-          const r = getNodeRadius(node);
-          const isHovered = i === hovIdx;
-          const showLabel = isHovered || node.connections >= labelThreshold;
-          if (!showLabel) return;
+        let lastLabelFill = '';
+        for (let k = 0; k < visibleIdx.length; k++) {
+          const i = visibleIdx[k];
+          if (i === hovIdx) continue;
+          const node = nodes[i];
+          if (node.connections < labelThreshold) continue;
 
-          const dimmed = hovIdx >= 0 && !isHovered && !hoveredConnections.has(node.id);
-          const fontSize = 10 / scale;
-          ctx.font = `${isHovered ? 'bold ' : ''}${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
-          ctx.fillStyle = dimmed ? 'rgba(161,161,170,0.4)' : (isHovered ? '#ffffff' : '#a1a1aa');
-
-          const label = node.title.length > 28 ? node.title.slice(0, 27) + '…' : node.title;
-          ctx.fillText(label, node.x, node.y + r + 13 / scale);
-        });
+          const fill = hovNode && !hoveredConnections.has(node.id)
+            ? 'rgba(161,161,170,0.4)'
+            : '#a1a1aa';
+          if (fill !== lastLabelFill) {
+            ctx.fillStyle = fill;
+            lastLabelFill = fill;
+          }
+          ctx.fillText(node.label, node.x!, node.y! + visibleR[k] + labelOffset);
+        }
+        if (hovNode && hovNode.x != null && hovNode.y != null) {
+          ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(hovNode.label, hovNode.x, hovNode.y + hovR + labelOffset);
+        }
 
         ctx.shadowBlur = 0;
 
-        // Create badge — small "+" on the hovered node, click opens the create-from-node modal
-        if (hovIdx >= 0 && !dragRef.current.active) {
-          const hovNode = data.nodes[hovIdx];
-          if (hovNode.x != null && hovNode.y != null) {
-            const hr = getNodeRadius(hovNode);
-            const badgeR = 12 / scale;
-            const bx = hovNode.x + hr + 6 / scale;
-            const by = hovNode.y - hr - 6 / scale;
+        // Badges do nó em hover: "+" (criar), lápis (editar) e olho (focar)
+        if (hovNode && !dragRef.current.active && hovNode.x != null && hovNode.y != null) {
+          const badgeR = 12 / scale;
+          const bx = hovNode.x + hovR + 6 / scale;
+          const by = hovNode.y - hovR - 6 / scale;
 
-            ctx.beginPath();
-            ctx.arc(bx, by, badgeR, 0, Math.PI * 2);
-            ctx.fillStyle = badgeFill;
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-            ctx.lineWidth = 1 / scale;
-            ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(bx, by, badgeR, 0, TAU);
+          ctx.fillStyle = badgeFill;
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+          ctx.lineWidth = 1 / scale;
+          ctx.stroke();
 
-            ctx.font = `${16 / scale}px -apple-system, BlinkMacSystemFont, sans-serif`;
-            ctx.fillStyle = '#ffffff';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('+', bx, by + 0.5 / scale);
-            ctx.textBaseline = 'alphabetic';
-          }
-        }
+          ctx.font = `${16 / scale}px -apple-system, BlinkMacSystemFont, sans-serif`;
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('+', bx, by + 0.5 / scale);
+          ctx.textBaseline = 'alphabetic';
 
-        // Edit badge — pencil icon next to the "+" badge, click opens the modal in edit mode
-        if (hovIdx >= 0 && !dragRef.current.active) {
-          const hovNode = data.nodes[hovIdx];
-          if (hovNode.x != null && hovNode.y != null) {
-            const hr = getNodeRadius(hovNode);
-            const badgeR = 12 / scale;
-            const bx = hovNode.x + hr + 6 / scale + badgeR * 2 + 6 / scale;
-            const by = hovNode.y - hr - 6 / scale;
+          const px = bx + badgeR * 2 + 6 / scale;
 
-            ctx.beginPath();
-            ctx.arc(bx, by, badgeR, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(39,39,42,0.9)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-            ctx.lineWidth = 1 / scale;
-            ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(px, by, badgeR, 0, TAU);
+          ctx.fillStyle = 'rgba(39,39,42,0.9)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+          ctx.lineWidth = 1 / scale;
+          ctx.stroke();
 
-            ctx.save();
-            ctx.translate(bx, by);
-            ctx.rotate(-Math.PI / 4);
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.6 / scale;
-            ctx.beginPath();
-            ctx.moveTo(-4.5 / scale, 0);
-            ctx.lineTo(4.5 / scale, 0);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(4.5 / scale, 0);
-            ctx.lineTo(6.5 / scale, -2 / scale);
-            ctx.lineTo(4.5 / scale, -2 / scale);
-            ctx.closePath();
-            ctx.fillStyle = '#ffffff';
-            ctx.fill();
-            ctx.restore();
-          }
-        }
+          ctx.save();
+          ctx.translate(px, by);
+          ctx.rotate(-Math.PI / 4);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.6 / scale;
+          ctx.beginPath();
+          ctx.moveTo(-4.5 / scale, 0);
+          ctx.lineTo(4.5 / scale, 0);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(4.5 / scale, 0);
+          ctx.lineTo(6.5 / scale, -2 / scale);
+          ctx.lineTo(4.5 / scale, -2 / scale);
+          ctx.closePath();
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.restore();
 
-        // Focus badge — eye icon mirrored on the opposite side, click enters focus mode
-        if (hovIdx >= 0 && !dragRef.current.active) {
-          const hovNode = data.nodes[hovIdx];
-          if (hovNode.x != null && hovNode.y != null) {
-            const hr = getNodeRadius(hovNode);
-            const badgeR = 12 / scale;
-            const ex = hovNode.x - hr - 6 / scale;
-            const ey = hovNode.y - hr - 6 / scale;
+          const ex = hovNode.x - hovR - 6 / scale;
 
-            ctx.beginPath();
-            ctx.arc(ex, ey, badgeR, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(39,39,42,0.9)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-            ctx.lineWidth = 1 / scale;
-            ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(ex, by, badgeR, 0, TAU);
+          ctx.fillStyle = 'rgba(39,39,42,0.9)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+          ctx.lineWidth = 1 / scale;
+          ctx.stroke();
 
-            ctx.beginPath();
-            ctx.ellipse(ex, ey, 5.5 / scale, 3 / scale, 0, 0, Math.PI * 2);
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.3 / scale;
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(ex, ey, 1.8 / scale, 0, Math.PI * 2);
-            ctx.fillStyle = '#ffffff';
-            ctx.fill();
-          }
+          ctx.beginPath();
+          ctx.ellipse(ex, by, 5.5 / scale, 3 / scale, 0, 0, TAU);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.3 / scale;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(ex, by, 1.8 / scale, 0, TAU);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
         }
 
         ctx.restore();
-        animFrameRef.current = requestAnimationFrame(draw);
       };
 
-      animFrameRef.current = requestAnimationFrame(draw);
+      /** Converte coordenadas de tela em coordenadas do mundo, sem tocar no layout. */
+      const toWorld = (clientX: number, clientY: number) => {
+        const rect = canvasRectRef.current;
+        const { x: tx, y: ty, scale } = transformRef.current;
+        return {
+          x: (clientX - rect.left - tx) / scale,
+          y: (clientY - rect.top - ty) / scale,
+        };
+      };
 
       const hitTest = (clientX: number, clientY: number): number => {
-        const rect = canvas.getBoundingClientRect();
-        const { x: tx, y: ty, scale } = transformRef.current;
-        const mx = (clientX - rect.left - tx) / scale;
-        const my = (clientY - rect.top - ty) / scale;
+        const { x: mx, y: my } = toWorld(clientX, clientY);
 
         for (let i = data.nodes.length - 1; i >= 0; i--) {
           const node = data.nodes[i];
@@ -587,11 +764,8 @@ export function GraphCanvas() {
         const node = data.nodes[hovIdx];
         if (node.x == null || node.y == null) return false;
 
-        const rect = canvas.getBoundingClientRect();
-        const { x: tx, y: ty, scale } = transformRef.current;
-        const mx = (clientX - rect.left - tx) / scale;
-        const my = (clientY - rect.top - ty) / scale;
-
+        const { x: mx, y: my } = toWorld(clientX, clientY);
+        const { scale } = transformRef.current;
         const hr = getNodeRadius(node);
         const bx = node.x + hr + 6 / scale;
         const by = node.y - hr - 6 / scale;
@@ -608,11 +782,8 @@ export function GraphCanvas() {
         const node = data.nodes[hovIdx];
         if (node.x == null || node.y == null) return false;
 
-        const rect = canvas.getBoundingClientRect();
-        const { x: tx, y: ty, scale } = transformRef.current;
-        const mx = (clientX - rect.left - tx) / scale;
-        const my = (clientY - rect.top - ty) / scale;
-
+        const { x: mx, y: my } = toWorld(clientX, clientY);
+        const { scale } = transformRef.current;
         const hr = getNodeRadius(node);
         const badgeR = 12 / scale;
         const bx = node.x + hr + 6 / scale + badgeR * 2 + 6 / scale;
@@ -630,11 +801,8 @@ export function GraphCanvas() {
         const node = data.nodes[hovIdx];
         if (node.x == null || node.y == null) return false;
 
-        const rect = canvas.getBoundingClientRect();
-        const { x: tx, y: ty, scale } = transformRef.current;
-        const mx = (clientX - rect.left - tx) / scale;
-        const my = (clientY - rect.top - ty) / scale;
-
+        const { x: mx, y: my } = toWorld(clientX, clientY);
+        const { scale } = transformRef.current;
         const hr = getNodeRadius(node);
         const ex = node.x - hr - 6 / scale;
         const ey = node.y - hr - 6 / scale;
@@ -650,7 +818,9 @@ export function GraphCanvas() {
           clearTimeout(hoverTimerRef.current);
           hoverTimerRef.current = null;
         }
-        setPreview(null);
+        // Mesma referência => o React aborta o re-render. Sem isso, atravessar
+        // nós durante um pan disparava um render por nó cruzado.
+        setPreview((p) => (p === null ? p : null));
 
         if (idx < 0) {
           hoveredNodeIdRef.current = null;
@@ -666,7 +836,6 @@ export function GraphCanvas() {
           const truncated = zettel.body.length > PREVIEW_BODY_LIMIT
             ? zettel.body.slice(0, PREVIEW_BODY_LIMIT) + '…'
             : zettel.body;
-          const rect = canvas.getBoundingClientRect();
           const { x: tx, y: ty, scale } = transformRef.current;
           setPreview({
             x: node.x! * scale + tx,
@@ -679,52 +848,89 @@ export function GraphCanvas() {
         }, PREVIEW_DELAY_MS);
       };
 
-      const onMouseMove = (e: MouseEvent) => {
+      let cursor = 'grab';
+      const setCursor = (value: string) => {
+        if (cursor === value) return;
+        cursor = value;
+        canvas.style.cursor = value;
+      };
+
+      const setHover = (idx: number) => {
+        if (hoverRef.current === idx) return;
+        hoverRef.current = idx;
+        markDirty();
+      };
+
+      const handleMove = (clientX: number, clientY: number) => {
         const drag = dragRef.current;
 
         if (!drag.active && previewRectRef.current) {
-          const rect = canvas.getBoundingClientRect();
-          const mx = e.clientX - rect.left;
-          const my = e.clientY - rect.top;
+          const rect = canvasRectRef.current;
+          const mx = clientX - rect.left;
+          const my = clientY - rect.top;
           const r = previewRectRef.current;
           if (mx >= r.left && mx <= r.right && my >= r.top && my <= r.bottom) return;
         }
 
         if (drag.active && drag.isPan) {
-          transformRef.current.x += e.clientX - drag.startX;
-          transformRef.current.y += e.clientY - drag.startY;
-          drag.startX = e.clientX;
-          drag.startY = e.clientY;
+          transformRef.current.x += clientX - drag.startX;
+          transformRef.current.y += clientY - drag.startY;
+          drag.startX = clientX;
+          drag.startY = clientY;
+          markDirty();
+          markBgDirty();
           return;
         }
 
         if (drag.active && drag.nodeIndex >= 0) {
-          const { x: tx, y: ty, scale } = transformRef.current;
-          const rect = canvas.getBoundingClientRect();
           const node = data.nodes[drag.nodeIndex];
-          node.x = (e.clientX - rect.left - tx) / scale;
-          node.y = (e.clientY - rect.top - ty) / scale;
+          const world = toWorld(clientX, clientY);
+          node.x = world.x;
+          node.y = world.y;
           (node as any).fx = node.x;
           (node as any).fy = node.y;
           simulation.alpha(0.3).restart();
+          markDirty();
           return;
         }
 
-        const idx = hitTest(e.clientX, e.clientY);
+        const idx = hitTest(clientX, clientY);
         if (
           idx < 0 &&
           hoverRef.current >= 0 &&
-          (hitTestBadge(e.clientX, e.clientY) || hitTestPencilBadge(e.clientX, e.clientY) || hitTestEyeBadge(e.clientX, e.clientY))
+          (hitTestBadge(clientX, clientY) || hitTestPencilBadge(clientX, clientY) || hitTestEyeBadge(clientX, clientY))
         ) {
-          canvas.style.cursor = 'pointer';
+          setCursor('pointer');
           return;
         }
         scheduleOrClearPreview(idx);
-        hoverRef.current = idx;
-        canvas.style.cursor = idx >= 0 ? 'pointer' : 'grab';
+        setHover(idx);
+        setCursor(idx >= 0 ? 'pointer' : 'grab');
+      };
+
+      // Movimento do ponteiro é coalescido: o handler só guarda a última
+      // posição e o teste de acerto roda no máximo uma vez por frame.
+      const pendingPointer = { x: 0, y: 0, has: false };
+      const flushPointer = () => {
+        if (!pendingPointer.has) return;
+        pendingPointer.has = false;
+        handleMove(pendingPointer.x, pendingPointer.y);
+      };
+      const queuePointer = (clientX: number, clientY: number) => {
+        pendingPointer.x = clientX;
+        pendingPointer.y = clientY;
+        pendingPointer.has = true;
+      };
+
+      const onMouseMove = (e: MouseEvent) => {
+        queuePointer(e.clientX, e.clientY);
       };
 
       const onMouseDown = (e: MouseEvent) => {
+        // Os testes de badge dependem de hoverRef, que só é atualizado ao
+        // processar o movimento — resolvemos o pendente antes de decidir.
+        flushPointer();
+
         if (hitTestBadge(e.clientX, e.clientY)) {
           const node = data.nodes[hoverRef.current];
           clearPreviewTimer();
@@ -761,7 +967,8 @@ export function GraphCanvas() {
         } else {
           dragRef.current = { active: true, nodeIndex: -1, startX: e.clientX, startY: e.clientY, isPan: true };
         }
-        canvas.style.cursor = 'grabbing';
+        setCursor('grabbing');
+        markDirty();
       };
 
       const onMouseUp = (e: MouseEvent) => {
@@ -778,12 +985,34 @@ export function GraphCanvas() {
           simulation.alphaTarget(0);
         }
         dragRef.current = { active: false, nodeIndex: -1, startX: 0, startY: 0, isPan: false };
-        canvas.style.cursor = 'grab';
+        setCursor('grab');
+        markDirty();
+      };
+
+      const onMouseLeave = (e: MouseEvent) => {
+        if (previewRectRef.current) {
+          const rect = canvasRectRef.current;
+          const mx = e.clientX - rect.left;
+          const my = e.clientY - rect.top;
+          const r = previewRectRef.current;
+          if (mx >= r.left && mx <= r.right && my >= r.top && my <= r.bottom) return;
+        }
+        pendingPointer.has = false;
+        setHover(-1);
+        clearPreviewTimer();
+        const drag = dragRef.current;
+        if (drag.active && drag.nodeIndex >= 0) {
+          const node = data.nodes[drag.nodeIndex];
+          (node as any).fx = null;
+          (node as any).fy = null;
+        }
+        dragRef.current = { active: false, nodeIndex: -1, startX: 0, startY: 0, isPan: false };
+        markDirty();
       };
 
       const onWheel = (e: WheelEvent) => {
         e.preventDefault();
-        const rect = canvas.getBoundingClientRect();
+        const rect = canvasRectRef.current;
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
         const { x: tx, y: ty, scale } = transformRef.current;
@@ -794,6 +1023,8 @@ export function GraphCanvas() {
           y: my - (my - ty) * (newScale / scale),
           scale: newScale,
         };
+        markDirty();
+        markBgDirty();
       };
 
       // Touch support
@@ -819,34 +1050,23 @@ export function GraphCanvas() {
           lastTouchDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
           lastTouchMid = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
           dragRef.current = { active: false, nodeIndex: -1, startX: 0, startY: 0, isPan: false };
+          pendingPointer.has = false;
         }
+        markDirty();
       };
 
       const onTouchMove = (e: TouchEvent) => {
         e.preventDefault();
         if (e.touches.length === 1) {
+          // Um dedo segue o mesmo caminho do mouse (pan ou arraste de nó),
+          // coalescido em rAF.
           const touch = e.touches[0];
-          const drag = dragRef.current;
-          if (drag.active && drag.isPan) {
-            transformRef.current.x += touch.clientX - drag.startX;
-            transformRef.current.y += touch.clientY - drag.startY;
-            drag.startX = touch.clientX;
-            drag.startY = touch.clientY;
-          } else if (drag.active && drag.nodeIndex >= 0) {
-            const { x: tx, y: ty, scale } = transformRef.current;
-            const rect = canvas.getBoundingClientRect();
-            const node = data.nodes[drag.nodeIndex];
-            node.x = (touch.clientX - rect.left - tx) / scale;
-            node.y = (touch.clientY - rect.top - ty) / scale;
-            (node as any).fx = node.x;
-            (node as any).fy = node.y;
-            simulation.alpha(0.3).restart();
-          }
+          queuePointer(touch.clientX, touch.clientY);
         } else if (e.touches.length === 2) {
           const t0 = e.touches[0], t1 = e.touches[1];
           const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
           const mid = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
-          const rect = canvas.getBoundingClientRect();
+          const rect = canvasRectRef.current;
           const mx = mid.x - rect.left;
           const my = mid.y - rect.top;
           const { x: tx, y: ty, scale } = transformRef.current;
@@ -859,10 +1079,13 @@ export function GraphCanvas() {
           };
           lastTouchDist = dist;
           lastTouchMid = mid;
+          markDirty();
+          markBgDirty();
         }
       };
 
       const onTouchEnd = (e: TouchEvent) => {
+        pendingPointer.has = false;
         const drag = dragRef.current;
         if (drag.active && drag.nodeIndex >= 0) {
           const touch = e.changedTouches[0];
@@ -877,41 +1100,48 @@ export function GraphCanvas() {
           simulation.alphaTarget(0);
         }
         dragRef.current = { active: false, nodeIndex: -1, startX: 0, startY: 0, isPan: false };
+        markDirty();
       };
 
       canvas.addEventListener('mousemove', onMouseMove);
       canvas.addEventListener('mousedown', onMouseDown);
       canvas.addEventListener('mouseup', onMouseUp);
-      canvas.addEventListener('mouseleave', (e: MouseEvent) => {
-        if (previewRectRef.current) {
-          const rect = canvas.getBoundingClientRect();
-          const mx = e.clientX - rect.left;
-          const my = e.clientY - rect.top;
-          const r = previewRectRef.current;
-          if (mx >= r.left && mx <= r.right && my >= r.top && my <= r.bottom) return;
-        }
-        hoverRef.current = -1;
-        clearPreviewTimer();
-        const drag = dragRef.current;
-        if (drag.active && drag.nodeIndex >= 0) {
-          const node = data.nodes[drag.nodeIndex];
-          (node as any).fx = null;
-          (node as any).fy = null;
-        }
-        dragRef.current = { active: false, nodeIndex: -1, startX: 0, startY: 0, isPan: false };
-      });
+      canvas.addEventListener('mouseleave', onMouseLeave);
       canvas.addEventListener('wheel', onWheel, { passive: false });
       canvas.addEventListener('touchstart', onTouchStart, { passive: false });
       canvas.addEventListener('touchmove', onTouchMove, { passive: false });
       canvas.addEventListener('touchend', onTouchEnd);
 
+      // Um frame sem nada sujo não desenha — só resolve o ponteiro pendente e
+      // reagenda, o que é praticamente de graça.
+      let lastTwinkle = 0;
+      const frame = (now: number) => {
+        animFrameRef.current = requestAnimationFrame(frame);
+        flushPointer();
+        if (now - lastTwinkle >= TWINKLE_INTERVAL_MS) {
+          lastTwinkle = now;
+          markBgDirty();
+        }
+        if (bgDirtyRef.current) {
+          bgDirtyRef.current = false;
+          drawBackground(now);
+        }
+        if (dirtyRef.current) {
+          dirtyRef.current = false;
+          drawGraph();
+        }
+      };
+      animFrameRef.current = requestAnimationFrame(frame);
+
       asyncCleanup = () => {
+        simulation.on('tick', null);
         simulation.stop();
         cancelAnimationFrame(animFrameRef.current);
         clearPreviewTimer();
         canvas.removeEventListener('mousemove', onMouseMove);
         canvas.removeEventListener('mousedown', onMouseDown);
         canvas.removeEventListener('mouseup', onMouseUp);
+        canvas.removeEventListener('mouseleave', onMouseLeave);
         canvas.removeEventListener('wheel', onWheel);
         canvas.removeEventListener('touchstart', onTouchStart);
         canvas.removeEventListener('touchmove', onTouchMove);
@@ -922,9 +1152,11 @@ export function GraphCanvas() {
     return () => {
       cancelled = true;
       asyncCleanup?.();
-      window.removeEventListener('resize', resize);
+      resizeObserver.disconnect();
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      window.removeEventListener('resize', scheduleResize);
     };
-  }, [setupData, getNodeRadius, clearPreviewTimer]);
+  }, [setupData, getNodeRadius, clearPreviewTimer, markDirty, markBgDirty]);
 
   if (!controller) {
     return (
@@ -960,7 +1192,10 @@ export function GraphCanvas() {
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
       <div ref={containerRef} style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-        <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%', cursor: 'grab' }} />
+        {/* Duas camadas: as estrelas cintilam sozinhas, então manter o grafo no
+            mesmo canvas obrigaria a repintá-lo junto e anularia o dirty flag. */}
+        <canvas ref={bgCanvasRef} style={{ position: 'absolute', inset: 0, display: 'block' }} />
+        <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, display: 'block', cursor: 'grab' }} />
         {focusOriginId && (
           <button
             type="button"
@@ -1060,7 +1295,7 @@ export function GraphCanvas() {
         originTags={nodeModal?.tags ?? []}
         initialTitle={nodeModal?.mode === 'edit' ? nodeModal.title : undefined}
         initialBody={nodeModal?.mode === 'edit' ? nodeModal.body : undefined}
-        suggestions={Array.from(new Set(zettels.flatMap((z) => z.tags)))}
+        suggestions={tagSuggestions}
         zettels={zettels}
         onClose={() => setNodeModal(null)}
         onSubmit={async (data) => {

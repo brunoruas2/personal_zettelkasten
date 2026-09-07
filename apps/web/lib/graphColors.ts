@@ -71,8 +71,11 @@ export function buildNebulaMap(
   for (const rule of rules) {
     const queue: string[] = [rule.zettelId];
     const visited = new Set<string>();
-    while (queue.length > 0) {
-      const id = queue.shift()!;
+    // Ponteiro de leitura em vez de queue.shift(): shift é O(n) por chamada e
+    // tornava a BFS quadrática num componente conexo grande.
+    let head = 0;
+    while (head < queue.length) {
+      const id = queue[head++];
       if (visited.has(id)) continue;
       visited.add(id);
       if (!map.has(id)) map.set(id, rule.color);

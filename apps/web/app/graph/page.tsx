@@ -18,7 +18,7 @@ const GraphCanvas = dynamic(
 export default function GraphPage() {
   return (
     <div className="fixed inset-0 overflow-hidden bg-zinc-950">
-      {/* Header — pointer-events-none so Sigma canvas receives mouse/touch below */}
+      {/* Header — pointer-events-none so the graph canvas receives mouse/touch below */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-5 py-4">
         <Link href="/" className="pointer-events-auto text-sm font-medium text-brand-light hover:opacity-80">
           ← Voltar
