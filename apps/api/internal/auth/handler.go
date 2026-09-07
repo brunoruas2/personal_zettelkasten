@@ -309,6 +309,9 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["graph_node_colors"]; ok {
 		json.Unmarshal(v, &current.GraphNodeColors) //nolint:errcheck
 	}
+	if v, ok := patch["review_new_per_day"]; ok {
+		json.Unmarshal(v, &current.ReviewNewPerDay) //nolint:errcheck
+	}
 	if err := h.repo.UpdateUserSettings(GetUserID(r), *current); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return

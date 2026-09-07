@@ -102,6 +102,11 @@ func (r *Repository) Delete(userID, id string, now int64) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("not found")
 	}
+	// O estado de revisão morre junto: um zettel apagado não deve reaparecer
+	// como "novo" na fila caso volte por um import parcial. SQL direto em vez de
+	// depender do pacote review — a dependência inversa não existe hoje e não
+	// vale criar por uma linha.
+	_, _ = r.db.Exec(`DELETE FROM reviews WHERE user_id=? AND zettel_id=?`, userID, id)
 	return nil
 }
 

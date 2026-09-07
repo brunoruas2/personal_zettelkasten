@@ -10,6 +10,7 @@ import { useSyncStore } from '../store/useSyncStore';
 import { useAuth } from '../providers/AuthProvider';
 import { isPasskeySupported } from '../lib/webauthn';
 import { Dashboard } from '../components/Dashboard';
+import { useReviewCounts } from '../hooks/useReviewCounts';
 import type { Zettel } from '@zettelkasten/core';
 
 function ZettelCard({
@@ -93,6 +94,7 @@ function HomePageContent() {
   const { logout } = useAuth();
   const router = useRouter();
   const offlineRouter = useOfflineRouter();
+  const { totalCount: reviewCount } = useReviewCounts();
   const searchParams = useSearchParams();
 
   const [query, setQuery] = useState('');
@@ -156,6 +158,20 @@ function HomePageContent() {
                 </svg>
               </button>
             )}
+            <button
+              onClick={() => offlineRouter.push('/review')}
+              className="relative rounded-xl p-1.5 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              title="Revisar"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+              </svg>
+              {reviewCount > 0 && (
+                <span className="absolute right-0 top-0 min-w-[15px] rounded-full bg-brand px-1 text-[9px] font-bold leading-[15px] text-white">
+                  {reviewCount > 99 ? '99+' : reviewCount}
+                </span>
+              )}
+            </button>
             <button
               onClick={() => offlineRouter.push('/tags')}
               className="rounded-xl p-1.5 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"

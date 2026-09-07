@@ -15,6 +15,7 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/models"
+	"github.com/brunofullstack/zettelkasten/api/internal/review"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 )
@@ -35,10 +36,11 @@ type Handler struct {
 	repo       *zettel.Repository
 	userLookup UserLookup
 	images     *images.Repository
+	reviews    *review.Repository
 }
 
-func NewHandler(repo *zettel.Repository, userLookup UserLookup, imageRepo *images.Repository) *Handler {
-	return &Handler{repo: repo, userLookup: userLookup, images: imageRepo}
+func NewHandler(repo *zettel.Repository, userLookup UserLookup, imageRepo *images.Repository, reviewRepo *review.Repository) *Handler {
+	return &Handler{repo: repo, userLookup: userLookup, images: imageRepo, reviews: reviewRepo}
 }
 
 func (h *Handler) Routes() chi.Router {
@@ -62,6 +64,9 @@ type exportPayload struct {
 	Zettels    []models.Zettel `json:"zettels"`
 	Links      []models.Link   `json:"links"`
 	Images     []images.Meta   `json:"images,omitempty"`
+	// Agendamento de revisão. `omitempty` mantém o gate de version==1 válido:
+	// backups anteriores simplesmente não trazem o campo.
+	Reviews []models.Review `json:"reviews,omitempty"`
 }
 
 // GET /api/backup/export?key=<64-hex-char-key>
@@ -117,6 +122,7 @@ func (h *Handler) exportJSONForUser(w http.ResponseWriter, userID string) {
 		Zettels:    zettels,
 		Links:      links,
 		Images:     h.imageManifest(userID),
+		Reviews:    h.reviewsForExport(userID),
 	}
 
 	date := time.Now().Format("2006-01-02")
@@ -209,12 +215,44 @@ func (h *Handler) importJSON(w http.ResponseWriter, r *http.Request) {
 		h.syncImageRefs(userID, z.ID, z.Body)
 	}
 
+	h.importReviews(userID, payload.Reviews)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"imported": imported,
 		"skipped":  skipped,
 		"errors":   errs,
 	})
+}
+
+// reviewsForExport devolve o agendamento sem o user_id, como os zettels.
+func (h *Handler) reviewsForExport(userID string) []models.Review {
+	if h.reviews == nil {
+		return nil
+	}
+	reviews, err := h.reviews.List(userID)
+	if err != nil {
+		return nil
+	}
+	for i := range reviews {
+		reviews[i].UserID = ""
+	}
+	return reviews
+}
+
+// importReviews grava o agendamento pelo mesmo Upsert do endpoint, então o
+// last-write-wins por updated_at também vale aqui: restaurar um backup antigo
+// não regride um agendamento mais recente.
+func (h *Handler) importReviews(userID string, reviews []models.Review) {
+	if h.reviews == nil {
+		return
+	}
+	for _, rev := range reviews {
+		if rev.ZettelID == "" {
+			continue
+		}
+		_ = h.reviews.Upsert(userID, rev)
+	}
 }
 
 // syncLinks resolves [[wiki link]] titles to IDs and upserts the links table.

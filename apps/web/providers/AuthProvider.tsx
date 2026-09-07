@@ -199,6 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     await useZettelStore.getState().clearAll();
     localStorage.removeItem('zettel_sync_queue');
+    localStorage.removeItem('zettel_review_queue');
     localStorage.removeItem('zettel_last_sync_at');
     localStorage.removeItem(USER_CACHE_KEY);
     setAccessToken(null);

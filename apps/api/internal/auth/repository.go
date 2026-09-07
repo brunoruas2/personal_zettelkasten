@@ -402,6 +402,9 @@ type UserSettings struct {
 	ZettelTemplate    string          `json:"zettel_template"`
 	GraphExcludedTags []string        `json:"graph_excluded_tags,omitempty"`
 	GraphNodeColors   []NodeColorRule `json:"graph_node_colors,omitempty"`
+	// Quantos zettels nunca revisados entram por sessão de revisão. Zero
+	// significa "não configurado" — o cliente aplica o padrão.
+	ReviewNewPerDay int `json:"review_new_per_day,omitempty"`
 }
 
 func (r *Repository) GetUserSettings(userID string) (*UserSettings, error) {

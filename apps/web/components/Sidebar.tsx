@@ -7,6 +7,7 @@ import { useZettelStore } from '../store/useZettelStore';
 import { useAuth } from '../providers/AuthProvider';
 import { useSyncStore } from '../store/useSyncStore';
 import { useOfflineRouter } from '../hooks/useOfflineRouter';
+import { useReviewCounts } from '../hooks/useReviewCounts';
 import type { SyncStatus } from '../lib/sync';
 import { MarkdownCheatsheet } from './MarkdownCheatsheet';
 
@@ -53,6 +54,8 @@ export function Sidebar() {
     [search],
   );
 
+  const { totalCount: reviewCount } = useReviewCounts();
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -64,6 +67,12 @@ export function Sidebar() {
       if (mod && e.key === 'n') {
         e.preventDefault();
         offlineRouter.push('/zettel/new');
+      }
+      // e.code, e não e.key: onde Alt compõe caractere (Option no macOS)
+      // Alt+R chega como '®'. Mesmo motivo do Alt+T do TocDrawer.
+      if (e.altKey && e.code === 'KeyR') {
+        e.preventDefault();
+        offlineRouter.push('/review');
       }
     };
     window.addEventListener('keydown', handler);
@@ -113,6 +122,20 @@ export function Sidebar() {
             className="flex flex-1 items-center justify-center rounded-xl border-2 border-brand bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-bold text-brand hover:bg-brand/5 dark:hover:bg-brand/10 active:scale-95 transition-all"
           >
             Mapa
+          </Link>
+          <Link
+            href="/review"
+            className="relative flex w-9 h-9 items-center justify-center rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 active:scale-95 transition-all"
+            title="Revisar (Alt+R)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>
+            </svg>
+            {reviewCount > 0 && (
+              <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-brand px-1 text-[10px] font-bold leading-4 text-white">
+                {reviewCount > 99 ? '99+' : reviewCount}
+              </span>
+            )}
           </Link>
           <Link
             href="/tags"

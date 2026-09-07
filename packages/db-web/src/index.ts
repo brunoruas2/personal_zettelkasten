@@ -1,2 +1,2 @@
-export { ZettelRepository, ImageStore } from './ZettelRepository';
+export { ZettelRepository, ImageStore, ReviewStore } from './ZettelRepository';
 export type { ImageRecord } from './ZettelRepository';

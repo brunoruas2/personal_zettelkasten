@@ -7,6 +7,7 @@ import { useSyncStore } from '../../store/useSyncStore';
 import { THEMES, applyTheme, getSavedThemeId, type ThemeId } from '../../lib/theme';
 import { FONTS, applyFont, getSavedFontId, type FontId } from '../../lib/font';
 import { DIAGRAM_LAYOUTS, applyDiagramLayout, getSavedDiagramLayoutId, type DiagramLayoutId } from '../../lib/diagramLayout';
+import { useReviewStore } from '../../store/useReviewStore'
 import { useZettelStore } from '../../store/useZettelStore';
 import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 import { TagInput } from '../../components/TagInput';
@@ -83,6 +84,15 @@ export default function SettingsPage() {
   const [colorSelectedZettel, setColorSelectedZettel] = useState<{ id: string; title: string } | null>(null)
   const [colorPick, setColorPick] = useState<string | null>(null)
   const colorSearchRef = useRef<HTMLInputElement>(null)
+
+  // Revisão espaçada
+  const reviewStates = useReviewStore((s) => s.states)
+  const newPerDay = useReviewStore((s) => s.newPerDay)
+  const setNewPerDay = useReviewStore((s) => s.setNewPerDay)
+  const setReviewSuspended = useReviewStore((s) => s.setSuspended)
+  const [newPerDaySaved, setNewPerDaySaved] = useState(false)
+  const [suspendSearch, setSuspendSearch] = useState('')
+  const [suspendDropdownOpen, setSuspendDropdownOpen] = useState(false)
 
   useEffect(() => {
     setThemeId(getSavedThemeId())
@@ -203,6 +213,25 @@ export default function SettingsPage() {
     setGraphNodeColors(newRules)
     api.put('/api/auth/settings', { graph_node_colors: newRules }).catch(() => {})
   }
+
+  async function handleSaveNewPerDay(value: number) {
+    const clamped = Math.max(1, Math.min(100, value))
+    setNewPerDay(clamped)
+    await api.put('/api/auth/settings', { review_new_per_day: clamped })
+    setNewPerDaySaved(true)
+    setTimeout(() => setNewPerDaySaved(false), 2000)
+  }
+
+  const suspendedZettels = zettels
+    .filter((z) => reviewStates[z.id]?.suspended)
+    .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
+
+  const suspendSearchResults = suspendSearch.trim()
+    ? zettels
+        .filter((z) => !reviewStates[z.id]?.suspended)
+        .filter((z) => z.title.toLowerCase().includes(suspendSearch.toLowerCase()))
+        .slice(0, 8)
+    : []
 
   function handleAddColorRule() {
     if (!colorSelectedZettel || !colorPick) return
@@ -789,6 +818,82 @@ export default function SettingsPage() {
                   </li>
                 ))}
               </ul>
+            )}
+            <p className="mt-3 text-xs text-zinc-400">Sincronizado entre dispositivos</p>
+          </section>
+
+          {/* Revisão */}
+          <section>
+            <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Revisão</h2>
+            <p className="mb-4 text-sm text-zinc-500">
+              Todo zettel entra na fila de revisão espaçada automaticamente. Aqui você limita quantos
+              zettels inéditos aparecem por sessão e desativa os que não quer revisar.
+            </p>
+
+            <div className="mb-5 flex items-center gap-3">
+              <label htmlFor="review-new-per-day" className="text-sm text-zinc-700 dark:text-zinc-300">
+                Zettels novos por sessão
+              </label>
+              <input
+                id="review-new-per-day"
+                type="number"
+                min={1}
+                max={100}
+                value={newPerDay}
+                onChange={(e) => setNewPerDay(Number(e.target.value))}
+                onBlur={(e) => void handleSaveNewPerDay(Number(e.target.value))}
+                className="w-20 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-200 outline-none focus:ring-2 focus:ring-brand/50"
+              />
+              {newPerDaySaved && <span className="text-xs text-brand">Salvo</span>}
+            </div>
+
+            <div className="relative" style={{ maxWidth: 340 }}>
+              <input
+                type="text"
+                value={suspendSearch}
+                onChange={(e) => { setSuspendSearch(e.target.value); setSuspendDropdownOpen(true) }}
+                onFocus={() => setSuspendDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setSuspendDropdownOpen(false), 150)}
+                placeholder="Desativar um zettel..."
+                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-400 outline-none focus:ring-2 focus:ring-brand/50"
+              />
+              {suspendDropdownOpen && suspendSearchResults.length > 0 && (
+                <div className="absolute z-20 mt-1 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg overflow-hidden">
+                  {suspendSearchResults.map((z) => (
+                    <button
+                      key={z.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        void setReviewSuspended(z.id, true)
+                        setSuspendSearch('')
+                        setSuspendDropdownOpen(false)
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      {z.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {suspendedZettels.length > 0 ? (
+              <ul className="mt-4 space-y-2">
+                {suspendedZettels.map((z) => (
+                  <li key={z.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 py-2">
+                    <span className="flex-1 truncate text-sm text-zinc-700 dark:text-zinc-300">{z.title}</span>
+                    <button
+                      onClick={() => void setReviewSuspended(z.id, false)}
+                      className="text-xs text-brand hover:opacity-80 transition-opacity"
+                      title="Voltar a revisar"
+                    >
+                      Reativar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-4 text-xs text-zinc-400">Nenhum zettel desativado.</p>
             )}
             <p className="mt-3 text-xs text-zinc-400">Sincronizado entre dispositivos</p>
           </section>

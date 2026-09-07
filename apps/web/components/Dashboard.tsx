@@ -6,6 +6,8 @@ import type { Zettel, Link as ZettelLink } from '@zettelkasten/core';
 import { useZettelStore } from '../store/useZettelStore';
 import { buildNodeColorMap } from '../lib/graphColors';
 import { useOfflineRouter } from '../hooks/useOfflineRouter';
+import { useReviewCounts } from '../hooks/useReviewCounts';
+import { useReviewStore } from '../store/useReviewStore';
 
 // ── Mini-map ──────────────────────────────────────────────────────────────────
 
@@ -417,6 +419,78 @@ function RecentZettels({ zettels }: { zettels: Zettel[] }) {
   );
 }
 
+// ── Revisão ───────────────────────────────────────────────────────────────────
+
+const DAY_MS = 86_400_000;
+const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+function ReviewCard() {
+  const { dueCount, newCount, totalCount, nextDueAt } = useReviewCounts();
+  const states = useReviewStore((s) => s.states);
+  const offlineRouter = useOfflineRouter();
+
+  // Previsão dos próximos 7 dias: quantos vencem em cada dia, contando de hoje.
+  const forecast = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const base = start.getTime();
+    const buckets = Array.from({ length: 7 }, (_, i) => ({
+      label: WEEKDAYS[new Date(base + i * DAY_MS).getDay()],
+      count: 0,
+    }));
+
+    for (const state of Object.values(states)) {
+      if (state.suspended) continue;
+      const slot = Math.floor((state.dueAt - base) / DAY_MS);
+      if (slot >= 0 && slot < 7) buckets[slot].count++;
+      else if (slot < 0) buckets[0].count++; // já vencido conta como hoje
+    }
+    return buckets;
+  }, [states]);
+
+  const peak = Math.max(1, ...forecast.map((b) => b.count));
+
+  return (
+    <div className="rounded-2xl bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+      <div className="px-4 pt-3 pb-2 flex items-baseline justify-between">
+        <span className="text-xs font-semibold text-zinc-400">Revisão</span>
+        <span className="text-xs text-zinc-400">
+          {dueCount} {dueCount === 1 ? 'vencido' : 'vencidos'} · {newCount} {newCount === 1 ? 'novo' : 'novos'}
+        </span>
+      </div>
+
+      <div className="px-4 pb-3">
+        <div className="mb-3 flex h-12 items-end gap-1">
+          {forecast.map((bucket, i) => (
+            <div key={i} className="flex flex-1 flex-col items-center gap-1">
+              <div
+                className={`w-full rounded-sm ${i === 0 ? 'bg-brand' : 'bg-brand/30'}`}
+                style={{ height: `${Math.max(2, (bucket.count / peak) * 36)}px` }}
+                title={`${bucket.count} zettel(s)`}
+              />
+              <span className="text-[9px] text-zinc-400">{bucket.label}</span>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={() => offlineRouter.push('/review')}
+          disabled={totalCount === 0}
+          className="w-full rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:active:scale-100"
+        >
+          {totalCount > 0 ? `Revisar ${totalCount}` : 'Nada para revisar'}
+        </button>
+
+        {totalCount === 0 && nextDueAt && (
+          <p className="mt-2 text-center text-[11px] text-zinc-400">
+            Próxima em {new Date(nextDueAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
 function StatCard({ label, value }: { label: string; value: number }) {
@@ -435,14 +509,16 @@ export function Dashboard({ zettels, links }: { zettels: Zettel[]; links: Zettel
     () => new Set(zettels.flatMap((z) => z.tags)).size,
     [zettels],
   );
+  const { dueCount } = useReviewCounts();
 
   return (
     <div className="flex h-full flex-col gap-4 p-6">
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3 shrink-0">
+      <div className="grid grid-cols-4 gap-3 shrink-0">
         <StatCard label="Zettels" value={zettels.length} />
         <StatCard label="Tags" value={tagCount} />
         <StatCard label="Conexões" value={links.length} />
+        <StatCard label="Para revisar" value={dueCount} />
       </div>
 
       {/* 3-column main area */}
@@ -460,8 +536,15 @@ export function Dashboard({ zettels, links }: { zettels: Zettel[]; links: Zettel
         {/* Col 2: tags */}
         <TagRanking zettels={zettels} />
 
-        {/* Col 3: visitados recentemente */}
-        <RecentZettels zettels={zettels} />
+        {/* Col 3: revisão (fixo) + visitados recentemente (flex) */}
+        <div className="flex flex-col gap-3 min-h-0">
+          <div className="shrink-0">
+            <ReviewCard />
+          </div>
+          <div className="flex-1 min-h-0">
+            <RecentZettels zettels={zettels} />
+          </div>
+        </div>
       </div>
     </div>
   );
