@@ -164,6 +164,7 @@ export function MarkdownCheatsheet({ open, onClose }: Props) {
             <Row syntax="Alt+T" desc="Abre/fecha o sumário (na leitura e no editor)" />
             <Row syntax="Alt+F" desc="Vai para o fim do conteúdo (na leitura e no editor)" />
             <Row syntax="Alt+R" desc="Abre a sessão de revisão espaçada" />
+            <Row syntax="Alt+B" desc="Abre a busca com preview (de qualquer tela)" />
           </Section>
         </div>
       </div>
