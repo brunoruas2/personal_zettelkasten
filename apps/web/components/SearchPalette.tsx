@@ -93,7 +93,7 @@ export function SearchPalette() {
   // no macOS) a comparação por caractere rejeitaria o atalho.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!e.altKey || e.code !== 'Space') return;
+      if (!e.altKey || e.code !== 'KeyB') return;
       e.preventDefault();
       setOpen((prev) => !prev);
     };
@@ -328,7 +328,7 @@ export function SearchPalette() {
           <span><kbd className="font-sans">↑↓</kbd> navegar</span>
           <span><kbd className="font-sans">Enter</kbd> abrir</span>
           <span><kbd className="font-sans">Esc</kbd> fechar</span>
-          <span className="ml-auto"><kbd className="font-sans">Alt+Space</kbd></span>
+          <span className="ml-auto"><kbd className="font-sans">Alt+B</kbd></span>
         </div>
       </div>
     </div>
