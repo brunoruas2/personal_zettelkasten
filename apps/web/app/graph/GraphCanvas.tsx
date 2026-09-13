@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useZettelStore } from '../../store/useZettelStore';
 import { useOfflineRouter } from '../../hooks/useOfflineRouter';
+import { buildChildAdjacency, collectReachable } from '@zettelkasten/core';
 import { buildNodeColorMap, buildNebulaMap } from '../../lib/graphColors';
 import { loadLayoutCache, isLayoutCacheValid } from '../../lib/graphLayoutCache';
 import { CreateFromNodeModal } from '../../components/CreateFromNodeModal';
@@ -178,34 +179,12 @@ export function GraphCanvas() {
     );
 
     // Focus mode: restrict to the origin node + everything reachable from it
-    // by following parent → child edges, direct or transitive. Plain [[Title]]
-    // links store source=parent, target=child. [[^Title]] links (type:
-    // 'parent-ref') store source=child, target=parent — the author wrote
-    // "^Title" meaning Title is their parent — so the parent→child edge for
-    // BFS purposes is the reverse of the stored row. This reversal is local
-    // to this BFS step; raw stored rows are never flipped.
+    // by following parent → child edges, direct or transitive. The parent→child
+    // adjacency (including the reversal of 'parent-ref' rows) is defined once in
+    // buildChildAdjacency — the same traversal the PDF export uses.
     let visibleIds = filteredSet;
     if (focusOriginId && filteredSet.has(focusOriginId)) {
-      const adjacency = new Map<string, string[]>();
-      for (const l of filteredLinks) {
-        const [parent, child] = l.type === 'parent-ref'
-          ? [l.targetId, l.sourceId]
-          : [l.sourceId, l.targetId];
-        if (!adjacency.has(parent)) adjacency.set(parent, []);
-        adjacency.get(parent)!.push(child);
-      }
-      const reachable = new Set<string>([focusOriginId]);
-      const queue = [focusOriginId];
-      while (queue.length > 0) {
-        const current = queue.shift()!;
-        for (const next of adjacency.get(current) ?? []) {
-          if (!reachable.has(next)) {
-            reachable.add(next);
-            queue.push(next);
-          }
-        }
-      }
-      visibleIds = reachable;
+      visibleIds = collectReachable(focusOriginId, buildChildAdjacency(filteredLinks));
     }
 
     const finalFiltered = visibleIds === filteredSet ? filtered : filtered.filter((z) => visibleIds.has(z.id));

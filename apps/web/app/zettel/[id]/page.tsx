@@ -8,6 +8,7 @@ import { MarkdownRenderer } from '../../../components/MarkdownRenderer';
 import { OfflineLink } from '../../../components/OfflineLink';
 import { TocDrawer } from '../../../components/TocDrawer';
 import { ScrollEdgeButton, scrollToEnd } from '../../../components/ScrollEdgeButton';
+import { ExportScopeModal } from '../../../components/ExportScopeModal';
 import { useOfflineRouter } from '../../../hooks/useOfflineRouter';
 import { extractHeadings } from '../../../lib/toc';
 import type { Zettel } from '@zettelkasten/core';
@@ -21,6 +22,7 @@ export default function ZettelDetailPage() {
   const [backlinks, setBacklinks] = useState<Zettel[]>([]);
   const [readFontSize, setReadFontSize] = useState(16);
   const [tocOpen, setTocOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const hasHeadings = useMemo(
@@ -214,7 +216,7 @@ export default function ZettelDetailPage() {
             </svg>
           </button>
           <button
-            onClick={() => offlineRouter.push(`/export/pdf?ids=${id}`)}
+            onClick={() => setExportOpen(true)}
             className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
             title="Exportar PDF"
           >
@@ -338,6 +340,7 @@ export default function ZettelDetailPage() {
       {/* scrollRef nulo: no desktop quem rola é o <main>, que é h-screen, então
           a faixa do spy medida do viewport dá o mesmo resultado. */}
       <TocDrawer open={tocOpen} onClose={toggleToc} contentRef={contentRef} revision={zettel.body} />
+      <ExportScopeModal open={exportOpen} zettelId={zettel.id} onClose={() => setExportOpen(false)} />
     </>
   );
 }
