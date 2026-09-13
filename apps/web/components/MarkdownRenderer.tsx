@@ -61,6 +61,13 @@ interface Props {
   onLinkPress: (title: string) => void;
   disableWikiLinks?: boolean;
   onBodyChange?: (rawStart: number, rawEnd: number, newContent: string) => void;
+  /**
+   * Faz `plantuml`, `abc` e `chords` caírem no `CodeBlock` comum em vez de
+   * montar seus renderizadores. Existe para o preview da `SearchPalette`, onde
+   * descer a lista com ↓ montaria um renderer por item — e o engine do PlantUML
+   * é global, serializa os renders numa fila e carrega WASM no primeiro uso.
+   */
+  disableHeavyBlocks?: boolean;
 }
 
 interface ListNode {
@@ -341,7 +348,7 @@ function renderInline(
   return parts;
 }
 
-export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, onBodyChange }: Props) {
+export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, onBodyChange, disableHeavyBlocks = false }: Props) {
   // Âncoras da Table of Contents. O mapa vem de `lib/toc.ts`, a mesma fonte que
   // alimenta o TocDrawer, para que id da lista e id do DOM nunca divirjam.
   const headingIds = React.useMemo(() => headingIdsByLine(body), [body]);
@@ -374,7 +381,11 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
         continue;
       } else {
         const content = codeBlockLines.join('\n');
-        if (codeBlockLang === 'plantuml') {
+        // A mesma condição vale para o fence não fechado no fim do documento —
+        // um zettel que termina em ```plantuml sem fechar escaparia da regra.
+        if (disableHeavyBlocks) {
+          blocks.push(<CodeBlock key={`cb${i}`} content={content} lang={codeBlockLang} />);
+        } else if (codeBlockLang === 'plantuml') {
           blocks.push(<PlantUmlBlock key={`puml${i}`} source={content} />);
         } else if (codeBlockLang === 'chords') {
           const rawStart = lineStartOffsets[codeBlockContentStartLine];
@@ -574,7 +585,9 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
   // Render unclosed code block (missing closing ```)
   if (inCodeBlock && codeBlockLines.length > 0) {
     const content = codeBlockLines.join('\n');
-    if (codeBlockLang === 'plantuml') {
+    if (disableHeavyBlocks) {
+      blocks.push(<CodeBlock key="cb-unclosed" content={content} lang={codeBlockLang} />);
+    } else if (codeBlockLang === 'plantuml') {
       blocks.push(<PlantUmlBlock key="puml-unclosed" source={content} />);
     } else if (codeBlockLang === 'chords') {
       const rawStart = lineStartOffsets[codeBlockContentStartLine];

@@ -5,6 +5,7 @@ import { AuthProvider } from '../providers/AuthProvider';
 import { DatabaseProvider } from '../providers/DatabaseProvider';
 import { ThemeProvider } from '../providers/ThemeProvider';
 import { Sidebar } from '../components/Sidebar';
+import { SearchPalette } from '../components/SearchPalette';
 import { THEME_SCRIPT } from '../lib/theme';
 import { FONT_SCRIPT } from '../lib/font';
 
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   {children}
                 </main>
               </div>
+              <SearchPalette />
             </DatabaseProvider>
           </AuthProvider>
         </ThemeProvider>

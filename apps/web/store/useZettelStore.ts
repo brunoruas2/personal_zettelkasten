@@ -3,8 +3,8 @@
 import { create } from 'zustand';
 import type { Zettel, Link } from '@zettelkasten/core';
 import type { ZettelController } from '@zettelkasten/core';
-import { syncService, serverZettelToLocal } from '../lib/sync'
-import { api } from '../lib/api';
+import { syncService } from '../lib/sync'
+import { searchZettels } from '../lib/searchZettels';
 import { getNodeColorRules, saveNodeColorRules, type NodeColorRule } from '../lib/graphColors';
 import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
 
@@ -67,24 +67,7 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     set({ isLoading: true });
 
     try {
-      if (!query.trim()) {
-        const zettels = await controller.getAll();
-        set({ zettels, isLoading: false });
-        return;
-      }
-
-      try {
-        const res = await api.get(`/api/zettels?q=${encodeURIComponent(query)}`);
-        if (res.ok) {
-          const data = await res.json();
-          set({ zettels: data.map(serverZettelToLocal), isLoading: false });
-          return;
-        }
-      } catch {
-        // offline or error — fall through to local search
-      }
-
-      const zettels = await controller.search(query);
+      const zettels = await searchZettels(controller, query);
       set({ zettels, isLoading: false });
     } catch {
       set({ isLoading: false });
