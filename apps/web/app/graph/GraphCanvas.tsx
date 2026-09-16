@@ -120,6 +120,11 @@ export function GraphCanvas() {
   const sessionActive = sessionParam && focusOriginId != null;
   const [splitEdit, setSplitEdit] = useState<{ zettelId: string } | null>(null);
   const [capWarning, setCapWarning] = useState(false);
+  // Sessão entra com forças bem mais fortes (painéis grandes em vez de
+  // pontinhos) — a estabilização inicial do d3-force "tremilica" o mapa
+  // inteiro por um instante. Uma tela de carregamento cobre exatamente esse
+  // período, em vez de deixar o usuário ver a simulação assentando.
+  const [sessionSettled, setSessionSettled] = useState<boolean>(() => !sessionActive);
   const isLoading = useZettelStore((s) => s.isLoading);
   // Posição desejada (coordenadas do clique) para o próximo stub criado via
   // "+" — consumida uma única vez pelo efeito de adição incremental abaixo,
@@ -474,7 +479,27 @@ export function GraphCanvas() {
       // O tick é emitido exatamente quando as posições mudam, e a d3 para de
       // emitir quando a simulação esfria — é o que deixa o loop dormir sem
       // ninguém precisar consultar alpha() por frame.
-      simulation.on('tick', markDirty);
+      let settleTimer: ReturnType<typeof setTimeout> | null = null;
+      if (sessionActive) {
+        setSessionSettled(false);
+        let settled = false;
+        const markSettled = () => {
+          if (settled) return;
+          settled = true;
+          setSessionSettled(true);
+          if (settleTimer !== null) { clearTimeout(settleTimer); settleTimer = null; }
+        };
+        simulation.on('tick', () => {
+          markDirty();
+          if (simulation.alpha() < 0.08) markSettled();
+        });
+        // Rede de segurança: sessões grandes/com cache inválido podem demorar
+        // mais para cair sob o limiar de alpha — não deixa a tela de
+        // carregamento presa indefinidamente.
+        settleTimer = setTimeout(markSettled, 1500);
+      } else {
+        simulation.on('tick', markDirty);
+      }
 
       simulationRef.current = { simulation, data };
 
@@ -1242,6 +1267,7 @@ export function GraphCanvas() {
         simulation.on('tick', null);
         simulation.stop();
         cancelAnimationFrame(animFrameRef.current);
+        if (settleTimer !== null) clearTimeout(settleTimer);
         clearPreviewTimer();
         canvas.removeEventListener('mousemove', onMouseMove);
         canvas.removeEventListener('mousedown', onMouseDown);
@@ -1316,6 +1342,34 @@ export function GraphCanvas() {
             mesmo canvas obrigaria a repintá-lo junto e anularia o dirty flag. */}
         <canvas ref={bgCanvasRef} style={{ position: 'absolute', inset: 0, display: 'block' }} />
         <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, display: 'block', cursor: 'grab' }} />
+        {sessionActive && !sessionSettled && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 40,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              background: '#0d1117',
+            }}
+          >
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                border: '3px solid rgba(255,255,255,0.15)',
+                borderTopColor: 'rgb(var(--color-brand))',
+                animation: 'zk-session-spin 0.8s linear infinite',
+              }}
+            />
+            <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Organizando a sessão…</span>
+            <style>{'@keyframes zk-session-spin { to { transform: rotate(360deg); } }'}</style>
+          </div>
+        )}
         {focusOriginId && (
           <button
             type="button"
