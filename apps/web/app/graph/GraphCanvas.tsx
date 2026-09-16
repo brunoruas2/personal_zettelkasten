@@ -445,10 +445,16 @@ export function GraphCanvas() {
       const badgeColor = getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim();
       const badgeFill = `rgb(${badgeColor.split(/\s+/).join(',')})`;
 
-      // Load cached positions — skip convergence animation if valid
+      // Load cached positions — skip convergence animation if valid. Em
+      // sessão isso não vale: o cache guarda posições do layout de
+      // pontinhos, próximas demais pra colisão/carga muito mais fortes dos
+      // painéis — reaproveitar essas posições (e o alpha baixo que vinha
+      // junto) fazia o limiar de "assentado" ser atingido quase instantâneo,
+      // com os painéis ainda se reorganizando por trás da tela de carregamento
+      // já escondida.
       const cache = loadLayoutCache();
       const nodeIds = data.nodes.map((n) => n.id);
-      const hasValidCache = cache !== null && isLayoutCacheValid(nodeIds, cache);
+      const hasValidCache = !sessionActive && cache !== null && isLayoutCacheValid(nodeIds, cache);
       if (hasValidCache) {
         for (const node of data.nodes) {
           const pos = cache.positions[node.id];
@@ -491,12 +497,13 @@ export function GraphCanvas() {
         };
         simulation.on('tick', () => {
           markDirty();
-          if (simulation.alpha() < 0.08) markSettled();
+          if (simulation.alpha() < 0.03) markSettled();
         });
-        // Rede de segurança: sessões grandes/com cache inválido podem demorar
-        // mais para cair sob o limiar de alpha — não deixa a tela de
-        // carregamento presa indefinidamente.
-        settleTimer = setTimeout(markSettled, 1500);
+        // Rede de segurança: sessões grandes podem demorar mais para cair
+        // sob o limiar de alpha — não deixa a tela de carregamento presa
+        // indefinidamente. Alto o suficiente para não cortar a estabilização
+        // real no meio (ver nota sobre o cache de posições acima).
+        settleTimer = setTimeout(markSettled, 3000);
       } else {
         simulation.on('tick', markDirty);
       }
