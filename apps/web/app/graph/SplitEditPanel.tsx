@@ -40,7 +40,7 @@ export function SplitEditPanel({ zettelId, onClose }: SplitEditPanelProps) {
         className="lg:hidden fixed inset-0 z-40 bg-black/60"
         onClick={requestClose}
       />
-      <div className="fixed inset-0 z-50 lg:static lg:z-auto lg:w-[440px] lg:flex-shrink-0 lg:border-l lg:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
+      <div className="fixed inset-0 z-50 lg:static lg:z-auto lg:w-[560px] lg:flex-shrink-0 lg:border-l lg:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
         <ZettelEditForm
           zettelId={zettelId}
           layout="panel"

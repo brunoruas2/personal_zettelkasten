@@ -24,7 +24,13 @@ export default function GraphPage() {
           ← Voltar
         </Link>
         <span className="text-sm font-semibold text-zinc-300">Mapa de Conexões</span>
-        <span className="hidden text-xs text-zinc-500 lg:block">Arraste · Scroll para zoom · Clique para navegar</span>
+        <span />
+      </div>
+      {/* Canto inferior esquerdo, não o superior direito: com o painel split
+          aberto o cabeçalho de largura total (acima) ficava por cima da
+          primeira linha do painel, à direita. */}
+      <div className="pointer-events-none absolute bottom-4 left-4 z-10 hidden text-xs text-zinc-500 lg:block">
+        Arraste · Scroll para zoom · Clique para navegar
       </div>
       <GraphCanvas />
     </div>

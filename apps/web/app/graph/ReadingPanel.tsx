@@ -3,9 +3,8 @@
 import { forwardRef } from 'react';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer';
 
-const PANEL_WIDTH = 260;
-const PANEL_MAX_HEIGHT = 180;
-const BODY_LIMIT = 600;
+const PANEL_WIDTH = 380;
+const PANEL_MAX_HEIGHT = 420;
 
 interface ReadingPanelProps {
   title: string;
@@ -19,8 +18,6 @@ export const ReadingPanel = forwardRef<HTMLDivElement, ReadingPanelProps>(functi
   { title, body, visible, onOpen },
   ref,
 ) {
-  const truncated = body.length > BODY_LIMIT ? body.slice(0, BODY_LIMIT) + '…' : body;
-
   return (
     <div
       ref={ref}
@@ -62,10 +59,10 @@ export const ReadingPanel = forwardRef<HTMLDivElement, ReadingPanelProps>(functi
         <div
           onClick={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
-          style={{ maxHeight: 130, overflowY: 'auto', lineHeight: 1.4, cursor: 'auto' }}
+          style={{ maxHeight: PANEL_MAX_HEIGHT - 40, overflowY: 'auto', lineHeight: 1.4, cursor: 'auto' }}
         >
-          {truncated.trim() ? (
-            <MarkdownRenderer body={truncated} disableWikiLinks disableHeavyBlocks onLinkPress={() => {}} />
+          {body.trim() ? (
+            <MarkdownRenderer body={body} disableWikiLinks onLinkPress={() => {}} />
           ) : (
             <p style={{ color: '#7d8590', fontStyle: 'italic', margin: 0 }}>Sem conteúdo ainda.</p>
           )}

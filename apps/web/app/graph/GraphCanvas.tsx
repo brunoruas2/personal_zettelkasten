@@ -447,11 +447,11 @@ export function GraphCanvas() {
       // não uma fórmula exata — ajustar aqui se sessões grandes ficarem
       // apertadas ou demorarem demais para estabilizar.
       const collisionRadius = sessionActive
-        ? (d: any) => getNodeRadius(d) + 140
+        ? (d: any) => getNodeRadius(d) + 240
         : (d: any) => getNodeRadius(d) + 2;
       const simulation = d3.forceSimulation(data.nodes as any)
-        .force('link', d3.forceLink(data.links).id((d: any) => d.id).distance(sessionActive ? 260 : 60).strength(0.3))
-        .force('charge', d3.forceManyBody().strength(sessionActive ? -600 : -120).distanceMax(sessionActive ? 900 : 300))
+        .force('link', d3.forceLink(data.links).id((d: any) => d.id).distance(sessionActive ? 420 : 60).strength(0.3))
+        .force('charge', d3.forceManyBody().strength(sessionActive ? -900 : -120).distanceMax(sessionActive ? 1200 : 300))
         .force('center', d3.forceCenter(0, 0))
         .force('collision', d3.forceCollide().radius(collisionRadius))
         .alphaDecay(0.02)
