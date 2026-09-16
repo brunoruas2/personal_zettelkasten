@@ -7,10 +7,11 @@ import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 import { buildChildAdjacency, collectReachable } from '@zettelkasten/core';
 import { buildNodeColorMap, buildNebulaMap } from '../../lib/graphColors';
 import { loadLayoutCache, isLayoutCacheValid } from '../../lib/graphLayoutCache';
-import { CreateFromNodeModal } from '../../components/CreateFromNodeModal';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer';
 import { buildStars, drawStarfield } from './starfield';
 import { getNebulaSprite, NEBULA_WORLD_RADIUS } from './nebulaSprites';
+import { ReadingPanel } from './ReadingPanel';
+import { SplitEditPanel } from './SplitEditPanel';
 
 /**
  * Permanência do cursor sobre o nó antes de abrir o preview. Com 0, atravessar
@@ -82,7 +83,6 @@ export function GraphCanvas() {
   const graphExcludedTags = useZettelStore((s) => s.graphExcludedTags);
   const graphNodeColors = useZettelStore((s) => s.graphNodeColors);
   const createZettel = useZettelStore((s) => s.createZettel);
-  const updateZettel = useZettelStore((s) => s.updateZettel);
   const router = useOfflineRouter();
   const routerRef = useRef(router);
   routerRef.current = router;
@@ -112,14 +112,37 @@ export function GraphCanvas() {
   });
   const hoverRef = useRef<number>(-1);
   const [preview, setPreview] = useState<{ x: number; y: number; title: string; tags: string[]; connections: number; body: string } | null>(null);
-  const [nodeModal, setNodeModal] = useState<
-    { mode: 'create'; id: string; title: string; tags: string[] } | { mode: 'edit'; id: string; title: string; body: string; tags: string[] } | null
-  >(null);
   const [focusOriginId] = useState<string | null>(() => searchParams.get('focus'));
+  // Sessão só é lida na montagem, como `focusOriginId` — sair/entrar em sessão
+  // usa navegação dura (mesmo mecanismo do modo focus), então o valor nunca
+  // precisa reagir a mudança de URL dentro do mesmo mount.
+  const [sessionParam] = useState<boolean>(() => searchParams.get('session') === '1');
+  const sessionActive = sessionParam && focusOriginId != null;
+  const [splitEdit, setSplitEdit] = useState<{ zettelId: string } | null>(null);
+  const [capWarning, setCapWarning] = useState(false);
+  const isLoading = useZettelStore((s) => s.isLoading);
+  // Posição desejada (coordenadas do clique) para o próximo stub criado via
+  // "+" — consumida uma única vez pelo efeito de adição incremental abaixo,
+  // que de outra forma posicionaria o nó pela média dos vizinhos.
+  const pendingNodePosRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  // Painéis de leitura são overlays DOM; suas posições são escritas
+  // imperativamente dentro do loop de desenho (mesmo ciclo dirty-flag do
+  // canvas), não via re-render do React a cada tick da simulação.
+  const panelElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const visiblePanelIdsRef = useRef<Set<string>>(new Set());
+  const [panelVisVersion, setPanelVisVersion] = useState(0);
   const lastFocusOriginRef = useRef<string | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoveredNodeIdRef = useRef<string | null>(null);
   const previewRectRef = useRef<{ left: number; top: number; right: number; bottom: number } | null>(null);
+
+  // Sessão ativa exige o nó de foco ainda existir — se ele for excluído (ex:
+  // pelo painel split), a sessão e o modo focus perdem sentido.
+  useEffect(() => {
+    if (!sessionActive || !focusOriginId || isLoading) return;
+    const stillExists = zettels.some((z) => z.id === focusOriginId);
+    if (!stillExists) routerRef.current.replace('/graph');
+  }, [sessionActive, focusOriginId, isLoading, zettels]);
 
   // Snapshot fed to the heavy setup effect — only replaced when a full
   // simulation rebuild is actually warranted (see the sync effect below).
@@ -236,12 +259,7 @@ export function GraphCanvas() {
     return { graphData: { nodes, links: graphLinks, maxConn }, legend: legendItems, nebulaMap };
   }, [zettels, links, controller, graphExcludedTags, graphNodeColors, focusOriginId]);
 
-  // Recalcular isso em todo render varre a lista inteira de zettels por causa
-  // de um modal que quase sempre está fechado.
-  const tagSuggestions = useMemo(
-    () => Array.from(new Set(zettels.flatMap((z) => z.tags))),
-    [zettels],
-  );
+  const zettelBodyById = useMemo(() => new Map(zettels.map((z) => [z.id, z.body])), [zettels]);
 
   // O loop de desenho lê a névoa por ref: assim uma regra de cor nova aparece
   // sem depender de o efeito pesado ser recriado.
@@ -312,17 +330,23 @@ export function GraphCanvas() {
     for (const n of graphData.nodes) {
       if (oldById.has(n.id)) continue;
 
-      const neighborIds = neighborsByNewId.get(n.id) ?? [];
-      const neighborPositions = neighborIds
-        .map((id) => oldById.get(id))
-        .filter((node): node is GraphNode => !!node && node.x != null && node.y != null);
+      let x: number, y: number;
+      if (pendingNodePosRef.current?.id === n.id) {
+        ({ x, y } = pendingNodePosRef.current);
+        pendingNodePosRef.current = null;
+      } else {
+        const neighborIds = neighborsByNewId.get(n.id) ?? [];
+        const neighborPositions = neighborIds
+          .map((id) => oldById.get(id))
+          .filter((node): node is GraphNode => !!node && node.x != null && node.y != null);
 
-      const { x, y } = neighborPositions.length > 0
-        ? {
-            x: neighborPositions.reduce((sum, node) => sum + node.x!, 0) / neighborPositions.length,
-            y: neighborPositions.reduce((sum, node) => sum + node.y!, 0) / neighborPositions.length,
-          }
-        : { x: (Math.random() - 0.5) * 40, y: (Math.random() - 0.5) * 40 };
+        ({ x, y } = neighborPositions.length > 0
+          ? {
+              x: neighborPositions.reduce((sum, node) => sum + node.x!, 0) / neighborPositions.length,
+              y: neighborPositions.reduce((sum, node) => sum + node.y!, 0) / neighborPositions.length,
+            }
+          : { x: (Math.random() - 0.5) * 40, y: (Math.random() - 0.5) * 40 });
+      }
 
       addedNodes.push({ ...n, x, y });
     }
@@ -417,11 +441,19 @@ export function GraphCanvas() {
         }
       }
 
+      // Em sessão, nós viram painéis de leitura (~260x170) em vez de pontos —
+      // a colisão e as forças de repulsão/link precisam de magnitude bem maior
+      // para os painéis não se sobreporem. Valores calibrados visualmente,
+      // não uma fórmula exata — ajustar aqui se sessões grandes ficarem
+      // apertadas ou demorarem demais para estabilizar.
+      const collisionRadius = sessionActive
+        ? (d: any) => getNodeRadius(d) + 140
+        : (d: any) => getNodeRadius(d) + 2;
       const simulation = d3.forceSimulation(data.nodes as any)
-        .force('link', d3.forceLink(data.links).id((d: any) => d.id).distance(60).strength(0.3))
-        .force('charge', d3.forceManyBody().strength(-120).distanceMax(300))
+        .force('link', d3.forceLink(data.links).id((d: any) => d.id).distance(sessionActive ? 260 : 60).strength(0.3))
+        .force('charge', d3.forceManyBody().strength(sessionActive ? -600 : -120).distanceMax(sessionActive ? 900 : 300))
         .force('center', d3.forceCenter(0, 0))
-        .force('collision', d3.forceCollide().radius((d: any) => getNodeRadius(d) + 2))
+        .force('collision', d3.forceCollide().radius(collisionRadius))
         .alphaDecay(0.02)
         .velocityDecay(0.3);
 
@@ -449,6 +481,7 @@ export function GraphCanvas() {
       const visibleR: number[] = [];
       const fillPaths = new Map<string, Path2D>();
       const strokePaths = new Map<string, Path2D>();
+      const panelVisScratch = new Set<string>();
 
       const drawGraph = () => {
         const { width: w, height: h } = canvasRectRef.current;
@@ -551,48 +584,53 @@ export function GraphCanvas() {
           }
         }
 
-        // Círculos — agrupados por estilo, um fill/stroke por bucket. Cada arc
-        // precisa de um moveTo antes, senão o subpath se liga ao anterior por
-        // uma reta.
-        fillPaths.clear();
-        strokePaths.clear();
-        for (let k = 0; k < visibleIdx.length; k++) {
-          const i = visibleIdx[k];
-          if (i === hovIdx) continue; // desenhado à parte: raio e traço diferentes
-          const node = nodes[i];
-          const r = visibleR[k];
-          const dimmed = hovNode !== null && !hoveredConnections.has(node.id);
-          const fillStyle = dimmed ? node.color + '30' : node.color;
-          const strokeStyle = dimmed ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.2)';
+        // Círculos e labels — substituídos por painéis de leitura (overlay DOM)
+        // durante uma sessão, já que o conjunto de nós da sessão é o próprio
+        // `data.nodes` (o modo focus já restringe ao conjunto alcançável).
+        if (!sessionActive) {
+          // Círculos — agrupados por estilo, um fill/stroke por bucket. Cada arc
+          // precisa de um moveTo antes, senão o subpath se liga ao anterior por
+          // uma reta.
+          fillPaths.clear();
+          strokePaths.clear();
+          for (let k = 0; k < visibleIdx.length; k++) {
+            const i = visibleIdx[k];
+            if (i === hovIdx) continue; // desenhado à parte: raio e traço diferentes
+            const node = nodes[i];
+            const r = visibleR[k];
+            const dimmed = hovNode !== null && !hoveredConnections.has(node.id);
+            const fillStyle = dimmed ? node.color + '30' : node.color;
+            const strokeStyle = dimmed ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.2)';
 
-          let fillPath = fillPaths.get(fillStyle);
-          if (!fillPath) {
-            fillPath = new Path2D();
-            fillPaths.set(fillStyle, fillPath);
-          }
-          fillPath.moveTo(node.x! + r, node.y!);
-          fillPath.arc(node.x!, node.y!, r, 0, TAU);
+            let fillPath = fillPaths.get(fillStyle);
+            if (!fillPath) {
+              fillPath = new Path2D();
+              fillPaths.set(fillStyle, fillPath);
+            }
+            fillPath.moveTo(node.x! + r, node.y!);
+            fillPath.arc(node.x!, node.y!, r, 0, TAU);
 
-          let strokePath = strokePaths.get(strokeStyle);
-          if (!strokePath) {
-            strokePath = new Path2D();
-            strokePaths.set(strokeStyle, strokePath);
+            let strokePath = strokePaths.get(strokeStyle);
+            if (!strokePath) {
+              strokePath = new Path2D();
+              strokePaths.set(strokeStyle, strokePath);
+            }
+            strokePath.moveTo(node.x! + r, node.y!);
+            strokePath.arc(node.x!, node.y!, r, 0, TAU);
           }
-          strokePath.moveTo(node.x! + r, node.y!);
-          strokePath.arc(node.x!, node.y!, r, 0, TAU);
-        }
-        for (const [style, path] of fillPaths) {
-          ctx.fillStyle = style;
-          ctx.fill(path);
-        }
-        ctx.lineWidth = 0.5;
-        for (const [style, path] of strokePaths) {
-          ctx.strokeStyle = style;
-          ctx.stroke(path);
+          for (const [style, path] of fillPaths) {
+            ctx.fillStyle = style;
+            ctx.fill(path);
+          }
+          ctx.lineWidth = 0.5;
+          for (const [style, path] of strokePaths) {
+            ctx.strokeStyle = style;
+            ctx.stroke(path);
+          }
         }
 
         const hovR = hovNode ? getNodeRadius(hovNode) : 0;
-        if (hovNode && hovNode.x != null && hovNode.y != null) {
+        if (!sessionActive && hovNode && hovNode.x != null && hovNode.y != null) {
           const r = hovR * 1.4;
           ctx.beginPath();
           ctx.arc(hovNode.x, hovNode.y, r, 0, TAU);
@@ -608,36 +646,66 @@ export function GraphCanvas() {
         const labelThreshold = data.maxConn * 0.2 / scale;
         const fontSize = 10 / scale;
         const labelOffset = 13 / scale;
-        ctx.textAlign = 'center';
-        ctx.shadowColor = 'rgba(0,0,0,0.9)';
-        ctx.shadowBlur = 3;
-        // Uma string de fonte por frame: fontSize só depende do scale, e trocar
-        // ctx.font é uma das mudanças de estado mais caras do contexto 2D.
-        ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        if (!sessionActive) {
+          ctx.textAlign = 'center';
+          ctx.shadowColor = 'rgba(0,0,0,0.9)';
+          ctx.shadowBlur = 3;
+          // Uma string de fonte por frame: fontSize só depende do scale, e trocar
+          // ctx.font é uma das mudanças de estado mais caras do contexto 2D.
+          ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
 
-        let lastLabelFill = '';
-        for (let k = 0; k < visibleIdx.length; k++) {
-          const i = visibleIdx[k];
-          if (i === hovIdx) continue;
-          const node = nodes[i];
-          if (node.connections < labelThreshold) continue;
+          let lastLabelFill = '';
+          for (let k = 0; k < visibleIdx.length; k++) {
+            const i = visibleIdx[k];
+            if (i === hovIdx) continue;
+            const node = nodes[i];
+            if (node.connections < labelThreshold) continue;
 
-          const fill = hovNode && !hoveredConnections.has(node.id)
-            ? 'rgba(161,161,170,0.4)'
-            : '#a1a1aa';
-          if (fill !== lastLabelFill) {
-            ctx.fillStyle = fill;
-            lastLabelFill = fill;
+            const fill = hovNode && !hoveredConnections.has(node.id)
+              ? 'rgba(161,161,170,0.4)'
+              : '#a1a1aa';
+            if (fill !== lastLabelFill) {
+              ctx.fillStyle = fill;
+              lastLabelFill = fill;
+            }
+            ctx.fillText(node.label, node.x!, node.y! + visibleR[k] + labelOffset);
           }
-          ctx.fillText(node.label, node.x!, node.y! + visibleR[k] + labelOffset);
-        }
-        if (hovNode && hovNode.x != null && hovNode.y != null) {
-          ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillText(hovNode.label, hovNode.x, hovNode.y + hovR + labelOffset);
+          if (hovNode && hovNode.x != null && hovNode.y != null) {
+            ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(hovNode.label, hovNode.x, hovNode.y + hovR + labelOffset);
+          }
+
+          ctx.shadowBlur = 0;
         }
 
-        ctx.shadowBlur = 0;
+        // Painéis de leitura (sessão ativa): posição escrita imperativamente
+        // no elemento DOM, e o conjunto "dentro do viewport" (para decidir que
+        // painel monta o corpo em markdown) só provoca um re-render do React
+        // quando muda de fato.
+        if (sessionActive) {
+          for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const el = panelElsRef.current.get(node.id);
+            if (!el || node.x == null || node.y == null) continue;
+            const screenX = node.x * scale + tx;
+            const screenY = node.y * scale + ty;
+            el.style.transform = `translate(${screenX}px, ${screenY}px) translate(-50%, -50%)`;
+          }
+          panelVisScratch.clear();
+          for (const i of visibleIdx) panelVisScratch.add(nodes[i].id);
+          const prevVisible = visiblePanelIdsRef.current;
+          let visChanged = panelVisScratch.size !== prevVisible.size;
+          if (!visChanged) {
+            for (const id of panelVisScratch) {
+              if (!prevVisible.has(id)) { visChanged = true; break; }
+            }
+          }
+          if (visChanged) {
+            visiblePanelIdsRef.current = new Set(panelVisScratch);
+            setPanelVisVersion((v) => v + 1);
+          }
+        }
 
         // Badges do nó em hover: "+" (criar), lápis (editar) e olho (focar)
         if (hovNode && !dragRef.current.active && hovNode.x != null && hovNode.y != null) {
@@ -792,6 +860,9 @@ export function GraphCanvas() {
       };
 
       const scheduleOrClearPreview = (idx: number) => {
+        // Dentro de sessão, painéis de leitura já cobrem esse papel — mostrar
+        // o preview de hover por cima seria redundante.
+        if (sessionActive) return;
         if (idx === hoverRef.current && hoveredNodeIdRef.current === (idx >= 0 ? data.nodes[idx].id : null)) return;
         if (hoverTimerRef.current !== null) {
           clearTimeout(hoverTimerRef.current);
@@ -913,17 +984,37 @@ export function GraphCanvas() {
         if (hitTestBadge(e.clientX, e.clientY)) {
           const node = data.nodes[hoverRef.current];
           clearPreviewTimer();
-          setNodeModal({ mode: 'create', id: node.id, title: node.title, tags: node.tags });
+          const worldPos = toWorld(e.clientX, e.clientY);
+          createZettel({ title: '', body: `[[^${node.title}]]\n\n`, tags: [] }).then((zettel) => {
+            pendingNodePosRef.current = { id: zettel.id, x: worldPos.x, y: worldPos.y };
+            // A adição incremental (efeito acima) pode rodar antes ou depois
+            // desta promise resolver — sondamos o array da simulação até o nó
+            // aparecer e corrigimos a posição diretamente, em vez de depender
+            // da ordem exata entre o commit do React e a resolução da promise.
+            let tries = 0;
+            const applyPos = () => {
+              const sim = simulationRef.current;
+              const n = sim?.data.nodes.find((x) => x.id === zettel.id);
+              if (n) {
+                n.x = worldPos.x;
+                n.y = worldPos.y;
+                (n as any).vx = 0;
+                (n as any).vy = 0;
+                markDirty();
+              } else if (tries++ < 10) {
+                setTimeout(applyPos, 30);
+              }
+            };
+            setTimeout(applyPos, 30);
+            setSplitEdit({ zettelId: zettel.id });
+          });
           return;
         }
 
         if (hitTestPencilBadge(e.clientX, e.clientY)) {
           const node = data.nodes[hoverRef.current];
           clearPreviewTimer();
-          const zettel = zettelsRef.current.find((z) => z.id === node.id);
-          if (zettel) {
-            setNodeModal({ mode: 'edit', id: node.id, title: zettel.title, body: zettel.body, tags: zettel.tags });
-          }
+          setSplitEdit({ zettelId: node.id });
           return;
         }
 
@@ -957,7 +1048,8 @@ export function GraphCanvas() {
           const dx = e.clientX - drag.startX;
           const dy = e.clientY - drag.startY;
           if (Math.abs(dx) < 3 && Math.abs(dy) < 3) {
-            routerRef.current.push(`/zettel/${node.id}`);
+            if (sessionActive) setSplitEdit({ zettelId: node.id });
+            else routerRef.current.push(`/zettel/${node.id}`);
           }
           (node as any).fx = null;
           (node as any).fy = null;
@@ -1072,7 +1164,8 @@ export function GraphCanvas() {
           const dx = touch.clientX - drag.startX;
           const dy = touch.clientY - drag.startY;
           if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
-            routerRef.current.push(`/zettel/${node.id}`);
+            if (sessionActive) setSplitEdit({ zettelId: node.id });
+            else routerRef.current.push(`/zettel/${node.id}`);
           }
           (node as any).fx = null;
           (node as any).fy = null;
@@ -1135,7 +1228,7 @@ export function GraphCanvas() {
       if (resizeTimer !== null) clearTimeout(resizeTimer);
       window.removeEventListener('resize', scheduleResize);
     };
-  }, [setupData, getNodeRadius, clearPreviewTimer, markDirty, markBgDirty]);
+  }, [setupData, getNodeRadius, clearPreviewTimer, markDirty, markBgDirty, sessionActive]);
 
   if (!controller) {
     return (
@@ -1168,8 +1261,23 @@ export function GraphCanvas() {
     previewPos = { left, top };
   }
 
+  const handleStartSession = () => {
+    if (!focusOriginId) return;
+    if (graphData.nodes.length > 100) {
+      setCapWarning(true);
+      return;
+    }
+    routerRef.current.replace(`/graph?focus=${focusOriginId}&session=1`);
+  };
+
+  const handleExitSession = () => {
+    if (!focusOriginId) return;
+    routerRef.current.replace(`/graph?focus=${focusOriginId}`);
+  };
+
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
+      <div style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
       <div ref={containerRef} style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
         {/* Duas camadas: as estrelas cintilam sozinhas, então manter o grafo no
             mesmo canvas obrigaria a repintá-lo junto e anularia o dirty flag. */}
@@ -1204,6 +1312,91 @@ export function GraphCanvas() {
             Ver mapa completo
           </button>
         )}
+        {focusOriginId && !sessionActive && (
+          <button
+            type="button"
+            onClick={handleStartSession}
+            style={{
+              position: 'absolute',
+              top: 54,
+              right: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(22,27,34,0.95)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 8,
+              padding: '6px 10px',
+              color: '#e6edf3',
+              fontSize: '0.75rem',
+              cursor: 'pointer',
+              zIndex: 30,
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            Iniciar sessão
+          </button>
+        )}
+        {sessionActive && (
+          <button
+            type="button"
+            onClick={handleExitSession}
+            title="Sair da sessão"
+            style={{
+              position: 'absolute',
+              top: 54,
+              right: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(22,27,34,0.95)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 8,
+              padding: '6px 10px',
+              color: '#e6edf3',
+              fontSize: '0.75rem',
+              cursor: 'pointer',
+              zIndex: 30,
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            Sair da sessão
+          </button>
+        )}
+        {capWarning && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 90,
+              right: 12,
+              maxWidth: 260,
+              background: 'rgba(22,27,34,0.95)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 8,
+              padding: '8px 10px',
+              color: '#e6edf3',
+              fontSize: '0.72rem',
+              lineHeight: 1.4,
+              zIndex: 30,
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            Esse assunto tem {graphData.nodes.length} zettels conectados — sessões suportam até 100. Foque em um nó mais específico.
+          </div>
+        )}
+        {sessionActive && graphData.nodes.map((node) => (
+          <ReadingPanel
+            key={node.id}
+            ref={(el) => {
+              if (el) panelElsRef.current.set(node.id, el);
+              else panelElsRef.current.delete(node.id);
+            }}
+            title={node.title}
+            body={zettelBodyById.get(node.id) ?? ''}
+            visible={visiblePanelIdsRef.current.has(node.id)}
+            onOpen={() => setSplitEdit({ zettelId: node.id })}
+          />
+        ))}
         {preview && previewPos && (
           <div
             style={{
@@ -1266,26 +1459,13 @@ export function GraphCanvas() {
           ))}
         </div>
       )}
-      <CreateFromNodeModal
-        open={!!nodeModal}
-        mode={nodeModal?.mode ?? 'create'}
-        nodeId={nodeModal?.id}
-        originTitle={nodeModal?.title ?? ''}
-        originTags={nodeModal?.tags ?? []}
-        initialTitle={nodeModal?.mode === 'edit' ? nodeModal.title : undefined}
-        initialBody={nodeModal?.mode === 'edit' ? nodeModal.body : undefined}
-        suggestions={tagSuggestions}
-        zettels={zettels}
-        onClose={() => setNodeModal(null)}
-        onSubmit={async (data) => {
-          if (nodeModal?.mode === 'edit') {
-            await updateZettel(nodeModal.id, data);
-          } else {
-            await createZettel(data);
-          }
-          setNodeModal(null);
-        }}
-      />
+      </div>
+      {splitEdit && (
+        <SplitEditPanel
+          zettelId={splitEdit.zettelId}
+          onClose={() => setSplitEdit(null)}
+        />
+      )}
     </div>
   );
 }
