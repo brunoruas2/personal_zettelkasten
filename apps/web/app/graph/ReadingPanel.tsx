@@ -3,8 +3,8 @@
 import { forwardRef } from 'react';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer';
 
-const PANEL_WIDTH = 380;
-const PANEL_MAX_HEIGHT = 420;
+export const PANEL_WIDTH = 380;
+export const PANEL_MAX_HEIGHT = 420;
 
 interface ReadingPanelProps {
   title: string;
@@ -30,7 +30,6 @@ export const ReadingPanel = forwardRef<HTMLDivElement, ReadingPanelProps>(functi
         left: 0,
         top: 0,
         width: PANEL_WIDTH,
-        maxHeight: PANEL_MAX_HEIGHT,
         background: 'rgba(22,27,34,0.95)',
         border: '1px solid rgba(255,255,255,0.15)',
         borderRadius: 10,
@@ -38,7 +37,6 @@ export const ReadingPanel = forwardRef<HTMLDivElement, ReadingPanelProps>(functi
         color: '#e6edf3',
         fontSize: '0.78rem',
         cursor: 'pointer',
-        overflow: 'hidden',
         backdropFilter: 'blur(8px)',
         boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
         willChange: 'transform',

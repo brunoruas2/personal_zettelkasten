@@ -10,7 +10,7 @@ import { loadLayoutCache, isLayoutCacheValid } from '../../lib/graphLayoutCache'
 import { MarkdownRenderer } from '../../components/MarkdownRenderer';
 import { buildStars, drawStarfield } from './starfield';
 import { getNebulaSprite, NEBULA_WORLD_RADIUS } from './nebulaSprites';
-import { ReadingPanel } from './ReadingPanel';
+import { ReadingPanel, PANEL_WIDTH, PANEL_MAX_HEIGHT } from './ReadingPanel';
 import { SplitEditPanel } from './SplitEditPanel';
 
 /**
@@ -690,10 +690,33 @@ export function GraphCanvas() {
             if (!el || node.x == null || node.y == null) continue;
             const screenX = node.x * scale + tx;
             const screenY = node.y * scale + ty;
-            el.style.transform = `translate(${screenX}px, ${screenY}px) translate(-50%, -50%)`;
+            // scale(scale) por último (aplicado primeiro ao ponto): o painel
+            // cresce/encolhe com o zoom do mapa, como os nós fariam se fossem
+            // desenhados no canvas — sem isso o zoom só afastava/aproximava os
+            // painéis, sem mudar o tamanho deles.
+            el.style.transform = `translate(${screenX}px, ${screenY}px) scale(${scale}) translate(-50%, -50%)`;
           }
+
+          // O culling de bolinha/aresta usa CULL_PADDING (100 unidades do
+          // mundo) — suficiente pra um ponto, minúsculo pra um painel de
+          // ~380x420 px de tela. Um painel de leitura precisa de margem
+          // própria, convertida de pixels de tela pra unidades do mundo
+          // (dividindo pelo scale), senão a maioria dos painéis é marcada
+          // como fora da área visível e só mostra o placeholder "…".
+          const panelPadX = (PANEL_WIDTH / 2 + 40) / scale;
+          const panelPadY = (PANEL_MAX_HEIGHT / 2 + 40) / scale;
+          const px0 = -tx / scale - panelPadX;
+          const py0 = -ty / scale - panelPadY;
+          const px1 = (w - tx) / scale + panelPadX;
+          const py1 = (h - ty) / scale + panelPadY;
+
           panelVisScratch.clear();
-          for (const i of visibleIdx) panelVisScratch.add(nodes[i].id);
+          for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            if (node.x == null || node.y == null) continue;
+            if (node.x < px0 || node.x > px1 || node.y < py0 || node.y > py1) continue;
+            panelVisScratch.add(node.id);
+          }
           const prevVisible = visiblePanelIdsRef.current;
           let visChanged = panelVisScratch.size !== prevVisible.size;
           if (!visChanged) {
@@ -1436,6 +1459,14 @@ export function GraphCanvas() {
             </div>
           </div>
         )}
+        {/* Dentro do container do canvas (não do wrapper de página inteira) —
+            assim fica sempre acima da barra de legenda, que é um irmão
+            abaixo deste container, em vez de sobrepor a ela. */}
+        <div
+          className="pointer-events-none absolute bottom-3 left-4 z-10 hidden text-xs text-zinc-500 lg:block"
+        >
+          Arraste · Scroll para zoom · Clique para navegar
+        </div>
       </div>
       {legend.length > 0 && (
         <div
