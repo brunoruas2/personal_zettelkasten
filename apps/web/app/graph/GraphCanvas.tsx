@@ -287,17 +287,20 @@ export function GraphCanvas() {
     const oldNodes = sim.data.nodes;
     const oldIds = new Set(oldNodes.map((n) => n.id));
     const newIds = new Set(graphData.nodes.map((n) => n.id));
-    const isStrictSuperset = newIds.size > oldIds.size && Array.from(oldIds).every((id) => newIds.has(id));
+    // Nenhum nó antigo sumiu — cobre tanto adição pura quanto uma edição de
+    // título/corpo/tags que não muda o conjunto de ids (ex: salvar no painel
+    // split). Só uma remoção real ainda força reconstrução completa.
+    const noRemovals = Array.from(oldIds).every((id) => newIds.has(id));
 
-    if (!isStrictSuperset) {
+    if (!noRemovals) {
       setSetupData(graphData);
       return;
     }
 
-    // Pure addition — patch the live simulation instead of rebuilding it,
-    // preserving the current position of every already-placed node. Existing
-    // nodes keep their array index (hoverRef/dragRef track nodes by index,
-    // not id) — new nodes are appended at the end, never spliced in.
+    // Patch the live simulation instead of rebuilding it, preserving the
+    // current position of every already-placed node. Existing nodes keep
+    // their array index (hoverRef/dragRef track nodes by index, not id) —
+    // new nodes are appended at the end, never spliced in.
     const oldById = new Map(oldNodes.map((n) => [n.id, n]));
     const freshById = new Map(graphData.nodes.map((n) => [n.id, n]));
 
@@ -351,12 +354,19 @@ export function GraphCanvas() {
       addedNodes.push({ ...n, x, y });
     }
 
-    sim.data.nodes = [...oldNodes, ...addedNodes];
+    sim.data.nodes = addedNodes.length > 0 ? [...oldNodes, ...addedNodes] : oldNodes;
     sim.data.links = graphData.links.map((l) => ({ ...l }));
     sim.data.maxConn = graphData.maxConn;
     sim.simulation.nodes(sim.data.nodes);
     (sim.simulation.force('link') as any).links(sim.data.links);
-    sim.simulation.alpha(0.3).restart();
+    // Só reaquece a simulação quando há nó novo pra posicionar — uma edição
+    // de campos (salvar título/corpo no painel split, por exemplo) não move
+    // ninguém, e restart(alpha) sacode o mapa inteiro à toa (as forças de
+    // colisão/carga do modo sessão são fortes o bastante pra isso ficar bem
+    // visível mesmo sem nó nenhum realmente mudando de lugar).
+    if (addedNodes.length > 0) {
+      sim.simulation.alpha(0.3).restart();
+    }
     markDirty();
   }, [graphData, focusOriginId, markDirty]);
 
