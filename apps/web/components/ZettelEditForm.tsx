@@ -196,18 +196,39 @@ export function ZettelEditForm({
     setBody((prev) => prev.slice(0, rawStart) + newContent + prev.slice(rawEnd));
   };
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const justSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleSave = useCallback(async () => {
     if (!title.trim() || pendingImages > 0) return;
     const payload = { title: title.trim(), body, tags };
-    const saved = zettelId ? await updateZettel(zettelId, payload) : await createZettel(payload);
-    isDirtyRef.current = false;
-    originalValuesRef.current = { title: saved.title, body: saved.body, tags: saved.tags };
-    if (isPage) {
-      router.replace(`/zettel/${saved.id}`);
-    } else {
-      onSaved?.(saved);
+    // Na página cheia o "Salvar" navega embora — não há tempo pra um feedback
+    // ser notado. No painel do mapa o formulário continua na tela, então sem
+    // isso salvar não dava nenhum retorno visível ao usuário.
+    if (!isPage) setIsSaving(true);
+    try {
+      const saved = zettelId ? await updateZettel(zettelId, payload) : await createZettel(payload);
+      isDirtyRef.current = false;
+      originalValuesRef.current = { title: saved.title, body: saved.body, tags: saved.tags };
+      if (isPage) {
+        router.replace(`/zettel/${saved.id}`);
+      } else {
+        onSaved?.(saved);
+        if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
+        setJustSaved(true);
+        justSavedTimerRef.current = setTimeout(() => setJustSaved(false), 1600);
+      }
+    } finally {
+      if (!isPage) setIsSaving(false);
     }
   }, [title, body, tags, zettelId, pendingImages, updateZettel, createZettel, router, isPage, onSaved]);
+
+  useEffect(() => {
+    return () => {
+      if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
+    };
+  }, []);
 
   const handleSaveRef = useRef(handleSave);
   handleSaveRef.current = handleSave;
@@ -314,11 +335,15 @@ export function ZettelEditForm({
           </div>
           <button
             onClick={handleSave}
-            disabled={!title.trim() || pendingImages > 0}
-            className="rounded-xl bg-brand px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
+            disabled={!title.trim() || pendingImages > 0 || isSaving}
+            className={`rounded-xl px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90 ${justSaved ? 'bg-green-600' : 'bg-brand'}`}
           >
             {pendingImages > 0
               ? `Aguardando ${pendingImages} imagem${pendingImages > 1 ? 'ns' : ''}…`
+              : isSaving
+              ? 'Salvando…'
+              : justSaved
+              ? 'Salvo ✓'
               : 'Salvar'}
           </button>
         </div>
