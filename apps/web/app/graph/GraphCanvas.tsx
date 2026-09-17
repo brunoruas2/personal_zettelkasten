@@ -36,6 +36,9 @@ const CULL_PADDING = 100;
 
 const NEBULA_SPRITE_SIZE = NEBULA_WORLD_RADIUS * 2;
 
+/** Passo de pan por teclado, em pixels de tela por quadro (dividido pelo zoom ao aplicar). */
+const KEY_PAN_STEP_PX = 12;
+
 interface GraphNode {
   id: string;
   title: string;
@@ -111,6 +114,9 @@ export function GraphCanvas() {
     active: false, nodeIndex: -1, startX: 0, startY: 0, isPan: false,
   });
   const hoverRef = useRef<number>(-1);
+  // Setas pressionadas para pan por teclado — ref mutável, igual dragRef/transformRef,
+  // para não disparar re-render a cada keydown/keyup.
+  const panKeysRef = useRef<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ x: number; y: number; title: string; tags: string[]; connections: number; body: string } | null>(null);
   const [focusOriginId] = useState<string | null>(() => searchParams.get('focus'));
   // Sessão só é lida na montagem, como `focusOriginId` — sair/entrar em sessão
@@ -1146,6 +1152,23 @@ export function GraphCanvas() {
         markDirty();
       };
 
+      const PAN_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.target !== canvas || !PAN_KEYS.has(e.key)) return;
+        e.preventDefault();
+        panKeysRef.current.add(e.key);
+      };
+
+      const onKeyUp = (e: KeyboardEvent) => {
+        if (!PAN_KEYS.has(e.key)) return;
+        panKeysRef.current.delete(e.key);
+      };
+
+      const onWindowBlur = () => {
+        panKeysRef.current.clear();
+      };
+
       const onWheel = (e: WheelEvent) => {
         e.preventDefault();
         const rect = canvasRectRef.current;
@@ -1248,13 +1271,38 @@ export function GraphCanvas() {
       canvas.addEventListener('touchstart', onTouchStart, { passive: false });
       canvas.addEventListener('touchmove', onTouchMove, { passive: false });
       canvas.addEventListener('touchend', onTouchEnd);
+      canvas.addEventListener('keydown', onKeyDown);
+      canvas.addEventListener('keyup', onKeyUp);
+      window.addEventListener('blur', onWindowBlur);
 
       // Um frame sem nada sujo não desenha — só resolve o ponteiro pendente e
       // reagenda, o que é praticamente de graça.
       let lastTwinkle = 0;
       const frame = (now: number) => {
         animFrameRef.current = requestAnimationFrame(frame);
+
+        const keys = panKeysRef.current;
+        if (keys.size > 0) {
+          let dx = 0;
+          let dy = 0;
+          if (keys.has('ArrowLeft')) dx += 1;
+          if (keys.has('ArrowRight')) dx -= 1;
+          if (keys.has('ArrowUp')) dy += 1;
+          if (keys.has('ArrowDown')) dy -= 1;
+          if (dx !== 0 || dy !== 0) {
+            const step = KEY_PAN_STEP_PX / transformRef.current.scale;
+            transformRef.current = {
+              ...transformRef.current,
+              x: transformRef.current.x + dx * step,
+              y: transformRef.current.y + dy * step,
+            };
+            markDirty();
+            markBgDirty();
+          }
+        }
+
         flushPointer();
+
         if (now - lastTwinkle >= TWINKLE_INTERVAL_MS) {
           lastTwinkle = now;
           markBgDirty();
@@ -1284,6 +1332,9 @@ export function GraphCanvas() {
         canvas.removeEventListener('touchstart', onTouchStart);
         canvas.removeEventListener('touchmove', onTouchMove);
         canvas.removeEventListener('touchend', onTouchEnd);
+        canvas.removeEventListener('keydown', onKeyDown);
+        canvas.removeEventListener('keyup', onKeyUp);
+        window.removeEventListener('blur', onWindowBlur);
       };
     });
 
@@ -1348,7 +1399,11 @@ export function GraphCanvas() {
         {/* Duas camadas: as estrelas cintilam sozinhas, então manter o grafo no
             mesmo canvas obrigaria a repintá-lo junto e anularia o dirty flag. */}
         <canvas ref={bgCanvasRef} style={{ position: 'absolute', inset: 0, display: 'block' }} />
-        <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, display: 'block', cursor: 'grab' }} />
+        <canvas
+          ref={canvasRef}
+          tabIndex={0}
+          style={{ position: 'absolute', inset: 0, display: 'block', cursor: 'grab', outline: 'none' }}
+        />
         {sessionActive && !sessionSettled && (
           <div
             style={{
