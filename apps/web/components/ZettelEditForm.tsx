@@ -198,29 +198,30 @@ export function ZettelEditForm({
 
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const justSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSave = useCallback(async () => {
     if (!title.trim() || pendingImages > 0) return;
     const payload = { title: title.trim(), body, tags };
-    // Na página cheia o "Salvar" navega embora — não há tempo pra um feedback
-    // ser notado. No painel do mapa o formulário continua na tela, então sem
-    // isso salvar não dava nenhum retorno visível ao usuário.
-    if (!isPage) setIsSaving(true);
+    setSaveError(null);
+    setIsSaving(true);
     try {
       const saved = zettelId ? await updateZettel(zettelId, payload) : await createZettel(payload);
       isDirtyRef.current = false;
       originalValuesRef.current = { title: saved.title, body: saved.body, tags: saved.tags };
+      if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
+      setJustSaved(true);
+      justSavedTimerRef.current = setTimeout(() => setJustSaved(false), 1600);
       if (isPage) {
         router.replace(`/zettel/${saved.id}`);
       } else {
         onSaved?.(saved);
-        if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
-        setJustSaved(true);
-        justSavedTimerRef.current = setTimeout(() => setJustSaved(false), 1600);
       }
+    } catch {
+      setSaveError('Não foi possível salvar. Verifique sua conexão e tente novamente.');
     } finally {
-      if (!isPage) setIsSaving(false);
+      setIsSaving(false);
     }
   }, [title, body, tags, zettelId, pendingImages, updateZettel, createZettel, router, isPage, onSaved]);
 
@@ -347,6 +348,10 @@ export function ZettelEditForm({
               : 'Salvar'}
           </button>
         </div>
+
+        {saveError && (
+          <p className="-mt-3 mb-4 text-sm text-red-600 dark:text-red-400">{saveError}</p>
+        )}
 
         {/* Title — always visible */}
         <input
