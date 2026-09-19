@@ -1,45 +1,47 @@
 'use client';
 
-import { forwardRef } from 'react';
+import { memo } from 'react';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer';
 
 export const PANEL_WIDTH = 380;
 export const PANEL_MAX_HEIGHT = 420;
 
 interface ReadingPanelProps {
+  id: string;
   title: string;
   body: string;
   /** Dentro do viewport atual do mapa — controla se o corpo é montado em markdown ou substituído por um placeholder leve. */
   visible: boolean;
-  onOpen: () => void;
+  /** Estável entre renders (recebe o id), para o `memo` valer. */
+  onOpen: (id: string) => void;
+  /** Registra/remove o elemento DOM — o mapa escreve o transform imperativamente. */
+  registerEl: (id: string, el: HTMLDivElement | null) => void;
 }
 
-export const ReadingPanel = forwardRef<HTMLDivElement, ReadingPanelProps>(function ReadingPanel(
-  { title, body, visible, onOpen },
-  ref,
-) {
+export const ReadingPanel = memo(function ReadingPanel({ id, title, body, visible, onOpen, registerEl }: ReadingPanelProps) {
   return (
     <div
-      ref={ref}
-      onClick={onOpen}
+      ref={(el) => registerEl(id, el)}
+      onClick={() => onOpen(id)}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(id); }}
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
         width: PANEL_WIDTH,
-        background: 'rgba(22,27,34,0.95)',
+        // Opaco e sem backdrop-filter: o blur por painel custava composição
+        // proporcional ao número de painéis sobrepostos.
+        background: 'rgb(22,27,34)',
         border: '1px solid rgba(255,255,255,0.15)',
         borderRadius: 10,
         padding: '10px 14px',
         color: '#e6edf3',
         fontSize: '0.78rem',
         cursor: 'pointer',
-        backdropFilter: 'blur(8px)',
         boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
-        willChange: 'transform',
+        contain: 'layout paint style',
       }}
     >
       <strong
@@ -55,8 +57,8 @@ export const ReadingPanel = forwardRef<HTMLDivElement, ReadingPanelProps>(functi
       </strong>
       {visible ? (
         <div
+          data-panel-scroll
           onClick={(e) => e.stopPropagation()}
-          onWheel={(e) => e.stopPropagation()}
           style={{ maxHeight: PANEL_MAX_HEIGHT - 40, overflowY: 'auto', lineHeight: 1.4, cursor: 'auto' }}
         >
           {body.trim() ? (

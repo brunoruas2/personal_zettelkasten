@@ -36,8 +36,30 @@ const CULL_PADDING = 100;
 
 const NEBULA_SPRITE_SIZE = NEBULA_WORLD_RADIUS * 2;
 
-/** Passo de pan por teclado, em pixels de tela por quadro (dividido pelo zoom ao aplicar). */
-const KEY_PAN_STEP_PX = 12;
+/** Velocidade do pan por teclado, em pixels de tela por segundo (independe de framerate e zoom). */
+const KEY_PAN_SPEED = 900;
+
+/** Teto de tempo entre frames ao integrar o pan — um frame travado não vira um salto. */
+const KEY_PAN_MAX_DT_MS = 50;
+
+/** Orçamento de tempo por frame do pré-cálculo do layout de sessão, para o spinner seguir animado. */
+const SETTLE_BUDGET_MS = 8;
+
+/** Teto de ticks do pré-cálculo: se a simulação não esfriar antes disso, congela onde estiver. */
+const MAX_SETTLE_TICKS = 600;
+
+/**
+ * Estilo das arestas. `px` é a espessura desejada em pixels de tela (dividida
+ * pelo zoom ao desenhar, para não sumir ao afastar); `MIN_EDGE_WORLD_WIDTH` é o
+ * piso em unidades do mundo, para que ao aproximar a linha continue crescendo.
+ */
+const EDGE_STYLE = {
+  normal: { color: 'rgba(255,255,255,0.22)', px: 1.2 },
+  highlight: { color: 'rgba(255,255,255,0.65)', px: 2 },
+  // Em sessão os painéis cobrem os nós: a aresta é a única pista de conexão.
+  session: { color: 'rgba(255,255,255,0.35)', px: 2 },
+} as const;
+const MIN_EDGE_WORLD_WIDTH = 0.6;
 
 interface GraphNode {
   id: string;
@@ -117,6 +139,8 @@ export function GraphCanvas() {
   // Setas pressionadas para pan por teclado — ref mutável, igual dragRef/transformRef,
   // para não disparar re-render a cada keydown/keyup.
   const panKeysRef = useRef<Set<string>>(new Set());
+  // Espelha `splitEdit` para o listener de teclado (registrado uma vez, fora do render).
+  const splitOpenRef = useRef(false);
   const [preview, setPreview] = useState<{ x: number; y: number; title: string; tags: string[]; connections: number; body: string } | null>(null);
   const [focusOriginId] = useState<string | null>(() => searchParams.get('focus'));
   // Sessão só é lida na montagem, como `focusOriginId` — sair/entrar em sessão
@@ -125,6 +149,15 @@ export function GraphCanvas() {
   const [sessionParam] = useState<boolean>(() => searchParams.get('session') === '1');
   const sessionActive = sessionParam && focusOriginId != null;
   const [splitEdit, setSplitEdit] = useState<{ zettelId: string } | null>(null);
+  splitOpenRef.current = splitEdit !== null;
+  const registerPanelEl = useCallback((id: string, el: HTMLDivElement | null) => {
+    if (el) panelElsRef.current.set(id, el);
+    else panelElsRef.current.delete(id);
+  }, []);
+  const openPanelEdit = useCallback((id: string) => setSplitEdit({ zettelId: id }), []);
+  useEffect(() => {
+    if (splitEdit) panKeysRef.current.clear();
+  }, [splitEdit]);
   const [capWarning, setCapWarning] = useState(false);
   // Sessão entra com forças bem mais fortes (painéis grandes em vez de
   // pontinhos) — a estabilização inicial do d3-force "tremilica" o mapa
@@ -491,27 +524,14 @@ export function GraphCanvas() {
       // O tick é emitido exatamente quando as posições mudam, e a d3 para de
       // emitir quando a simulação esfria — é o que deixa o loop dormir sem
       // ninguém precisar consultar alpha() por frame.
-      let settleTimer: ReturnType<typeof setTimeout> | null = null;
+      simulation.on('tick', markDirty);
+
+      // Em sessão o layout é calculado antes de aparecer (ver `startSettle`
+      // no fim do efeito): a simulação fica parada aqui e só é reativada por
+      // arraste de nó ou adição de nó.
       if (sessionActive) {
+        simulation.stop();
         setSessionSettled(false);
-        let settled = false;
-        const markSettled = () => {
-          if (settled) return;
-          settled = true;
-          setSessionSettled(true);
-          if (settleTimer !== null) { clearTimeout(settleTimer); settleTimer = null; }
-        };
-        simulation.on('tick', () => {
-          markDirty();
-          if (simulation.alpha() < 0.03) markSettled();
-        });
-        // Rede de segurança: sessões grandes podem demorar mais para cair
-        // sob o limiar de alpha — não deixa a tela de carregamento presa
-        // indefinidamente. Alto o suficiente para não cortar a estabilização
-        // real no meio (ver nota sobre o cache de posições acima).
-        settleTimer = setTimeout(markSettled, 3000);
-      } else {
-        simulation.on('tick', markDirty);
       }
 
       simulationRef.current = { simulation, data };
@@ -536,7 +556,9 @@ export function GraphCanvas() {
         const { x: tx, y: ty, scale } = transformRef.current;
         const hovIdx = hoverRef.current;
         const nodes = data.nodes;
-        const hovNode = hovIdx >= 0 ? nodes[hovIdx] ?? null : null;
+        // Em sessão os painéis cobrem os nós: sem hover de nó, sem brilho,
+        // sem badges e sem destaque de aresta.
+        const hovNode = !sessionActive && hovIdx >= 0 ? nodes[hovIdx] ?? null : null;
 
         // Transparente: o campo de estrelas está no canvas de baixo.
         ctx.clearRect(0, 0, w, h);
@@ -574,8 +596,9 @@ export function GraphCanvas() {
           visibleR.push(getNodeRadius(node));
         }
 
-        // Névoa de cluster — sprite por cor, desenhado antes de links e nós
-        for (let k = 0; k < visibleIdx.length; k++) {
+        // Névoa de cluster — sprite por cor, desenhado antes de links e nós.
+        // Fora de sessão apenas: sob os painéis viraria mancha atrás deles.
+        for (let k = 0; !sessionActive && k < visibleIdx.length; k++) {
           const node = nodes[visibleIdx[k]];
           const nebulaColor = nebulaMapRef.current.get(node.id);
           if (!nebulaColor) continue;
@@ -606,12 +629,13 @@ export function GraphCanvas() {
           path.moveTo(src.x, src.y);
           path.lineTo(tgt.x, tgt.y);
         }
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-        ctx.lineWidth = 0.5;
+        const baseEdge = sessionActive ? EDGE_STYLE.session : EDGE_STYLE.normal;
+        ctx.strokeStyle = baseEdge.color;
+        ctx.lineWidth = Math.max(baseEdge.px / scale, MIN_EDGE_WORLD_WIDTH);
         ctx.stroke(normalPath);
         if (hovNode) {
-          ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = EDGE_STYLE.highlight.color;
+          ctx.lineWidth = Math.max(EDGE_STYLE.highlight.px / scale, MIN_EDGE_WORLD_WIDTH);
           ctx.stroke(highlightPath);
         }
 
@@ -732,19 +756,6 @@ export function GraphCanvas() {
         // painel monta o corpo em markdown) só provoca um re-render do React
         // quando muda de fato.
         if (sessionActive) {
-          for (let i = 0; i < nodes.length; i++) {
-            const node = nodes[i];
-            const el = panelElsRef.current.get(node.id);
-            if (!el || node.x == null || node.y == null) continue;
-            const screenX = node.x * scale + tx;
-            const screenY = node.y * scale + ty;
-            // scale(scale) por último (aplicado primeiro ao ponto): o painel
-            // cresce/encolhe com o zoom do mapa, como os nós fariam se fossem
-            // desenhados no canvas — sem isso o zoom só afastava/aproximava os
-            // painéis, sem mudar o tamanho deles.
-            el.style.transform = `translate(${screenX}px, ${screenY}px) scale(${scale}) translate(-50%, -50%)`;
-          }
-
           // O culling de bolinha/aresta usa CULL_PADDING (100 unidades do
           // mundo) — suficiente pra um ponto, minúsculo pra um painel de
           // ~380x420 px de tela. Um painel de leitura precisa de margem
@@ -765,6 +776,25 @@ export function GraphCanvas() {
             if (node.x < px0 || node.x > px1 || node.y < py0 || node.y > py1) continue;
             panelVisScratch.add(node.id);
           }
+
+          // Só painéis dentro da área visível têm o transform reescrito; os
+          // demais ficam ocultos (uma escrita só, na transição).
+          for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const el = panelElsRef.current.get(node.id);
+            if (!el) continue;
+            if (!panelVisScratch.has(node.id)) {
+              if (el.style.visibility !== 'hidden') el.style.visibility = 'hidden';
+              continue;
+            }
+            if (el.style.visibility === 'hidden') el.style.visibility = '';
+            // scale(scale) por último (aplicado primeiro ao ponto): o painel
+            // cresce/encolhe com o zoom do mapa, como os nós fariam se fossem
+            // desenhados no canvas — sem isso o zoom só afastava/aproximava os
+            // painéis, sem mudar o tamanho deles.
+            el.style.transform = `translate(${node.x! * scale + tx}px, ${node.y! * scale + ty}px) scale(${scale}) translate(-50%, -50%)`;
+          }
+
           const prevVisible = visiblePanelIdsRef.current;
           let visChanged = panelVisScratch.size !== prevVisible.size;
           if (!visChanged) {
@@ -1048,6 +1078,7 @@ export function GraphCanvas() {
       };
 
       const onMouseDown = (e: MouseEvent) => {
+        canvas.focus({ preventScroll: true });
         // Os testes de badge dependem de hoverRef, que só é atualizado ao
         // processar o movimento — resolvemos o pendente antes de decidir.
         flushPointer();
@@ -1154,8 +1185,18 @@ export function GraphCanvas() {
 
       const PAN_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
+      // Campos de texto e o editor consomem as setas; fora deles o mapa move,
+      // sem exigir foco prévio no canvas (clicar num painel tira o foco dele).
+      const isTypingTarget = (t: EventTarget | null) => {
+        const el = t as HTMLElement | null;
+        if (!el || !el.tagName) return false;
+        return el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+      };
+
       const onKeyDown = (e: KeyboardEvent) => {
-        if (e.target !== canvas || !PAN_KEYS.has(e.key)) return;
+        if (!PAN_KEYS.has(e.key)) return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (splitOpenRef.current || isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return;
         e.preventDefault();
         panKeysRef.current.add(e.key);
       };
@@ -1170,6 +1211,14 @@ export function GraphCanvas() {
       };
 
       const onWheel = (e: WheelEvent) => {
+        // O corpo de um painel só rola quando tem overflow e ainda há espaço
+        // na direção do gesto; fora isso, o scroll dá zoom no mapa.
+        const scroller = (e.target as HTMLElement | null)?.closest?.('[data-panel-scroll]') as HTMLElement | null;
+        if (scroller && scroller.scrollHeight > scroller.clientHeight + 1) {
+          const atTop = scroller.scrollTop <= 0;
+          const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
+          if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) return;
+        }
         e.preventDefault();
         const rect = canvasRectRef.current;
         const mx = e.clientX - rect.left;
@@ -1267,19 +1316,22 @@ export function GraphCanvas() {
       canvas.addEventListener('mousedown', onMouseDown);
       canvas.addEventListener('mouseup', onMouseUp);
       canvas.addEventListener('mouseleave', onMouseLeave);
-      canvas.addEventListener('wheel', onWheel, { passive: false });
+      container.addEventListener('wheel', onWheel, { passive: false });
       canvas.addEventListener('touchstart', onTouchStart, { passive: false });
       canvas.addEventListener('touchmove', onTouchMove, { passive: false });
       canvas.addEventListener('touchend', onTouchEnd);
-      canvas.addEventListener('keydown', onKeyDown);
-      canvas.addEventListener('keyup', onKeyUp);
+      window.addEventListener('keydown', onKeyDown);
+      window.addEventListener('keyup', onKeyUp);
       window.addEventListener('blur', onWindowBlur);
 
       // Um frame sem nada sujo não desenha — só resolve o ponteiro pendente e
       // reagenda, o que é praticamente de graça.
       let lastTwinkle = 0;
+      let lastFrameAt = 0;
       const frame = (now: number) => {
         animFrameRef.current = requestAnimationFrame(frame);
+        const dt = lastFrameAt === 0 ? 0 : Math.min(now - lastFrameAt, KEY_PAN_MAX_DT_MS);
+        lastFrameAt = now;
 
         const keys = panKeysRef.current;
         if (keys.size > 0) {
@@ -1290,7 +1342,7 @@ export function GraphCanvas() {
           if (keys.has('ArrowUp')) dy += 1;
           if (keys.has('ArrowDown')) dy -= 1;
           if (dx !== 0 || dy !== 0) {
-            const step = KEY_PAN_STEP_PX / transformRef.current.scale;
+            const step = (KEY_PAN_SPEED * dt) / 1000;
             transformRef.current = {
               ...transformRef.current,
               x: transformRef.current.x + dx * step,
@@ -1318,22 +1370,54 @@ export function GraphCanvas() {
       };
       animFrameRef.current = requestAnimationFrame(frame);
 
+      // Pré-calcula o layout de sessão em blocos de tempo por frame, até a
+      // simulação esfriar de verdade (alpha < alphaMin) ou bater o teto de
+      // ticks. Nada de timer que libere a tela antes: liberar com a simulação
+      // a meio caminho era o que fazia os painéis tremerem. `tick()` manual
+      // não emite o evento 'tick', então o grafo só é desenhado no final.
+      let settleRaf = 0;
+      if (sessionActive) {
+        const alphaMin = simulation.alphaMin();
+        let ticks = 0;
+        const settleStep = () => {
+          const t0 = performance.now();
+          while (
+            simulation.alpha() >= alphaMin &&
+            ticks < MAX_SETTLE_TICKS &&
+            performance.now() - t0 < SETTLE_BUDGET_MS
+          ) {
+            simulation.tick();
+            ticks++;
+          }
+          if (simulation.alpha() >= alphaMin && ticks < MAX_SETTLE_TICKS) {
+            settleRaf = requestAnimationFrame(settleStep);
+            return;
+          }
+          // Posiciona os painéis uma vez antes de tirar a tela de carregamento.
+          dirtyRef.current = false;
+          drawGraph();
+          markBgDirty();
+          setSessionSettled(true);
+        };
+        settleRaf = requestAnimationFrame(settleStep);
+      }
+
       asyncCleanup = () => {
         simulation.on('tick', null);
         simulation.stop();
         cancelAnimationFrame(animFrameRef.current);
-        if (settleTimer !== null) clearTimeout(settleTimer);
+        cancelAnimationFrame(settleRaf);
         clearPreviewTimer();
         canvas.removeEventListener('mousemove', onMouseMove);
         canvas.removeEventListener('mousedown', onMouseDown);
         canvas.removeEventListener('mouseup', onMouseUp);
         canvas.removeEventListener('mouseleave', onMouseLeave);
-        canvas.removeEventListener('wheel', onWheel);
+        container.removeEventListener('wheel', onWheel);
         canvas.removeEventListener('touchstart', onTouchStart);
         canvas.removeEventListener('touchmove', onTouchMove);
         canvas.removeEventListener('touchend', onTouchEnd);
-        canvas.removeEventListener('keydown', onKeyDown);
-        canvas.removeEventListener('keyup', onKeyUp);
+        window.removeEventListener('keydown', onKeyDown);
+        window.removeEventListener('keyup', onKeyUp);
         window.removeEventListener('blur', onWindowBlur);
       };
     });
@@ -1536,14 +1620,12 @@ export function GraphCanvas() {
         {sessionActive && graphData.nodes.map((node) => (
           <ReadingPanel
             key={node.id}
-            ref={(el) => {
-              if (el) panelElsRef.current.set(node.id, el);
-              else panelElsRef.current.delete(node.id);
-            }}
+            registerEl={registerPanelEl}
             title={node.title}
             body={zettelBodyById.get(node.id) ?? ''}
+            id={node.id}
             visible={visiblePanelIdsRef.current.has(node.id)}
-            onOpen={() => setSplitEdit({ zettelId: node.id })}
+            onOpen={openPanelEdit}
           />
         ))}
         {preview && previewPos && (
@@ -1580,7 +1662,7 @@ export function GraphCanvas() {
                 ))}
               </div>
             )}
-            <div style={{ maxHeight: 170, overflowY: 'auto', pointerEvents: 'auto', fontSize: '0.78rem', lineHeight: 1.4 }}>
+            <div data-panel-scroll style={{ maxHeight: 170, overflowY: 'auto', pointerEvents: 'auto', fontSize: '0.78rem', lineHeight: 1.4 }}>
               <MarkdownRenderer body={preview.body} disableWikiLinks onLinkPress={() => {}} />
             </div>
           </div>
