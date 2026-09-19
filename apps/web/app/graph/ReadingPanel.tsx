@@ -42,6 +42,10 @@ export const ReadingPanel = memo(function ReadingPanel({ id, title, body, visibl
         cursor: 'pointer',
         boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
         contain: 'layout paint style',
+        // O mapa escreve `translate(P) scale(s) translate(-50%,-50%)`; isso só
+        // centra o painel em P para qualquer zoom com a origem no canto.
+        // Com o padrão (50% 50%) o centro deriva em (1−s)·(w/2, h/2).
+        transformOrigin: '0 0',
       }}
     >
       <strong
