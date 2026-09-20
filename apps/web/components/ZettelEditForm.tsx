@@ -203,24 +203,25 @@ export function ZettelEditForm({
   const handleSave = useCallback(async () => {
     if (!title.trim() || pendingImages > 0) return;
     const payload = { title: title.trim(), body, tags };
-    // Na página cheia o "Salvar" navega embora — não há tempo pra um feedback
-    // ser notado. No painel do mapa o formulário continua na tela, então sem
-    // isso salvar não dava nenhum retorno visível ao usuário.
-    if (!isPage) setIsSaving(true);
+    // Salvar um zettel existente (página de edição ou painel do mapa) não
+    // navega: o formulário continua na tela, então precisa do feedback. Só a
+    // criação em página cheia sai dali — ainda não há id para ficar editando.
+    const staysOnForm = !isPage || zettelId != null;
+    if (staysOnForm) setIsSaving(true);
     try {
       const saved = zettelId ? await updateZettel(zettelId, payload) : await createZettel(payload);
       isDirtyRef.current = false;
       originalValuesRef.current = { title: saved.title, body: saved.body, tags: saved.tags };
-      if (isPage) {
-        router.replace(`/zettel/${saved.id}`);
-      } else {
+      if (staysOnForm) {
         onSaved?.(saved);
         if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
         setJustSaved(true);
         justSavedTimerRef.current = setTimeout(() => setJustSaved(false), 1600);
+      } else {
+        router.replace(`/zettel/${saved.id}`);
       }
     } finally {
-      if (!isPage) setIsSaving(false);
+      if (staysOnForm) setIsSaving(false);
     }
   }, [title, body, tags, zettelId, pendingImages, updateZettel, createZettel, router, isPage, onSaved]);
 
