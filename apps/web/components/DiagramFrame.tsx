@@ -40,7 +40,7 @@ function DiagramModal({ svg, onClose }: { svg: string; onClose: () => void }) {
       {/* Surface: recebe os gestos. Os botões ficam fora dela para não disparar pan/captura. */}
       <div
         ref={surfaceRef}
-        className="relative h-full w-full overflow-hidden rounded-xl bg-white shadow-2xl"
+        className="relative h-full w-full overflow-hidden rounded-xl bg-zinc-100 shadow-2xl"
         style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
       >
         <div
@@ -80,7 +80,7 @@ export function DiagramFrame({ state, svg, source }: { state: DiagramState; svg:
   if (state === 'ok') {
     return (
       <>
-        <div data-render-state="ok" className="group relative my-3 overflow-x-auto rounded-lg border border-zinc-200 bg-white p-3 [&_svg]:max-w-full [&_svg]:h-auto">
+        <div data-render-state="ok" className="group relative my-3 overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-100 p-3 [&_svg]:max-w-full [&_svg]:h-auto">
           <div dangerouslySetInnerHTML={{ __html: svg }} />
           <button
             onClick={() => setZoomed(true)}
