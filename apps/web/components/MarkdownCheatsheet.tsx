@@ -164,7 +164,7 @@ export function MarkdownCheatsheet({ open, onClose }: Props) {
           <Section title="Atalhos no editor">
             <Row syntax="[[ ..." desc="Abre autocomplete de links para outros zettels" />
             <Row syntax="/ ..." desc="Abre menu de blocos no início de uma linha" />
-            <Row syntax="Alt+P" desc="Alterna entre edição e preview (fora do campo de texto)" />
+            <Row syntax="Alt+E" desc="Alterna entre edição e preview (Alt+P também funciona)" />
             <Row syntax="Alt+S" desc="Salvar zettel (fora do campo de texto)" />
             <Row syntax="Alt+H" desc="Abre/fecha este guia de formatação (fora do campo de texto)" />
             <Row syntax="Alt+E" desc="Abrir modo de edição (na visualização do zettel)" />

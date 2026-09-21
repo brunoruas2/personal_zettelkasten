@@ -175,7 +175,7 @@ export function ZettelEditForm({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.key !== 'p') return;
+      if (!e.altKey || (e.code !== 'KeyE' && e.key !== 'p')) return;
       e.preventDefault();
       if (previewOpen) switchToEdit();
       else switchToPreview();
