@@ -40,6 +40,49 @@ import { ZK_IMG_PREFIX } from './ZettelImage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+const CODE_INDENT = '  ';
+
+// Tab / Shift-Tab inside a code block (diagram fences included). Returns
+// false outside a code block so the caller can fall through to list handling.
+// Edits run from the last line to the first so earlier offsets stay valid.
+function shiftCodeBlockIndent(editor: Editor, outdent: boolean): boolean {
+  const { state } = editor;
+  const { $from, $to, from, to, empty } = state.selection;
+  if ($from.parent.type.name !== 'codeBlock' || !$from.sameParent($to)) return false;
+
+  if (empty && !outdent) {
+    editor.view.dispatch(state.tr.insertText(CODE_INDENT, from, to));
+    return true;
+  }
+
+  const start = $from.start();
+  const text = $from.parent.textContent;
+  const a = from - start;
+  const b = empty ? a : Math.max(a, to - start - 1);
+  const lineStarts: number[] = [];
+  let ls = 0;
+  for (;;) {
+    const nl = text.indexOf('\n', ls);
+    const le = nl === -1 ? text.length : nl;
+    if (ls <= b && le >= a) lineStarts.push(ls);
+    if (nl === -1 || nl >= b) break;
+    ls = nl + 1;
+  }
+
+  const tr = state.tr;
+  for (const s of lineStarts.reverse()) {
+    if (!outdent) {
+      tr.insertText(CODE_INDENT, start + s);
+      continue;
+    }
+    let n = 0;
+    while (n < CODE_INDENT.length && text[s + n] === ' ') n++;
+    if (n > 0) tr.delete(start + s, start + s + n);
+  }
+  if (tr.docChanged) editor.view.dispatch(tr);
+  return true;
+}
+
 // When the doc's first node is a non-paragraph leaf textblock (e.g. a
 // codeBlock inserted via /diagrama as the very first thing in a body),
 // there is no ProseMirror position "before" it — clicking above it or
@@ -896,13 +939,20 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
       });
 
       // Neither TaskItem nor ListItem bind Tab by default; without this, Tab inside
-      // a checklist falls through to the browser's default focus traversal.
+      // a code block or list falls through to the browser's default focus traversal.
+      // Anything else (paragraph, heading, table) returns false to keep keyboard navigation.
       const ListKeymap = Extension.create({
         name: 'listKeymap',
         addKeyboardShortcuts() {
           return {
-            Tab: () => this.editor.commands.sinkListItem('taskItem'),
-            'Shift-Tab': () => this.editor.commands.liftListItem('taskItem'),
+            Tab: () =>
+              shiftCodeBlockIndent(this.editor, false) ||
+              this.editor.commands.sinkListItem('taskItem') ||
+              this.editor.commands.sinkListItem('listItem'),
+            'Shift-Tab': () =>
+              shiftCodeBlockIndent(this.editor, true) ||
+              this.editor.commands.liftListItem('taskItem') ||
+              this.editor.commands.liftListItem('listItem'),
           };
         },
       });
