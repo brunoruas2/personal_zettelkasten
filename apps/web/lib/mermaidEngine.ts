@@ -1,11 +1,20 @@
-// Client-side Mermaid rendering. O módulo é carregado por import dinâmico:
-// quem não tem bloco Mermaid nunca baixa o chunk.
+// Client-side Mermaid rendering via build IIFE vendorizado em
+// apps/web/public/vendor/mermaid/ (mermaid.min.js, versão fixa), injetado como
+// <script> clássico na primeira necessidade e exposto em `window.mermaid`.
+//
+// Fica fora do webpack de propósito: `import('mermaid')` no grafo do build
+// estourava o heap da VPS (500 MB de RAM). O arquivo é precacheado pelo
+// Service Worker (worker/index.ts), então renderiza offline após o primeiro uso.
 //
 // O container do diagrama é `bg-white` em claro e escuro, então o tema é
 // sempre claro; só o accent do app (`--color-brand`) varia.
 
-type MermaidApi = typeof import('mermaid').default;
+type MermaidApi = {
+  initialize: (config: Record<string, unknown>) => void;
+  render: (id: string, code: string) => Promise<{ svg: string }>;
+};
 
+const MERMAID_JS_URL = '/vendor/mermaid/mermaid.min.js';
 const DEFAULT_TRIPLET = '124 58 237';
 
 let mermaidPromise: Promise<MermaidApi> | null = null;
@@ -14,7 +23,26 @@ let seq = 0;
 
 function loadMermaid(): Promise<MermaidApi> {
   if (!mermaidPromise) {
-    mermaidPromise = import('mermaid').then((m) => m.default);
+    mermaidPromise = new Promise<MermaidApi>((resolve, reject) => {
+      const existing = (window as unknown as { mermaid?: MermaidApi }).mermaid;
+      if (existing) {
+        resolve(existing);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = MERMAID_JS_URL;
+      script.onload = () => {
+        const api = (window as unknown as { mermaid?: MermaidApi }).mermaid;
+        if (api) resolve(api);
+        else reject(new Error('mermaid global not found'));
+      };
+      script.onerror = () => reject(new Error('failed to load mermaid.min.js'));
+      document.head.appendChild(script);
+    }).catch((err) => {
+      // Sem isso uma falha de rede ficaria memorizada até o reload da página.
+      mermaidPromise = null;
+      throw err;
+    });
   }
   return mermaidPromise;
 }

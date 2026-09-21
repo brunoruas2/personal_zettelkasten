@@ -19,6 +19,12 @@ self.addEventListener('install', (event) => {
       caches
         .open(SHELL_CACHE)
         .then((cache) => cache.addAll(['/', '/vendor/plantuml/plantuml.js', '/vendor/plantuml/viz-global.js'])),
+      // Mermaid é grande (~5 MB) e opcional: uma falha de rede aqui não pode
+      // derrubar a instalação do SW, então fica fora do addAll atômico acima.
+      caches
+        .open(SHELL_CACHE)
+        .then((cache) => cache.add('/vendor/mermaid/mermaid.min.js'))
+        .catch(() => undefined),
       caches.delete(ROUTES_CACHE),
     ]),
   );
