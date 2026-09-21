@@ -175,7 +175,7 @@ export function ZettelEditForm({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || (e.code !== 'KeyE' && e.key !== 'p')) return;
+      if (!e.altKey || e.key !== 'p') return;
       e.preventDefault();
       if (previewOpen) switchToEdit();
       else switchToPreview();
@@ -243,6 +243,22 @@ export function ZettelEditForm({
       onCancel?.();
     }
   };
+  const handleCancelRef = useRef(handleCancel);
+  handleCancelRef.current = handleCancel;
+
+  // Alt+E sai do modo edit (espelha o Alt+E da leitura, que entra). Compara
+  // `e.code`: Option no macOS compõe caractere. Só na rota de página.
+  useEffect(() => {
+    if (!isPage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.code !== 'KeyE') return;
+      e.preventDefault();
+      if (isDirtyRef.current && !window.confirm('Descartar alterações não salvas?')) return;
+      handleCancelRef.current();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isPage]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

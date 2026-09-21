@@ -148,7 +148,7 @@ export default function NewZettelPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || (e.code !== 'KeyE' && e.key !== 'p')) return;
+      if (!e.altKey || e.key !== 'p') return;
       e.preventDefault();
       if (previewOpen) switchToEdit();
       else switchToPreview();
@@ -157,6 +157,20 @@ export default function NewZettelPage() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewOpen]);
+
+  // Alt+E sai do modo edit (mesmo destino do Cancelar). `e.code`: Option no
+  // macOS compõe caractere.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.code !== 'KeyE') return;
+      e.preventDefault();
+      if (isDirtyRef.current && !window.confirm('Descartar alterações não salvas?')) return;
+      isDirtyRef.current = false;
+      router.push('/');
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [router]);
 
 
   const handleLinkPress = async (linkTitle: string) => {
