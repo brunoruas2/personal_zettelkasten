@@ -68,6 +68,33 @@ function tripletToHex(triplet: string): string {
   return toHex(channels(triplet));
 }
 
+// Cores das branches de primeiro nível do mindmap (`cScale0..11`, na ordem, com
+// ciclo depois da 11): tons 600/700 saturados, fortes no fundo branco e com
+// contraste >= 4,5:1 para o texto branco. Ordenadas para vizinhas ficarem
+// distintas. O `updateColors` do tema `default` ainda escurece cada uma em 10%.
+// Independentes do accent do app; o nó raiz (`git0`) segue o accent.
+const BRANCH_PALETTE = [
+  '#2563eb',
+  '#dc2626',
+  '#15803d',
+  '#b45309',
+  '#7c3aed',
+  '#0e7490',
+  '#db2777',
+  '#4d7c0f',
+  '#c2410c',
+  '#4f46e5',
+  '#0f766e',
+  '#a21caf',
+];
+
+const BRANCH_THEME_VARIABLES: Record<string, string> = Object.fromEntries(
+  BRANCH_PALETTE.flatMap((color, i) => [
+    [`cScale${i}`, color],
+    [`cScaleLabel${i}`, '#ffffff'],
+  ]),
+);
+
 /** Escurece o accent (`factor` < 1). Borda dos nós: sem isso ela some contra o fundo cinza. */
 function darken(triplet: string, factor: number): string {
   return toHex(channels(triplet).map((c) => c * factor));
@@ -101,6 +128,7 @@ export function renderMermaid(code: string, themeKey: string): Promise<string> {
           primaryBorderColor: darken(themeKey, 0.55),
           mainBkg: tint(themeKey, 0.85),
           border1: darken(themeKey, 0.55),
+          ...BRANCH_THEME_VARIABLES,
         },
       });
       initializedFor = themeKey;
