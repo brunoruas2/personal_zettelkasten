@@ -388,6 +388,77 @@ func (r *Repository) FindUserByBackupKeyHash(keyHash string) (*models.User, erro
 	return scanUser(row)
 }
 
+// --- API keys ---
+
+// APIKeyStatus describes a user's API key without exposing the hash.
+type APIKeyStatus struct {
+	Active     bool   `json:"active"`
+	CreatedAt  int64  `json:"created_at,omitempty"`
+	LastUsedAt *int64 `json:"last_used_at,omitempty"`
+}
+
+// SetAPIKey replaces the user's API key hash (one per user) atomically.
+func (r *Repository) SetAPIKey(userID, keyHash string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM api_keys WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO api_keys (key_hash, user_id, created_at) VALUES (?, ?, ?)
+	`, keyHash, userID, time.Now().UnixMilli()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteAPIKey revokes the API key for a user.
+func (r *Repository) DeleteAPIKey(userID string) error {
+	_, err := r.db.Exec(`DELETE FROM api_keys WHERE user_id = ?`, userID)
+	return err
+}
+
+// GetAPIKeyStatus returns whether the user has an active API key and its timestamps.
+func (r *Repository) GetAPIKeyStatus(userID string) (APIKeyStatus, error) {
+	var st APIKeyStatus
+	var last sql.NullInt64
+	err := r.db.QueryRow(`
+		SELECT created_at, last_used_at FROM api_keys WHERE user_id = ?
+	`, userID).Scan(&st.CreatedAt, &last)
+	if err == sql.ErrNoRows {
+		return APIKeyStatus{}, nil
+	}
+	if err != nil {
+		return APIKeyStatus{}, err
+	}
+	st.Active = true
+	if last.Valid {
+		st.LastUsedAt = &last.Int64
+	}
+	return st, nil
+}
+
+// FindUserIDByAPIKeyHash returns the owner of the given API key hash, or "" if none.
+func (r *Repository) FindUserIDByAPIKeyHash(keyHash string) (userID, role string, err error) {
+	err = r.db.QueryRow(`
+		SELECT u.id, u.role FROM api_keys k JOIN users u ON u.id = k.user_id WHERE k.key_hash = ?
+	`, keyHash).Scan(&userID, &role)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	return userID, role, err
+}
+
+// TouchAPIKey records the last use of a key.
+func (r *Repository) TouchAPIKey(keyHash string) error {
+	_, err := r.db.Exec(`UPDATE api_keys SET last_used_at = ? WHERE key_hash = ?`,
+		time.Now().UnixMilli(), keyHash)
+	return err
+}
+
 // --- User settings ---
 
 // NodeColorRule maps a zettel to a cluster color; neighbors inherit the same color.

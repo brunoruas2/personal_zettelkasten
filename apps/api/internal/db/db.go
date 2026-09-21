@@ -106,6 +106,13 @@ func migrate(db *sql.DB) error {
 			created_at INTEGER NOT NULL
 		);
 
+		CREATE TABLE IF NOT EXISTS api_keys (
+			key_hash     TEXT PRIMARY KEY,
+			user_id      TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+			created_at   INTEGER NOT NULL,
+			last_used_at INTEGER
+		);
+
 		CREATE TABLE IF NOT EXISTS users (
 			id            TEXT PRIMARY KEY,
 			username      TEXT UNIQUE NOT NULL,

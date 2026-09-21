@@ -15,6 +15,7 @@ import (
 )
 
 var hexRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var apiKeyRe = regexp.MustCompile(`^zk_[0-9a-f]{64}$`)
 
 const (
 	accessTokenTTL  = 15 * time.Minute
@@ -61,6 +62,9 @@ func (h *Handler) Routes(jwtSecret string) chi.Router {
 		r.Post("/backup-key", h.setBackupKey)
 		r.Get("/backup-key", h.getBackupKeyStatus)
 		r.Delete("/backup-key", h.deleteBackupKey)
+		r.Post("/api-key", h.setAPIKey)
+		r.Get("/api-key", h.getAPIKeyStatus)
+		r.Delete("/api-key", h.deleteAPIKey)
 	})
 
 	return r
@@ -587,6 +591,49 @@ func (h *Handler) getBackupKeyStatus(w http.ResponseWriter, r *http.Request) {
 // DELETE /api/auth/backup-key
 func (h *Handler) deleteBackupKey(w http.ResponseWriter, r *http.Request) {
 	if err := h.repo.DeleteBackupKey(GetUserID(r)); err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /api/auth/api-key
+// Body: { "key": "zk_<64 hex chars>" }
+// The frontend generates the key; we store only its SHA-256 hash.
+func (h *Handler) setAPIKey(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if !apiKeyRe.MatchString(body.Key) {
+		jsonErr(w, http.StatusBadRequest, "key must be zk_ followed by 64 lowercase hex characters")
+		return
+	}
+	if err := h.repo.SetAPIKey(GetUserID(r), hashAPIKey(body.Key)); err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// GET /api/auth/api-key
+func (h *Handler) getAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
+	st, err := h.repo.GetAPIKeyStatus(GetUserID(r))
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(st)
+}
+
+// DELETE /api/auth/api-key
+func (h *Handler) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
+	if err := h.repo.DeleteAPIKey(GetUserID(r)); err != nil {
 		jsonErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

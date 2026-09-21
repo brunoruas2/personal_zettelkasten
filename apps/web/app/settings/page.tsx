@@ -46,6 +46,16 @@ type BackupKeyState =
   | { status: 'active' }
   | { status: 'just_generated'; key: string }
 
+type ApiKeyState =
+  | { status: 'loading' }
+  | { status: 'none' }
+  | { status: 'active'; createdAt: number; lastUsedAt: number | null }
+  | { status: 'just_generated'; key: string }
+
+function formatKeyDate(ms: number): string {
+  return new Date(ms).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
+
 export default function SettingsPage() {
   const router = useRouter()
   const offlineRouter = useOfflineRouter()
@@ -66,6 +76,8 @@ export default function SettingsPage() {
   const [backupKey, setBackupKey] = useState<BackupKeyState>({ status: 'loading' })
   const [backupKeyCopied, setBackupKeyCopied] = useState(false)
   const [backupUrlCopied, setBackupUrlCopied] = useState(false)
+  const [apiKey, setApiKey] = useState<ApiKeyState>({ status: 'loading' })
+  const [apiKeyCopied, setApiKeyCopied] = useState(false)
   const [themeId, setThemeId] = useState<ThemeId>('purple')
   const [fontId, setFontId] = useState<FontId>('system')
   const [diagramLayoutId, setDiagramLayoutId] = useState<DiagramLayoutId>('side')
@@ -110,6 +122,12 @@ export default function SettingsPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((data) => setBackupKey({ status: data?.active ? 'active' : 'none' }))
       .catch(() => setBackupKey({ status: 'none' }))
+    api.get('/api/auth/api-key')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => setApiKey(data?.active
+        ? { status: 'active', createdAt: data.created_at, lastUsedAt: data.last_used_at ?? null }
+        : { status: 'none' }))
+      .catch(() => setApiKey({ status: 'none' }))
   }, [])
 
   // O texto sai da store, não do servidor: já está inteiro em memória e assim
@@ -177,6 +195,27 @@ export default function SettingsPage() {
   async function handleRevokeBackupKey() {
     const res = await api.delete('/api/auth/backup-key')
     if (res.ok || res.status === 204) setBackupKey({ status: 'none' })
+  }
+
+  // A chave só existe em estado de componente: nunca vai para localStorage.
+  async function handleGenerateApiKey(regenerate: boolean) {
+    if (regenerate && !window.confirm('Gerar uma nova chave invalida a atual. Qualquer script que a use vai parar de funcionar. Continuar?')) return
+    const bytes = crypto.getRandomValues(new Uint8Array(32))
+    const key = 'zk_' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+    const res = await api.post('/api/auth/api-key', { key })
+    if (!res.ok) return
+    setApiKey({ status: 'just_generated', key })
+  }
+
+  async function handleRevokeApiKey() {
+    const res = await api.delete('/api/auth/api-key')
+    if (res.ok || res.status === 204) setApiKey({ status: 'none' })
+  }
+
+  function handleCopyApiKey(key: string) {
+    navigator.clipboard.writeText(key)
+    setApiKeyCopied(true)
+    setTimeout(() => setApiKeyCopied(false), 2000)
   }
 
   function handleCopyKey(key: string) {
@@ -990,6 +1029,81 @@ export default function SettingsPage() {
                 >
                   Revogar chave
                 </button>
+              </div>
+            )}
+          </section>
+
+          {/* API key */}
+          <section>
+            <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Chave de API</h2>
+            <p className="mb-4 text-sm text-zinc-500">
+              Permite que scripts e agentes externos listem, leiam e editem seus zettels com{' '}
+              <code className="text-xs">Authorization: Bearer zk_…</code> ou <code className="text-xs">X-API-Key</code>.
+              Não cria nem apaga zettels. Guarde a chave em local seguro: ela não pode ser recuperada depois.
+            </p>
+
+            {apiKey.status === 'loading' && (
+              <p className="text-sm text-zinc-400">Carregando...</p>
+            )}
+
+            {apiKey.status === 'none' && (
+              <button
+                onClick={() => handleGenerateApiKey(false)}
+                className="rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 active:scale-95 transition-all"
+              >
+                Gerar chave de API
+              </button>
+            )}
+
+            {apiKey.status === 'just_generated' && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-4 py-3">
+                  <p className="mb-2 text-xs font-semibold text-amber-700 dark:text-amber-400">Salve agora — esta chave não será exibida novamente</p>
+                  <code className="block break-all text-xs font-mono text-zinc-800 dark:text-zinc-200 select-all">
+                    {apiKey.key}
+                  </code>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleCopyApiKey(apiKey.key)}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    {apiKeyCopied ? 'Copiado!' : 'Copiar chave'}
+                  </button>
+                  <button
+                    onClick={handleRevokeApiKey}
+                    className="rounded-xl border border-red-200 dark:border-red-800 px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                  >
+                    Revogar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {apiKey.status === 'active' && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-green-500" />
+                    Chave ativa
+                  </span>
+                  <span>Criada em {formatKeyDate(apiKey.createdAt)}</span>
+                  <span>{apiKey.lastUsedAt ? `Último uso em ${formatKeyDate(apiKey.lastUsedAt)}` : 'Nunca usada'}</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleGenerateApiKey(true)}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    Gerar nova chave
+                  </button>
+                  <button
+                    onClick={handleRevokeApiKey}
+                    className="rounded-xl border border-red-200 dark:border-red-800 px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                  >
+                    Revogar chave
+                  </button>
+                </div>
               </div>
             )}
           </section>

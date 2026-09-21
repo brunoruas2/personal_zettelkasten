@@ -71,12 +71,18 @@ func main() {
 	// Public backup export (authenticated via backup key, not JWT)
 	r.Get("/api/backup/export", portabilityHandler.BackupExport)
 
+	// Zettels: JWT ou chave de API. A chave só passa em GET /api/zettels,
+	// GET|PUT /api/zettels/{id} (allowlist em auth.RequireAuthOrKey).
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireAuthOrKey(jwtSecret, authRepo))
+		r.Mount("/api/zettels", zettelHandler.Routes())
+	})
+
 	// Rotas protegidas (requerem JWT)
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireAuth(jwtSecret))
 
 		r.Mount("/api/admin", authHandler.AdminRoutes())
-		r.Mount("/api/zettels", zettelHandler.Routes())
 		r.Mount("/api", portabilityHandler.Routes())
 
 		// Imagens: registradas inline porque o Mount em "/api" acima impede um
