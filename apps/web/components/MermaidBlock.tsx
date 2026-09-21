@@ -45,5 +45,5 @@ export function MermaidBlock({ source }: { source: string }) {
     };
   }, [code]);
 
-  return <DiagramFrame state={state} svg={svg} source={source} />;
+  return <DiagramFrame state={state} svg={svg} source={source} tone="gray" />;
 }

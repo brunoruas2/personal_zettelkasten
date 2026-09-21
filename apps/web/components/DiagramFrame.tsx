@@ -4,12 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePinchZoom } from '../hooks/usePinchZoom';
 
+/** Fundo do diagrama: `white` (PlantUML) ou `gray` (Mermaid, cujas cores claras estouram no branco). */
+export type DiagramTone = 'white' | 'gray';
+
 export type DiagramState = 'loading' | 'ok' | 'error';
 
 const CTRL_BTN =
   'flex items-center justify-center w-10 h-10 rounded-full bg-zinc-800/80 text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors';
 
-function DiagramModal({ svg, onClose }: { svg: string; onClose: () => void }) {
+function DiagramModal({ svg, tone, onClose }: { svg: string; tone: DiagramTone; onClose: () => void }) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLDivElement>(null);
   const { zoomIn, zoomOut, reset } = usePinchZoom(surfaceRef, targetRef);
@@ -40,7 +43,7 @@ function DiagramModal({ svg, onClose }: { svg: string; onClose: () => void }) {
       {/* Surface: recebe os gestos. Os botões ficam fora dela para não disparar pan/captura. */}
       <div
         ref={surfaceRef}
-        className="relative h-full w-full overflow-hidden rounded-xl bg-zinc-100 shadow-2xl"
+        className={`relative h-full w-full overflow-hidden rounded-xl ${tone === 'gray' ? 'bg-zinc-100' : 'bg-white'} shadow-2xl`}
         style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
       >
         <div
@@ -74,13 +77,13 @@ function DiagramModal({ svg, onClose }: { svg: string; onClose: () => void }) {
 
 
 /** Casca visual compartilhada por PlantUmlBlock e MermaidBlock: loading, SVG com botão de ampliar, erro com source. */
-export function DiagramFrame({ state, svg, source }: { state: DiagramState; svg: string; source: string }) {
+export function DiagramFrame({ state, svg, source, tone = 'white' }: { state: DiagramState; svg: string; source: string; tone?: DiagramTone }) {
   const [zoomed, setZoomed] = useState(false);
 
   if (state === 'ok') {
     return (
       <>
-        <div data-render-state="ok" className="group relative my-3 overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-100 p-3 [&_svg]:max-w-full [&_svg]:h-auto">
+        <div data-render-state="ok" className={`group relative my-3 overflow-x-auto rounded-lg border border-zinc-200 ${tone === 'gray' ? 'bg-zinc-100' : 'bg-white'} p-3 [&_svg]:max-w-full [&_svg]:h-auto`}>
           <div dangerouslySetInnerHTML={{ __html: svg }} />
           <button
             onClick={() => setZoomed(true)}
@@ -94,7 +97,7 @@ export function DiagramFrame({ state, svg, source }: { state: DiagramState; svg:
             </svg>
           </button>
         </div>
-        {zoomed && <DiagramModal svg={svg} onClose={() => setZoomed(false)} />}
+        {zoomed && <DiagramModal svg={svg} tone={tone} onClose={() => setZoomed(false)} />}
       </>
     );
   }
