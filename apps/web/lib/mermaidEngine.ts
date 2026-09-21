@@ -56,13 +56,26 @@ export function mermaidThemeKey(): string {
   }
 }
 
-// `factor` < 1 escurece: a borda dos nós usa o accent a 55%, senão o `default`
-// a deriva da cor primária e ela some contra o fundo cinza do container.
-function tripletToHex(triplet: string, factor = 1): string {
-  const [r, g, b] = triplet
-    .split(/\s+/)
-    .map((n) => Math.max(0, Math.min(255, Math.round((Number(n) || 0) * factor))));
-  return '#' + [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('');
+function channels(triplet: string): number[] {
+  return triplet.split(/\s+/).map((n) => Math.max(0, Math.min(255, Number(n) || 0)));
+}
+
+function toHex(rgb: number[]): string {
+  return '#' + rgb.map((n) => Math.round(n).toString(16).padStart(2, '0')).join('');
+}
+
+function tripletToHex(triplet: string): string {
+  return toHex(channels(triplet));
+}
+
+/** Escurece o accent (`factor` < 1). Borda dos nós: sem isso ela some contra o fundo cinza. */
+function darken(triplet: string, factor: number): string {
+  return toHex(channels(triplet).map((c) => c * factor));
+}
+
+/** Mistura o accent com branco (`amount` = parte de branco, 0..1). Fundo claro dos nós. */
+function tint(triplet: string, amount: number): string {
+  return toHex(channels(triplet).map((c) => c + (255 - c) * amount));
 }
 
 // Serializa os renders: o Mermaid injeta um nó temporário no DOM por id, e
@@ -80,9 +93,14 @@ export function renderMermaid(code: string, themeKey: string): Promise<string> {
         // Não desenha o balão de erro no <body>; o MermaidBlock mostra o source.
         suppressErrorRendering: true,
         theme: 'default',
+        // O tema `default` fixa `mainBkg` no construtor e faz `nodeBorder = border1`
+        // no `updateColors` — os nós dos flowcharts ignoram `primaryColor` e
+        // `primaryBorderColor`. Por isso o fundo e a borda entram por `mainBkg` e `border1`.
         themeVariables: {
           primaryColor: tripletToHex(themeKey),
-          primaryBorderColor: tripletToHex(themeKey, 0.55),
+          primaryBorderColor: darken(themeKey, 0.55),
+          mainBkg: tint(themeKey, 0.85),
+          border1: darken(themeKey, 0.55),
         },
       });
       initializedFor = themeKey;
