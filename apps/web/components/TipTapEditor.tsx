@@ -585,9 +585,38 @@ function CodeBlockNodeView({ node, updateAttributes }: {
   );
 }
 
+// Mermaid `mindmap` / PlantUML `@startmindmap`: one node per indented line.
+function isMindmapCodeBlock(language: string | null | undefined, text: string): boolean {
+  if (language === 'mermaid') return /^\s*mindmap\b/.test(text);
+  if (language === 'plantuml') return /@startmindmap\b/.test(text);
+  return false;
+}
+
 const CustomCodeBlock = CodeBlockExtension.extend({
   addNodeView() {
     return ReactNodeViewRenderer(CodeBlockNodeView);
+  },
+  addKeyboardShortcuts() {
+    const parent = this.parent?.() ?? {};
+    return {
+      ...parent,
+      // In a mindmap, Enter keeps the current line's indentation.
+      Enter: (props) => {
+        const { state } = this.editor;
+        const { $from, from, to } = state.selection;
+        const node = $from.parent;
+        if (node.type.name !== 'codeBlock' || !$from.sameParent(state.selection.$to)) {
+          return parent.Enter?.(props) ?? false;
+        }
+        if (!isMindmapCodeBlock(node.attrs.language, node.textContent)) {
+          return parent.Enter?.(props) ?? false;
+        }
+        const before = node.textContent.slice(0, $from.parentOffset);
+        const indent = /^[ \t]*/.exec(before.slice(before.lastIndexOf('\n') + 1))![0];
+        this.editor.view.dispatch(state.tr.insertText('\n' + indent, from, to));
+        return true;
+      },
+    };
   },
 });
 
