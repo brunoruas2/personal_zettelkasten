@@ -6,7 +6,7 @@
 // estourava o heap da VPS (500 MB de RAM). O arquivo é precacheado pelo
 // Service Worker (worker/index.ts), então renderiza offline após o primeiro uso.
 //
-// O container do diagrama é `bg-zinc-100` (`tone="gray"` do `DiagramFrame`) em claro e escuro, então o tema é
+// O container do diagrama é `bg-white` em claro e escuro, então o tema é
 // sempre claro; só o accent do app (`--color-brand`) varia.
 
 type MermaidApi = {
