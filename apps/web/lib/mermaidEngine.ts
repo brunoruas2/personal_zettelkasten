@@ -73,11 +73,13 @@ function tripletToHex(triplet: string): string {
 // contraste >= 4,5:1 para o texto branco. Ordenadas para vizinhas ficarem
 // distintas. O `updateColors` do tema `default` ainda escurece cada uma em 10%.
 // Independentes do accent do app; o nó raiz (`git0`) segue o accent.
+// Amarelo não sustenta texto branco (~2,1:1): as posições em `DARK_LABEL_INDEXES`
+// usam texto escuro.
 const BRANCH_PALETTE = [
   '#2563eb',
   '#dc2626',
   '#15803d',
-  '#b45309',
+  '#f59e0b',
   '#7c3aed',
   '#0e7490',
   '#db2777',
@@ -88,10 +90,12 @@ const BRANCH_PALETTE = [
   '#a21caf',
 ];
 
+const DARK_LABEL_INDEXES = new Set([3]);
+
 const BRANCH_THEME_VARIABLES: Record<string, string> = Object.fromEntries(
   BRANCH_PALETTE.flatMap((color, i) => [
     [`cScale${i}`, color],
-    [`cScaleLabel${i}`, '#ffffff'],
+    [`cScaleLabel${i}`, DARK_LABEL_INDEXES.has(i) ? '#1c1917' : '#ffffff'],
   ]),
 );
 
