@@ -75,7 +75,7 @@ export function renderMermaid(code: string, themeKey: string): Promise<string> {
         securityLevel: 'strict',
         // Não desenha o balão de erro no <body>; o MermaidBlock mostra o source.
         suppressErrorRendering: true,
-        theme: 'base',
+        theme: 'default',
         themeVariables: { primaryColor: tripletToHex(themeKey) },
       });
       initializedFor = themeKey;
