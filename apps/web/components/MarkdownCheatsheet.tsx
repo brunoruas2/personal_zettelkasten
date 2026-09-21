@@ -135,6 +135,13 @@ export function MarkdownCheatsheet({ open, onClose }: Props) {
             />
           </Section>
 
+          <Section title="Diagrama (Mermaid)">
+            <BlockRow
+              syntax={"```mermaid\nflowchart TD\n  A --> B\n```"}
+              desc="Flowchart, sequence, gantt e outros tipos do Mermaid, renderizados no navegador"
+            />
+          </Section>
+
           <Section title="Cifra (acordes)">
             <BlockRow
               syntax={"```chords\nAm        G\nEssa é a letra da música\n```"}

@@ -32,6 +32,7 @@ import { PluginKey } from '@tiptap/pm/state';
 import type { Slice } from '@tiptap/pm/model';
 import type { Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
+import { MermaidBlock } from './MermaidBlock';
 import { useDiagramLayout } from '../lib/diagramLayout';
 import { isImageFile, ImageCompressError } from '../lib/imageCompress';
 import { importImage, ImageUploadError } from '../lib/imageSync';
@@ -101,6 +102,7 @@ interface SlashCommand {
 
 const SLASH_COMMANDS: SlashCommand[] = [
   { id: 'diagrama', label: 'Diagrama', description: 'Bloco PlantUML', icon: '◈' },
+  { id: 'mermaid', label: 'Mermaid', description: 'Diagrama Mermaid', icon: '◇' },
   { id: 'cifra', label: 'Cifra', description: 'Bloco de cifra musical', icon: '♪' },
   { id: 'partitura', label: 'Partitura', description: 'Bloco ABC notation', icon: '♩' },
   { id: 'link', label: 'Link', description: 'Wiki link [[...]]', icon: '⟦⟧' },
@@ -463,20 +465,21 @@ function CodeBlockNodeView({ node, updateAttributes }: {
   updateAttributes: (attrs: { language: string }) => void;
 }) {
   const language = node.attrs.language ?? '';
-  const isPlantUml = language === 'plantuml';
+  const isMermaid = language === 'mermaid';
+  const isDiagram = language === 'plantuml' || isMermaid;
 
-  // Chamado sempre, mesmo para blocos não-plantuml: o early return abaixo não
+  // Chamado sempre, mesmo para blocos que não são diagrama: o early return abaixo não
   // pode ficar antes de um hook.
   const diagramLayout = useDiagramLayout();
 
-  // Debounced so a live PlantUML preview doesn't re-render on every keystroke —
-  // the render engine (plantuml-render-client) serializes renders in a queue.
+  // Debounced so a live diagram preview doesn't re-render on every keystroke —
+  // the render engines (PlantUML and Mermaid) serialize renders in a queue.
   const [debouncedSource, setDebouncedSource] = useState(node.textContent);
   useEffect(() => {
-    if (!isPlantUml) return;
+    if (!isDiagram) return;
     const timer = setTimeout(() => setDebouncedSource(node.textContent), 500);
     return () => clearTimeout(timer);
-  }, [node.textContent, isPlantUml]);
+  }, [node.textContent, isDiagram]);
 
   const codeArea = (
     <>
@@ -507,7 +510,7 @@ function CodeBlockNodeView({ node, updateAttributes }: {
     </>
   );
 
-  if (!isPlantUml) {
+  if (!isDiagram) {
     return (
       <NodeViewWrapper as="div" className="my-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-x-auto">
         {codeArea}
@@ -533,7 +536,7 @@ function CodeBlockNodeView({ node, updateAttributes }: {
     <NodeViewWrapper as="div" className={wrapperClass}>
       <div className={codeColClass}>{codeArea}</div>
       <div contentEditable={false} className={previewColClass}>
-        <PlantUmlBlock source={debouncedSource} />
+        {isMermaid ? <MermaidBlock source={debouncedSource} /> : <PlantUmlBlock source={debouncedSource} />}
       </div>
     </NodeViewWrapper>
   );
@@ -807,6 +810,12 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
                     type: 'codeBlock',
                     attrs: { language: 'plantuml' },
                     content: [{ type: 'text', text: '@startuml\n\n@enduml' }],
+                  }).run();
+                } else if (cmd.id === 'mermaid') {
+                  editor.chain().focus().deleteRange(range).insertContent({
+                    type: 'codeBlock',
+                    attrs: { language: 'mermaid' },
+                    content: [{ type: 'text', text: 'flowchart TD\n  A --> B' }],
                   }).run();
                 } else if (cmd.id === 'cifra') {
                   editor.chain().focus().deleteRange(range).insertContent({

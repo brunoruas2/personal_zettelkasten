@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { PlantUmlBlock } from './PlantUmlBlock';
+import { MermaidBlock } from './MermaidBlock';
 import { Chords } from './Chords';
 import { AbcNotation } from './AbcNotation';
 import { ZettelImage, isZkImageSrc, zkImageId } from './ZettelImage';
@@ -62,7 +63,7 @@ interface Props {
   disableWikiLinks?: boolean;
   onBodyChange?: (rawStart: number, rawEnd: number, newContent: string) => void;
   /**
-   * Faz `plantuml`, `abc` e `chords` caírem no `CodeBlock` comum em vez de
+   * Faz `plantuml`, `mermaid`, `abc` e `chords` caírem no `CodeBlock` comum em vez de
    * montar seus renderizadores. Existe para o preview da `SearchPalette`, onde
    * descer a lista com ↓ montaria um renderer por item — e o engine do PlantUML
    * é global, serializa os renders numa fila e carrega WASM no primeiro uso.
@@ -387,6 +388,8 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
           blocks.push(<CodeBlock key={`cb${i}`} content={content} lang={codeBlockLang} />);
         } else if (codeBlockLang === 'plantuml') {
           blocks.push(<PlantUmlBlock key={`puml${i}`} source={content} />);
+        } else if (codeBlockLang === 'mermaid') {
+          blocks.push(<MermaidBlock key={`mmd${i}`} source={content} />);
         } else if (codeBlockLang === 'chords') {
           const rawStart = lineStartOffsets[codeBlockContentStartLine];
           const rawEnd = rawStart + content.length;
@@ -589,6 +592,8 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
       blocks.push(<CodeBlock key="cb-unclosed" content={content} lang={codeBlockLang} />);
     } else if (codeBlockLang === 'plantuml') {
       blocks.push(<PlantUmlBlock key="puml-unclosed" source={content} />);
+    } else if (codeBlockLang === 'mermaid') {
+      blocks.push(<MermaidBlock key="mmd-unclosed" source={content} />);
     } else if (codeBlockLang === 'chords') {
       const rawStart = lineStartOffsets[codeBlockContentStartLine];
       const rawEnd = rawStart + content.length;

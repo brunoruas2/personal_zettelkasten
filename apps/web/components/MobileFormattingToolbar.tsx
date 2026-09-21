@@ -199,6 +199,14 @@ export function MobileFormattingToolbar({
         </button>
         <button
           onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor?.chain().focus().insertContent({ type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: 'flowchart TD\n  A --> B' }] }).run()}
+          aria-label="Inserir diagrama Mermaid"
+          className={`${base} ${inactive} text-brand text-xl leading-none`}
+        >
+          ◇
+        </button>
+        <button
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor?.chain().focus().insertContent({ type: 'codeBlock', attrs: { language: 'chords' }, content: [] }).run()}
           aria-label="Inserir cifra"
           className={`${base} ${inactive} text-brand text-xl leading-none`}
