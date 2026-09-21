@@ -56,8 +56,12 @@ export function mermaidThemeKey(): string {
   }
 }
 
-function tripletToHex(triplet: string): string {
-  const [r, g, b] = triplet.split(/\s+/).map((n) => Math.max(0, Math.min(255, Number(n) || 0)));
+// `factor` < 1 escurece: a borda dos nós usa o accent a 55%, senão o `default`
+// a deriva da cor primária e ela some contra o fundo cinza do container.
+function tripletToHex(triplet: string, factor = 1): string {
+  const [r, g, b] = triplet
+    .split(/\s+/)
+    .map((n) => Math.max(0, Math.min(255, Math.round((Number(n) || 0) * factor))));
   return '#' + [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('');
 }
 
@@ -76,7 +80,10 @@ export function renderMermaid(code: string, themeKey: string): Promise<string> {
         // Não desenha o balão de erro no <body>; o MermaidBlock mostra o source.
         suppressErrorRendering: true,
         theme: 'default',
-        themeVariables: { primaryColor: tripletToHex(themeKey) },
+        themeVariables: {
+          primaryColor: tripletToHex(themeKey),
+          primaryBorderColor: tripletToHex(themeKey, 0.55),
+        },
       });
       initializedFor = themeKey;
     }
