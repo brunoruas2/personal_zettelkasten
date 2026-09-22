@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/** Offset acima do qual tratamos o teclado virtual como aberto (ignora barra de endereço). */
+export const KEYBOARD_OPEN_THRESHOLD = 100;
+
 /**
  * Mede o quanto o teclado virtual do iOS comeu da tela e mantém a barra fixa
  * do rodapé acima dele.

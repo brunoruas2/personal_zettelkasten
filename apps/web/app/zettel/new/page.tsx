@@ -12,7 +12,7 @@ import { MarkdownRenderer } from '../../../components/MarkdownRenderer';
 import { TipTapEditor, type TipTapEditorHandle } from '../../../components/TipTapEditor';
 import { MobileFormattingToolbar, TOOLBAR_HEIGHT } from '../../../components/MobileFormattingToolbar';
 import { ChordKeypad, KEYPAD_HEIGHT } from '../../../components/ChordKeypad';
-import { useKeyboardOffset } from '../../../hooks/useKeyboardOffset';
+import { useKeyboardOffset, KEYBOARD_OPEN_THRESHOLD } from '../../../hooks/useKeyboardOffset';
 import { api } from '../../../lib/api';
 import { buildExtractedZettel, defaultExtractTitle } from '../../../lib/extractSelection';
 import { TocDrawer } from '../../../components/TocDrawer';
@@ -64,6 +64,7 @@ export default function NewZettelPage() {
   const originalBodyRef = useRef('');
   const isDirtyRef = useRef(false);
   const { toolbarRef, offset: keyboardOffset, recompute: recomputeKeyboardOffset } = useKeyboardOffset();
+  const keyboardOpen = keyboardOffset > KEYBOARD_OPEN_THRESHOLD;
   const editorRef = useRef<TipTapEditorHandle>(null);
   const { captureAnchor } = useEditorModeScrollSync({
     previewOpen,
@@ -299,7 +300,7 @@ export default function NewZettelPage() {
         <input
           ref={titleRef}
           autoFocus
-          className="mb-4 w-full border-b border-zinc-200 bg-transparent pb-3 text-2xl font-bold text-zinc-900 outline-none placeholder:text-zinc-300 dark:border-zinc-700 dark:text-zinc-100"
+          className={`${keyboardOpen ? 'mb-2 pb-2 text-xl lg:mb-4 lg:pb-3 lg:text-2xl' : 'mb-4 pb-3 text-2xl'} w-full border-b border-zinc-200 bg-transparent font-bold text-zinc-900 outline-none placeholder:text-zinc-300 dark:border-zinc-700 dark:text-zinc-100`}
           placeholder="Título do zettel"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -341,7 +342,7 @@ export default function NewZettelPage() {
           </div>
         </div>
 
-        {!previewOpen && (
+        {!previewOpen && !keyboardOpen && (
           <TagInput
             tags={tags}
             onChange={setTags}

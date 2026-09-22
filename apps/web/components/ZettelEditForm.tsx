@@ -12,7 +12,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { TipTapEditor, type TipTapEditorHandle } from './TipTapEditor';
 import { MobileFormattingToolbar, TOOLBAR_HEIGHT } from './MobileFormattingToolbar';
 import { ChordKeypad, KEYPAD_HEIGHT } from './ChordKeypad';
-import { useKeyboardOffset } from '../hooks/useKeyboardOffset';
+import { useKeyboardOffset, KEYBOARD_OPEN_THRESHOLD } from '../hooks/useKeyboardOffset';
 import { buildExtractedZettel, defaultExtractTitle } from '../lib/extractSelection';
 import { TocDrawer } from './TocDrawer';
 import { ScrollEdgeButton, scrollToEnd } from './ScrollEdgeButton';
@@ -83,6 +83,7 @@ export function ZettelEditForm({
   });
   const isDirtyRef = useRef(false);
   const { toolbarRef, offset: keyboardOffset, recompute: recomputeKeyboardOffset } = useKeyboardOffset();
+  const keyboardOpen = keyboardOffset > KEYBOARD_OPEN_THRESHOLD;
   const editorRef = useRef<TipTapEditorHandle>(null);
   const { captureAnchor } = useEditorModeScrollSync({
     previewOpen,
@@ -368,7 +369,7 @@ export function ZettelEditForm({
         {/* Title — always visible */}
         <input
           ref={titleInputRef}
-          className="mb-4 w-full border-b border-zinc-200 bg-transparent pb-3 text-2xl font-bold text-zinc-900 outline-none placeholder:text-zinc-300 dark:border-zinc-700 dark:text-zinc-100"
+          className={`${keyboardOpen ? 'mb-2 pb-2 text-xl lg:mb-4 lg:pb-3 lg:text-2xl' : 'mb-4 pb-3 text-2xl'} w-full border-b border-zinc-200 bg-transparent font-bold text-zinc-900 outline-none placeholder:text-zinc-300 dark:border-zinc-700 dark:text-zinc-100`}
           placeholder="Título"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -410,7 +411,7 @@ export function ZettelEditForm({
           </div>
         </div>
 
-        {!previewOpen && (
+        {!previewOpen && !keyboardOpen && (
           <TagInput
             tags={tags}
             onChange={setTags}
