@@ -79,11 +79,11 @@ func apiKeyFromRequest(r *http.Request) (key string, present bool) {
 }
 
 // apiKeyRouteAllowed is the allowlist for key-authenticated requests:
-// GET /api/zettels, GET /api/zettels/{id}, PUT /api/zettels/{id}.
+// GET /api/zettels, POST /api/zettels, GET /api/zettels/{id}, PUT /api/zettels/{id}.
 func apiKeyRouteAllowed(method, path string) bool {
 	path = strings.TrimSuffix(path, "/")
 	if path == "/api/zettels" {
-		return method == http.MethodGet
+		return method == http.MethodGet || method == http.MethodPost
 	}
 	id, ok := strings.CutPrefix(path, "/api/zettels/")
 	if !ok || id == "" || strings.Contains(id, "/") || id == "rebuild-links" {

@@ -140,7 +140,6 @@ func TestAPIKeyScope(t *testing.T) {
 	h := bearer(e.keyA)
 
 	forbidden := []struct{ method, path string }{
-		{"POST", "/api/zettels"},
 		{"DELETE", "/api/zettels/z1"},
 		{"GET", "/api/zettels/z1/backlinks"},
 		{"POST", "/api/zettels/rebuild-links"},
@@ -159,6 +158,32 @@ func TestAPIKeyScope(t *testing.T) {
 		if got := e.do("GET", p, "", h).Code; got != 401 {
 			t.Errorf("key on %s: got %d want 401", p, got)
 		}
+	}
+}
+
+func TestAPIKeyCreate(t *testing.T) {
+	e := newEnv(t)
+	h := bearer(e.keyA)
+
+	// user_id no corpo é ignorado pelo handler — o dono é sempre quem a chave resolve.
+	w := e.do("POST", "/api/zettels", `{"title":"novo via chave","body":"corpo","tags":["a"],"user_id":"`+e.userB.ID+`"}`, h)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("got %d want 201: %s", w.Code, w.Body)
+	}
+	var got models.Zettel
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "novo via chave" {
+		t.Fatalf("unexpected title: %+v", got)
+	}
+
+	z, err := e.zRepo.GetByID(e.userA.ID, got.ID)
+	if err != nil || z == nil {
+		t.Fatalf("created zettel not found under owner: %v", err)
+	}
+	if zb, _ := e.zRepo.GetByID(e.userB.ID, got.ID); zb != nil {
+		t.Fatalf("created zettel leaked to another user: %+v", zb)
 	}
 }
 
