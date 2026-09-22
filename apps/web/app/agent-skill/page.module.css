@@ -1,0 +1,444 @@
+/*
+ * Estilos próprios desta página — independentes do tema --color-brand do
+ * resto do app (ver design.md: esta é intencionalmente uma superfície
+ * separada, não uma tela do produto). Paleta e tokens vivem só em `.page`,
+ * não em :root, pra não vazar pro resto do site.
+ */
+.page {
+  --ink: #1b2430;
+  --ink-soft: #4b5768;
+  --line: #dfe4ea;
+  --line-soft: #eceff3;
+  --surface: #ffffff;
+  --bg: #eef1f4;
+  --accent: #0e7c86;
+  --accent-ink: #ffffff;
+  --accent-soft: #e1f2f2;
+  --warn: #8a5300;
+  --warn-bg: #fdf1dc;
+  --warn-line: #eecf9a;
+  --danger: #9c2b2b;
+  --danger-bg: #fbeaea;
+  --danger-line: #eeb9b9;
+  --code-bg: #0f1720;
+  --code-ink: #d9e3ea;
+  --code-accent: #7fd8d0;
+  --code-string: #e0c68a;
+  --code-comment: #5c6b7a;
+  --shadow: 0 1px 2px rgba(20, 30, 40, 0.06), 0 8px 24px -12px rgba(20, 30, 40, 0.15);
+  --radius: 10px;
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 15.5px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+@media (prefers-color-scheme: dark) {
+  .page {
+    --ink: #e7ecf1;
+    --ink-soft: #a7b3c2;
+    --line: #2b3946;
+    --line-soft: #212c37;
+    --surface: #141c24;
+    --bg: #0c1216;
+    --accent: #4fd0c9;
+    --accent-ink: #08201f;
+    --accent-soft: #12292b;
+    --warn: #e3b567;
+    --warn-bg: #2a2110;
+    --warn-line: #4a3a17;
+    --danger: #e8a0a0;
+    --danger-bg: #2a1414;
+    --danger-line: #4a2323;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  }
+}
+
+.page * {
+  box-sizing: border-box;
+}
+.page a {
+  color: var(--accent);
+}
+.page code,
+.page pre,
+.mono {
+  font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 16px 96px;
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+}
+
+.toc {
+  position: sticky;
+  top: 24px;
+  flex: 0 0 220px;
+  align-self: flex-start;
+  border-right: 1px solid var(--line);
+  padding-right: 18px;
+}
+.tocKicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.toc a {
+  display: block;
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: 13.5px;
+  padding: 5px 0;
+}
+.toc a:hover {
+  color: var(--ink);
+}
+
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hero {
+  padding-bottom: 22px;
+  margin-bottom: 26px;
+  border-bottom: 1px solid var(--line);
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.hero h1 {
+  font-size: 32px;
+  line-height: 1.15;
+  margin: 0 0 10px;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.lede {
+  color: var(--ink-soft);
+  font-size: 16px;
+  max-width: 62ch;
+  margin: 0;
+}
+
+.calloutRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+.pillOn {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.section {
+  margin: 0 0 44px;
+}
+.section h2 {
+  font-size: 20px;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  scroll-margin-top: 20px;
+}
+.num {
+  color: var(--accent);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+.section h3 {
+  font-size: 15.5px;
+  margin: 22px 0 8px;
+  scroll-margin-top: 20px;
+}
+.sectionLede {
+  color: var(--ink-soft);
+  margin: 0 0 16px;
+  max-width: 70ch;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+}
+
+.tblWrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.tblWrap th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.tblWrap td {
+  padding: 10px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+.tblWrap tr:last-child td {
+  border-bottom: none;
+}
+.tblWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.tblWrap table {
+  min-width: 640px;
+}
+
+.badge {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  letter-spacing: 0.02em;
+}
+.badgeGet {
+  background: #dceefc;
+  color: #1a5a8a;
+}
+.badgePost {
+  background: #dcefdc;
+  color: #1e6b2e;
+}
+.badgePut {
+  background: #f5e6c8;
+  color: #8a5f0e;
+}
+.badgeNo {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+@media (prefers-color-scheme: dark) {
+  .badgeGet {
+    background: #123249;
+    color: #8fc7ef;
+  }
+  .badgePost {
+    background: #123420;
+    color: #8fd6a0;
+  }
+  .badgePut {
+    background: #3a2c0c;
+    color: #e8c37c;
+  }
+}
+
+.code {
+  background: var(--code-bg);
+  color: var(--code-ink);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  overflow-x: auto;
+  font-size: 12.8px;
+  line-height: 1.65;
+  border: 1px solid var(--line);
+}
+.code .c {
+  color: var(--code-comment);
+}
+.code .s {
+  color: var(--code-string);
+}
+.code .k {
+  color: var(--code-accent);
+}
+.codeLabel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.codeLabel span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.copyBtn {
+  font-family: 'Public Sans', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.copyBtn:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+.copied {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.note {
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  padding: 14px 16px;
+  font-size: 13.5px;
+  display: flex;
+  gap: 11px;
+}
+.noteIcon {
+  flex: 0 0 auto;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.noteWarn {
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+  color: var(--warn);
+}
+.noteDanger {
+  background: var(--danger-bg);
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+.noteInfo {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.noteBody {
+  color: var(--ink);
+  margin: 0;
+}
+
+.rules {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rules li {
+  padding-left: 26px;
+  position: relative;
+}
+.rules li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.steps {
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.steps li {
+  position: relative;
+  padding-left: 38px;
+}
+.steps li::before {
+  counter-increment: step;
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.footer {
+  margin-top: 48px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+@media (max-width: 860px) {
+  .shell {
+    flex-direction: column;
+  }
+  .toc {
+    position: static;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding: 0 0 16px;
+    width: 100%;
+    flex-basis: auto;
+  }
+  .tocGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 16px;
+  }
+  .hero h1 {
+    font-size: 26px;
+  }
+}

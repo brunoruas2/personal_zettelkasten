@@ -87,7 +87,7 @@ export function Sidebar() {
   if (orphanOnly) displayed = displayed.filter((z) => !linkedIds.has(z.id));
   if (noTagOnly) displayed = displayed.filter((z) => z.tags.length === 0);
 
-  if (pathname === '/login') return null;
+  if (pathname === '/login' || pathname === '/agent-skill') return null;
 
   return (
     <aside className="app-sidebar hidden lg:flex flex-col w-80 shrink-0 h-screen bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800">

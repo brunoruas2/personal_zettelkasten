@@ -214,7 +214,7 @@ export function SearchPalette() {
     if (previewRef.current) previewRef.current.scrollTop = 0;
   }, [selected?.id]);
 
-  if (!open || pathname === '/login') return null;
+  if (!open || pathname === '/login' || pathname === '/agent-skill') return null;
 
   return (
     <div
