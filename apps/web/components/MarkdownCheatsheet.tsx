@@ -103,6 +103,9 @@ export function MarkdownCheatsheet({ open, onClose }: Props) {
             <Row syntax="# Título" desc="Título grande (H1)" />
             <Row syntax="## Subtítulo" desc="Subtítulo (H2)" />
             <Row syntax="### Seção" desc="Seção menor (H3)" />
+            <Row syntax="#### Subseção" desc="Subseção (H4)" />
+            <Row syntax="##### Nota" desc="Nota (H5)" />
+            <Row syntax="###### Rodapé" desc="Rodapé (H6)" />
           </Section>
 
           <Section title="Listas e blocos">

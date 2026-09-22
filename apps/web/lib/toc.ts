@@ -10,13 +10,13 @@ export interface TocItem {
   id: string;
   /** Texto do heading sem marcação inline. */
   text: string;
-  /** 1, 2 ou 3 — os únicos níveis que o renderer suporta. */
-  level: 1 | 2 | 3;
+  /** 1 a 6 — níveis que o renderer suporta. */
+  level: 1 | 2 | 3 | 4 | 5 | 6;
   /** Índice da linha no corpo, usado como chave do mapa no renderer. */
   line: number;
 }
 
-const HEADING_RE = /^(#{1,3}) (.+)$/;
+const HEADING_RE = /^(#{1,6}) (.+)$/;
 
 /** Remove a marcação inline que o renderer não exibe dentro de um heading. */
 function stripInline(raw: string): string {
@@ -75,7 +75,7 @@ export function extractHeadings(body: string): TocItem[] {
     items.push({
       id: count === 1 ? `zk-h-${slug}` : `zk-h-${slug}-${count}`,
       text,
-      level: match[1].length as 1 | 2 | 3,
+      level: match[1].length as 1 | 2 | 3 | 4 | 5 | 6,
       line,
     });
   }

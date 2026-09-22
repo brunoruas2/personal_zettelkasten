@@ -57,6 +57,17 @@ const LANG_ALIASES: Record<string, string> = {
   cs: 'csharp',
 };
 
+// Índice 0 = H1 ... índice 5 = H6. Escala decrescente de tamanho/peso,
+// mesma cor e scroll-mt-6 em todos os níveis.
+const HEADING_CLASSES = [
+  'mb-1 mt-2 scroll-mt-6 text-2xl font-extrabold text-zinc-900 dark:text-zinc-100',
+  'mb-1 mt-2 scroll-mt-6 text-xl font-bold text-zinc-900 dark:text-zinc-100',
+  'mb-0.5 mt-1.5 scroll-mt-6 text-lg font-semibold text-zinc-900 dark:text-zinc-100',
+  'mb-0.5 mt-1 scroll-mt-6 text-base font-semibold text-zinc-900 dark:text-zinc-100',
+  'mb-0.5 mt-1 scroll-mt-6 text-sm font-semibold text-zinc-900 dark:text-zinc-100',
+  'mb-0.5 mt-1 scroll-mt-6 text-sm font-medium text-zinc-900 dark:text-zinc-100',
+];
+
 interface Props {
   body: string;
   onLinkPress: (title: string) => void;
@@ -424,20 +435,15 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
       continue;
     }
 
-    const h1 = line.match(/^# (.+)/);
-    const h2 = line.match(/^## (.+)/);
-    const h3 = line.match(/^### (.+)/);
+    const heading = line.match(/^(#{1,6}) (.+)/);
 
-    if (h1) {
-      blocks.push(<h1 key={`h${i}`} id={headingIds.get(i)} className="mb-1 mt-2 scroll-mt-6 text-2xl font-extrabold text-zinc-900 dark:text-zinc-100">{h1[1]}</h1>);
-      i++; continue;
-    }
-    if (h2) {
-      blocks.push(<h2 key={`h${i}`} id={headingIds.get(i)} className="mb-1 mt-2 scroll-mt-6 text-xl font-bold text-zinc-900 dark:text-zinc-100">{h2[1]}</h2>);
-      i++; continue;
-    }
-    if (h3) {
-      blocks.push(<h3 key={`h${i}`} id={headingIds.get(i)} className="mb-0.5 mt-1.5 scroll-mt-6 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{h3[1]}</h3>);
+    if (heading) {
+      const level = heading[1].length;
+      const text = heading[2];
+      const id = headingIds.get(i);
+      const className = HEADING_CLASSES[level - 1];
+      const HeadingTag = `h${level}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+      blocks.push(<HeadingTag key={`h${i}`} id={id} className={className}>{text}</HeadingTag>);
       i++; continue;
     }
 
