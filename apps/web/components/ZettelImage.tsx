@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { imageStore, fetchImage } from '../lib/imageSync'
+import { ZoomModal } from './DiagramFrame'
 
 /** Prefixo das referências locais no markdown. */
 export const ZK_IMG_PREFIX = 'zk:img/'
@@ -57,6 +58,7 @@ type State = 'loading' | 'ready' | 'missing'
 export function ZettelImage({ id, alt }: { id: string; alt: string }) {
   const [url, setUrl] = React.useState<string | null>(null)
   const [state, setState] = React.useState<State>('loading')
+  const [zoomed, setZoomed] = React.useState(false)
 
   React.useEffect(() => {
     let cancelled = false
@@ -110,11 +112,32 @@ export function ZettelImage({ id, alt }: { id: string; alt: string }) {
   }
 
   return (
-    <img
-      src={url}
-      alt={alt}
-      loading="lazy"
-      className="my-2 max-w-full rounded-lg border border-zinc-200 dark:border-zinc-700"
-    />
+    <>
+      <span className="group relative my-2 inline-block max-w-full align-top">
+        <img
+          src={url}
+          alt={alt}
+          loading="lazy"
+          className="max-w-full rounded-lg border border-zinc-200 dark:border-zinc-700"
+        />
+        <button
+          type="button"
+          onClick={() => setZoomed(true)}
+          className="no-print absolute top-2 right-2 flex items-center justify-center w-8 h-8 lg:w-7 lg:h-7 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity"
+          aria-label="Ampliar imagem"
+          title="Ampliar"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
+      </span>
+      {zoomed && (
+        <ZoomModal onClose={() => setZoomed(false)}>
+          <img src={url} alt={alt} className="h-full w-full object-contain" draggable={false} />
+        </ZoomModal>
+      )}
+    </>
   )
 }

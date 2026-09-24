@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { usePinchZoom } from '../hooks/usePinchZoom';
 
@@ -9,7 +9,8 @@ export type DiagramState = 'loading' | 'ok' | 'error';
 const CTRL_BTN =
   'flex items-center justify-center w-10 h-10 rounded-full bg-zinc-800/80 text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors';
 
-function DiagramModal({ svg, onClose }: { svg: string; onClose: () => void }) {
+/** Modal de tela cheia com zoom/pan; compartilhado por diagramas (SVG) e imagens (ZettelImage). */
+export function ZoomModal({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLDivElement>(null);
   const { zoomIn, zoomOut, reset } = usePinchZoom(surfaceRef, targetRef);
@@ -46,8 +47,9 @@ function DiagramModal({ svg, onClose }: { svg: string; onClose: () => void }) {
         <div
           ref={targetRef}
           className="absolute inset-0 origin-top-left will-change-transform [&_svg]:!h-full [&_svg]:!w-full [&_svg]:!max-w-none"
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
+        >
+          {children}
+        </div>
       </div>
       <button onClick={onClose} className={`${CTRL_BTN} absolute top-5 right-5`} aria-label="Fechar">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -94,7 +96,11 @@ export function DiagramFrame({ state, svg, source }: { state: DiagramState; svg:
             </svg>
           </button>
         </div>
-        {zoomed && <DiagramModal svg={svg} onClose={() => setZoomed(false)} />}
+        {zoomed && (
+          <ZoomModal onClose={() => setZoomed(false)}>
+            <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: svg }} />
+          </ZoomModal>
+        )}
       </>
     );
   }
