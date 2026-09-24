@@ -80,6 +80,49 @@ interface Props {
    * é global, serializa os renders numa fila e carrega WASM no primeiro uso.
    */
   disableHeavyBlocks?: boolean;
+  /**
+   * Ação que aparece ao passar o mouse (ou focar) num wiki link comum. Recebe o
+   * título do alvo e devolve o botão, ou `null` para não mostrar nada. Nunca é
+   * chamada para `[[^pai]]`. Chega aos links por context, não por parâmetro, para
+   * não atravessar todos os call sites de `renderInline`.
+   */
+  wikiLinkAction?: (title: string) => React.ReactNode;
+}
+
+const WikiLinkActionContext = React.createContext<((title: string) => React.ReactNode) | null>(null);
+
+function WikiLinkButton({
+  target,
+  label,
+  isParentRef,
+  onLinkPress,
+}: {
+  target: string;
+  label: string;
+  isParentRef: boolean;
+  onLinkPress: (title: string) => void;
+}) {
+  const actionFor = React.useContext(WikiLinkActionContext);
+  const action = actionFor && !isParentRef ? actionFor(target) : null;
+  const button = (
+    <button
+      onClick={() => onLinkPress(target)}
+      className="text-brand-light underline hover:opacity-80 transition-opacity"
+    >
+      {label}
+    </button>
+  );
+  if (!action) return button;
+  // A ação é absoluta: aparecer não muda a largura da linha. Fica dentro do
+  // mesmo `group`, então mover o mouse do link para ela não a esconde.
+  return (
+    <span className="group relative inline-block">
+      {button}
+      <span className="absolute left-full top-1/2 z-10 ml-0.5 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:hidden">
+        {action}
+      </span>
+    </span>
+  );
 }
 
 interface ListNode {
@@ -279,13 +322,13 @@ function renderInline(
         disableWikiLinks ? (
           <span key={`${keyPrefix}-l${k++}`}>{label}</span>
         ) : (
-          <button
+          <WikiLinkButton
             key={`${keyPrefix}-l${k++}`}
-            onClick={() => onLinkPress(target)}
-            className="text-brand-light underline hover:opacity-80 transition-opacity"
-          >
-            {label}
-          </button>
+            target={target}
+            label={label}
+            isParentRef={rawTarget.startsWith('^')}
+            onLinkPress={onLinkPress}
+          />
         ),
       );
     } else if (m[3] !== undefined) {
@@ -360,7 +403,7 @@ function renderInline(
   return parts;
 }
 
-export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, onBodyChange, disableHeavyBlocks = false }: Props) {
+export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, onBodyChange, disableHeavyBlocks = false, wikiLinkAction }: Props) {
   // Âncoras da Table of Contents. O mapa vem de `lib/toc.ts`, a mesma fonte que
   // alimenta o TocDrawer, para que id da lista e id do DOM nunca divirjam.
   const headingIds = React.useMemo(() => headingIdsByLine(body), [body]);
@@ -617,5 +660,7 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
     }
   }
 
-  return <div className="space-y-0.5">{blocks}</div>;
+  const content = <div className="space-y-0.5">{blocks}</div>;
+  if (!wikiLinkAction) return content;
+  return <WikiLinkActionContext.Provider value={wikiLinkAction}>{content}</WikiLinkActionContext.Provider>;
 }

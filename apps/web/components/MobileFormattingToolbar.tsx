@@ -22,7 +22,18 @@ interface Props {
   hasHeadings: boolean;
   tocOpen: boolean;
   onToggleToc: () => void;
+  /** Só aparece quando o corpo referencia zettels que podem ser renderizados dentro do pai. */
+  hasEmbeds?: boolean;
+  embedsOn?: boolean;
+  onToggleEmbeds?: () => void;
 }
+
+const EmbedIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+  </svg>
+);
 
 const NoteIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -65,6 +76,9 @@ export function MobileFormattingToolbar({
   hasHeadings,
   tocOpen,
   onToggleToc,
+  hasEmbeds,
+  embedsOn,
+  onToggleEmbeds,
 }: Props) {
   const state = useEditorState({
     editor,
@@ -121,6 +135,17 @@ export function MobileFormattingToolbar({
     return (
       <div ref={toolbarRef} className={wrapClass} style={wrapStyle}>
         <div className="flex flex-1 items-center justify-end gap-1 px-3">
+{hasEmbeds && onToggleEmbeds && (
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onToggleEmbeds}
+              aria-label="Renderizar zettels referenciados"
+              aria-pressed={embedsOn}
+              className={`${base} ${embedsOn ? active : inactive}`}
+            >
+              <EmbedIcon />
+            </button>
+          )}
           {hasHeadings && (
             <button
               onMouseDown={(e) => e.preventDefault()}
@@ -296,6 +321,17 @@ export function MobileFormattingToolbar({
             className={`${base} ${inactive} text-brand text-lg leading-none`}
           >
             ↑¶
+          </button>
+        )}
+        {hasEmbeds && onToggleEmbeds && (
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onToggleEmbeds}
+            aria-label="Renderizar zettels referenciados"
+            aria-pressed={embedsOn}
+            className={`${base} ${inactive} ${embedsOn ? 'text-brand' : ''}`}
+          >
+            <EmbedIcon />
           </button>
         )}
         {hasHeadings && (

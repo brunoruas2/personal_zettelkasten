@@ -35,6 +35,7 @@ import { PlantUmlBlock } from './PlantUmlBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { useDiagramLayout } from '../lib/diagramLayout';
 import { isImageFile, ImageCompressError } from '../lib/imageCompress';
+import { createEmbedHoverExtension, type EmbedHoverBridge } from '../lib/embedHoverExtension';
 import { importImage, ImageUploadError } from '../lib/imageSync';
 import { ZK_IMG_PREFIX } from './ZettelImage';
 
@@ -128,6 +129,11 @@ interface Props {
   onExtract?: (selectedText: string, range: { from: number; to: number }) => void;
   /** Quantas imagens estão comprimindo ou com upload em voo. Usado para travar o Salvar. */
   onPendingImagesChange?: (count: number) => void;
+  /**
+   * Liga a ação de hover sobre `[[links]]` que renderiza o zettel filho dentro da
+   * página. Sem ela o editor não instala o plugin de hover.
+   */
+  embedBridge?: EmbedHoverBridge;
 }
 
 interface WikiPopupState {
@@ -753,12 +759,15 @@ function normalizeSentinelParagraphs(editor: Editor): void {
 // ── TipTapEditor ──────────────────────────────────────────────────────────────
 
 export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
-  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onExtract, onPendingImagesChange }, ref) {
+  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onExtract, onPendingImagesChange, embedBridge }, ref) {
     const isExternalUpdate = useRef(false);
 
     // Keep current zettels accessible inside extensions without recreating them
     const zettelsSuggestionRef = useRef<Zettel[]>([]);
     zettelsSuggestionRef.current = zettels ?? [];
+
+    const embedBridgeRef = useRef<EmbedHoverBridge | null>(null);
+    embedBridgeRef.current = embedBridge ?? null;
 
     // Popup state
     const [wikiPopup, setWikiPopup] = useState<WikiPopupState | null>(null);
@@ -1017,6 +1026,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         Placeholder.configure({ placeholder: placeholder ?? '' }),
         WikiLinkExtension,
         SlashCommandExtension,
+        createEmbedHoverExtension(() => embedBridgeRef.current),
       ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);

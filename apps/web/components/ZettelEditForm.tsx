@@ -17,8 +17,10 @@ import { buildExtractedZettel, defaultExtractTitle } from '../lib/extractSelecti
 import { TocDrawer } from './TocDrawer';
 import { ScrollEdgeButton, scrollToEnd } from './ScrollEdgeButton';
 import { extractHeadings } from '../lib/toc';
+import { eventInEmbedded, EMBEDDED_ATTR } from '../lib/embeddedFocus';
 import { useEditorModeScrollSync } from '../hooks/useEditorModeScrollSync';
-import type { Zettel } from '@zettelkasten/core';
+import { useEditorEmbeds } from '../hooks/useEditorEmbeds';
+import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
 export interface ZettelEditFormProps {
   /** null = create mode (used by the map's split-edit panel right after a quick-create stub, or a future /zettel/new integration). */
@@ -30,6 +32,13 @@ export interface ZettelEditFormProps {
   onCancel?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   autoFocusTitle?: boolean;
+  /**
+   * Formulário dentro de uma faixa de zettel embutido (ver `EmbeddedZettel`). Sem
+   * toolbar fixa móvel, teclado de cifras, pill Editar/Preview nem Sumário — o
+   * modo é da faixa, a altura vem dela — e os atalhos globais só reagem a
+   * eventos cujo alvo esteja dentro da própria raiz.
+   */
+  embedded?: boolean;
 }
 
 export function ZettelEditForm({
@@ -40,6 +49,7 @@ export function ZettelEditForm({
   onCancel,
   onDirtyChange,
   autoFocusTitle,
+  embedded = false,
 }: ZettelEditFormProps) {
   const router = useOfflineRouter();
   const { controller, createZettel, updateZettel, zettels } = useZettelStore();
@@ -57,6 +67,14 @@ export function ZettelEditForm({
   const editorScrollRef = useRef<HTMLDivElement>(null);
   const [tocOpen, setTocOpen] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Atalhos globais moram no `document`. Um form embutido só age em eventos de
+  // dentro de si; os demais ignoram eventos vindos de uma faixa embutida.
+  const shortcutApplies = (e: Event) =>
+    embedded
+      ? e.target instanceof Node && !!rootRef.current?.contains(e.target)
+      : !eventInEmbedded(e);
 
   const isPage = layout === 'page';
   const hasHeadings = useMemo(() => isPage && extractHeadings(body).length > 0, [isPage, body]);
@@ -83,7 +101,7 @@ export function ZettelEditForm({
   });
   const isDirtyRef = useRef(false);
   const { toolbarRef, offset: keyboardOffset, recompute: recomputeKeyboardOffset } = useKeyboardOffset();
-  const keyboardOpen = keyboardOffset > KEYBOARD_OPEN_THRESHOLD;
+  const keyboardOpen = !embedded && keyboardOffset > KEYBOARD_OPEN_THRESHOLD;
   const editorRef = useRef<TipTapEditorHandle>(null);
   const { captureAnchor } = useEditorModeScrollSync({
     previewOpen,
@@ -92,6 +110,24 @@ export function ZettelEditForm({
     editorRef,
   });
   const [pendingImages, setPendingImages] = useState(0);
+
+  // Renomear um filho reescreve `[[antigo]]` no pai salvo (rewriteLinks); o corpo
+  // em edição aqui também precisa, senão salvar o pai desfaria a reescrita.
+  const handleChildRenamed = useCallback((oldTitle: string, newTitle: string) => {
+    setBody((prev) => rewriteLinkTitle(prev, oldTitle, newTitle));
+    originalValuesRef.current = {
+      ...originalValuesRef.current,
+      body: rewriteLinkTitle(originalValuesRef.current.body, oldTitle, newTitle),
+    };
+  }, []);
+  const { embed, wikiLinkAction, bridge, portal, previewSlotRef, editorSlotRef } = useEditorEmbeds({
+    parentId: zettelId ?? '',
+    body,
+    previewOpen,
+    // Um nível só: o formulário de dentro de uma faixa não embute filhos.
+    disabled: embedded,
+    onChildRenamed: handleChildRenamed,
+  });
 
   useEffect(() => {
     if (!controller) return;
@@ -168,7 +204,7 @@ export function ZettelEditForm({
       inChordsBlock: ctx.editor ? ctx.editor.isActive('codeBlock', { language: 'chords' }) : false,
     }),
   });
-  const showChordKeypad = chordKeypadOpen && (editorState?.inChordsBlock ?? false) && !previewOpen;
+  const showChordKeypad = !embedded && chordKeypadOpen && (editorState?.inChordsBlock ?? false) && !previewOpen;
 
   useEffect(() => {
     if (previewOpen) setChordKeypadOpen(false);
@@ -177,6 +213,8 @@ export function ZettelEditForm({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.altKey || e.key !== 'p') return;
+      // Embutido: o modo é do cabeçalho da faixa.
+      if (embedded || !shortcutApplies(e)) return;
       e.preventDefault();
       if (previewOpen) switchToEdit();
       else switchToPreview();
@@ -252,7 +290,7 @@ export function ZettelEditForm({
   useEffect(() => {
     if (!isPage) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.code !== 'KeyE') return;
+      if (!e.altKey || e.code !== 'KeyE' || !shortcutApplies(e)) return;
       e.preventDefault();
       if (isDirtyRef.current && !window.confirm('Descartar alterações não salvas?')) return;
       handleCancelRef.current();
@@ -263,7 +301,7 @@ export function ZettelEditForm({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.key !== 's') return;
+      if (!e.altKey || e.key !== 's' || !shortcutApplies(e)) return;
       e.preventDefault();
       handleSaveRef.current();
     };
@@ -273,7 +311,7 @@ export function ZettelEditForm({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.key !== 'h') return;
+      if (!e.altKey || e.key !== 'h' || !shortcutApplies(e)) return;
       e.preventDefault();
       setCheatsheetOpen((prev) => !prev);
     };
@@ -284,7 +322,7 @@ export function ZettelEditForm({
   useEffect(() => {
     if (!isPage) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.code !== 'KeyT') return;
+      if (!e.altKey || e.code !== 'KeyT' || !shortcutApplies(e)) return;
       if (!hasHeadings) return;
       e.preventDefault();
       toggleToc();
@@ -296,7 +334,7 @@ export function ZettelEditForm({
   useEffect(() => {
     if (!isPage) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.code !== 'KeyF') return;
+      if (!e.altKey || e.code !== 'KeyF' || !shortcutApplies(e)) return;
       e.preventDefault();
       scrollToEnd(tocContainerRef.current);
     };
@@ -312,7 +350,7 @@ export function ZettelEditForm({
     : 'flex flex-col h-full px-4 pt-4 pb-4';
 
   return (
-    <div className={outerClassName}>
+    <div ref={rootRef} className={outerClassName} {...(embedded ? { [EMBEDDED_ATTR]: '' } : {})}>
       <div className={innerClassName}>
         {/* Nav */}
         <div className="mb-5 flex items-center justify-between">
@@ -322,7 +360,19 @@ export function ZettelEditForm({
           <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 lg:hidden">
             {zettelId ? 'Editar Zettel' : 'Novo Zettel'}
           </span>
-          <div className="hidden lg:flex items-center gap-2">
+          <div className={embedded ? 'hidden' : 'hidden lg:flex items-center gap-2'}>
+            {embed.hasChildren && (
+              <button
+                onClick={embed.toggleGlobal}
+                className={embed.globalOn ? 'text-brand' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'}
+                title={embed.globalOn ? 'Recolher zettels referenciados' : 'Renderizar zettels referenciados'}
+                aria-pressed={embed.globalOn}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="12" x2="21" y2="12" />
+                </svg>
+              </button>
+            )}
             {isPage && hasHeadings && (
               <button
                 onClick={toggleToc}
@@ -379,10 +429,16 @@ export function ZettelEditForm({
 
         <div ref={previewRef} className={`flex-1 min-h-0 overflow-y-auto ${previewOpen ? '' : 'hidden'}`}>
           {body.trim() ? (
-            <MarkdownRenderer body={body} onLinkPress={handleLinkPress} onBodyChange={handleChordsBodyChange} />
+            <MarkdownRenderer
+              body={body}
+              onLinkPress={handleLinkPress}
+              onBodyChange={handleChordsBodyChange}
+              wikiLinkAction={embed.hasChildren ? wikiLinkAction : undefined}
+            />
           ) : (
             <p className="text-sm text-zinc-400 italic">Nenhum conteúdo ainda.</p>
           )}
+          <div ref={previewSlotRef} />
         </div>
 
         <div className={`relative flex-1 min-h-0 flex flex-col ${previewOpen ? 'hidden' : ''}`}>
@@ -403,7 +459,9 @@ export function ZettelEditForm({
               spellCheck
               fontSize={editorFontSize}
               zettels={zettels}
+              embedBridge={bridge}
             />
+            <div ref={editorSlotRef} />
             <div
               className="min-h-[12rem] cursor-text"
               onClick={() => editorRef.current?.focusEnd()}
@@ -418,10 +476,10 @@ export function ZettelEditForm({
             suggestions={Array.from(new Set(zettels.flatMap((z) => z.tags)))}
           />
         )}
-        <div aria-hidden className="shrink-0 lg:hidden" style={{ height: `calc(${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom, 0px))` }} />
+        {!embedded && <div aria-hidden className="shrink-0 lg:hidden" style={{ height: `calc(${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom, 0px))` }} />}
       </div>
 
-      {showChordKeypad ? (
+      {embedded ? null : showChordKeypad ? (
         <ChordKeypad
           editor={editor}
           active={showChordKeypad}
@@ -445,8 +503,13 @@ export function ZettelEditForm({
           hasHeadings={hasHeadings}
           tocOpen={tocOpen}
           onToggleToc={toggleToc}
+          hasEmbeds={embed.hasChildren}
+          embedsOn={embed.globalOn}
+          onToggleEmbeds={embed.toggleGlobal}
         />
       )}
+
+      {portal}
 
       <LinkPickerModal
         open={linkPickerOpen}

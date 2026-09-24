@@ -19,7 +19,9 @@ import { TocDrawer } from '../../../components/TocDrawer';
 import { ScrollEdgeButton, scrollToEnd } from '../../../components/ScrollEdgeButton';
 import { extractHeadings } from '../../../lib/toc';
 import { useEditorModeScrollSync } from '../../../hooks/useEditorModeScrollSync';
-import type { Zettel } from '@zettelkasten/core';
+import { useEditorEmbeds } from '../../../hooks/useEditorEmbeds';
+import { eventInEmbedded } from '../../../lib/embeddedFocus';
+import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
 
 export default function NewZettelPage() {
@@ -75,6 +77,18 @@ export default function NewZettelPage() {
   // Imagens ainda comprimindo ou com upload em voo. Salvar com pendências
   // gravaria um body referenciando blob que o servidor não tem.
   const [pendingImages, setPendingImages] = useState(0);
+
+  // Renomear um filho reescreve `[[antigo]]` no corpo local do pai.
+  const handleChildRenamed = useCallback((oldTitle: string, newTitle: string) => {
+    setBody((prev) => rewriteLinkTitle(prev, oldTitle, newTitle));
+    originalBodyRef.current = rewriteLinkTitle(originalBodyRef.current, oldTitle, newTitle);
+  }, []);
+  const { embed, wikiLinkAction, bridge, portal, previewSlotRef, editorSlotRef } = useEditorEmbeds({
+    parentId: '',
+    body,
+    previewOpen,
+    onChildRenamed: handleChildRenamed,
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => titleRef.current?.focus(), 100);
@@ -149,7 +163,7 @@ export default function NewZettelPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.key !== 'p') return;
+      if (!e.altKey || e.key !== 'p' || eventInEmbedded(e)) return;
       e.preventDefault();
       if (previewOpen) switchToEdit();
       else switchToPreview();
@@ -163,7 +177,7 @@ export default function NewZettelPage() {
   // macOS compõe caractere.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.code !== 'KeyE') return;
+      if (!e.altKey || e.code !== 'KeyE' || eventInEmbedded(e)) return;
       e.preventDefault();
       if (isDirtyRef.current && !window.confirm('Descartar alterações não salvas?')) return;
       isDirtyRef.current = false;
@@ -197,7 +211,7 @@ export default function NewZettelPage() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.key !== 's') return;
+      if (!e.altKey || e.key !== 's' || eventInEmbedded(e)) return;
       e.preventDefault();
       handleSaveRef.current();
     };
@@ -207,7 +221,7 @@ export default function NewZettelPage() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.key !== 'h') return;
+      if (!e.altKey || e.key !== 'h' || eventInEmbedded(e)) return;
       e.preventDefault();
       setCheatsheetOpen((prev) => !prev);
     };
@@ -220,7 +234,7 @@ export default function NewZettelPage() {
   // caractere rejeitaria o atalho. Os atalhos vizinhos ainda usam `e.key`.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.code !== 'KeyT') return;
+      if (!e.altKey || e.code !== 'KeyT' || eventInEmbedded(e)) return;
       // Sem heading o drawer não abre, e alternar aqui gravaria
       // `zettel_toc_open` em silêncio — o sumário apareceria aberto no próximo
       // zettel que tivesse headings.
@@ -234,7 +248,7 @@ export default function NewZettelPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.code !== 'KeyF') return;
+      if (!e.altKey || e.code !== 'KeyF' || eventInEmbedded(e)) return;
       e.preventDefault();
       scrollToEnd(tocContainerRef.current);
     };
@@ -257,6 +271,18 @@ export default function NewZettelPage() {
           </button>
           <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 lg:hidden">Novo Zettel</span>
           <div className="hidden lg:flex items-center gap-2">
+          {embed.hasChildren && (
+            <button
+              onClick={embed.toggleGlobal}
+              className={embed.globalOn ? 'text-brand' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'}
+              title={embed.globalOn ? 'Recolher zettels referenciados' : 'Renderizar zettels referenciados'}
+              aria-pressed={embed.globalOn}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="12" x2="21" y2="12" />
+              </svg>
+            </button>
+          )}
           {hasHeadings && (
             <button
               onClick={toggleToc}
@@ -310,10 +336,16 @@ export default function NewZettelPage() {
 
         <div ref={previewRef} className={`flex-1 min-h-0 overflow-y-auto ${previewOpen ? '' : 'hidden'}`}>
           {body.trim() ? (
-            <MarkdownRenderer body={body} onLinkPress={handleLinkPress} onBodyChange={handleChordsBodyChange} />
+            <MarkdownRenderer
+              body={body}
+              onLinkPress={handleLinkPress}
+              onBodyChange={handleChordsBodyChange}
+              wikiLinkAction={embed.hasChildren ? wikiLinkAction : undefined}
+            />
           ) : (
             <p className="text-sm text-zinc-400 italic">Nenhum conteúdo ainda.</p>
           )}
+          <div ref={previewSlotRef} />
         </div>
 
         <div className={`relative flex-1 min-h-0 flex flex-col ${previewOpen ? 'hidden' : ''}`}>
@@ -334,7 +366,9 @@ export default function NewZettelPage() {
               spellCheck
               fontSize={editorFontSize}
               zettels={zettels}
+              embedBridge={bridge}
             />
+            <div ref={editorSlotRef} />
             <div
               className="min-h-[12rem] cursor-text"
               onClick={() => editorRef.current?.focusEnd()}
@@ -379,8 +413,13 @@ export default function NewZettelPage() {
           hasHeadings={hasHeadings}
           tocOpen={tocOpen}
           onToggleToc={toggleToc}
+          hasEmbeds={embed.hasChildren}
+          embedsOn={embed.globalOn}
+          onToggleEmbeds={embed.toggleGlobal}
         />
       )}
+
+      {portal}
 
       <LinkPickerModal
         open={linkPickerOpen}

@@ -16,7 +16,7 @@ function generateId(): string {
   for (let i = 0; i < 4; i++) rand += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
   return date + rand;
 }
-import { parseLinks } from '../services/LinkParser';
+import { parseLinks, rewriteLinkTitle } from '../services/LinkParser';
 import type { Link } from '../models/Link';
 
 export interface ZettelRepository {
@@ -96,8 +96,6 @@ export class ZettelController {
 
   async rewriteLinks(oldTitle: string, newTitle: string, excludeId: string): Promise<Zettel[]> {
     const all = await this.repo.findAll();
-    const escaped = oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp(`\\[\\[(\\^)?${escaped}(\\|[^\\]]*)?\\]\\]`, 'gi');
     const rewritten: Zettel[] = [];
 
     for (const zettel of all) {
@@ -106,9 +104,7 @@ export class ZettelController {
       const lowerOld = oldTitle.toLowerCase();
       if (!lowerBody.includes(`[[${lowerOld}`) && !lowerBody.includes(`[[^${lowerOld}`)) continue;
 
-      const newBody = zettel.body.replace(pattern, (_, caret, label) =>
-        `[[${caret ?? ''}${newTitle}${label ?? ''}]]`
-      );
+      const newBody = rewriteLinkTitle(zettel.body, oldTitle, newTitle);
 
       if (newBody !== zettel.body) {
         const updated: Zettel = { ...zettel, body: newBody, updatedAt: Date.now() };

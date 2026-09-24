@@ -8,3 +8,4 @@ export * from './services/LinkParser';
 export * from './services/SearchService';
 export * from './services/SpacedRepetition';
 export * from './services/ZettelHierarchy';
+export * from './services/EmbeddedChildren';

@@ -53,11 +53,14 @@ export function TocDrawer({ open, onClose, contentRef, scrollRef, revision }: Pr
     if (!open) return;
     const root = contentRef.current;
     const found = root
-      ? Array.from(root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')).map((el) => ({
-          text: (el.textContent ?? '').trim(),
-          level: Number(el.tagName.slice(1)),
-          el,
-        }))
+      ? Array.from(root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6'))
+          // Zettels filhos embutidos (`data-toc-ignore`) não entram no sumário do pai.
+          .filter((el) => !el.closest('[data-toc-ignore]'))
+          .map((el) => ({
+            text: (el.textContent ?? '').trim(),
+            level: Number(el.tagName.slice(1)),
+            el,
+          }))
       : [];
     if (sameEntries(entriesRef.current, found)) return;
     entriesRef.current = found;

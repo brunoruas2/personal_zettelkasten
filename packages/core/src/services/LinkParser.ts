@@ -61,3 +61,13 @@ export function completeLinkInText(
   const newCursorPos = openIdx + replacement.length;
   return { newText, newCursorPos };
 }
+
+/**
+ * Reescreve `[[antigo]]`, `[[^antigo]]` e `[[antigo|rótulo]]` para o título novo
+ * num corpo, sem diferenciar caixa. Preserva o `^` e o rótulo.
+ */
+export function rewriteLinkTitle(body: string, oldTitle: string, newTitle: string): string {
+  const escaped = oldTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`\\[\\[(\\^)?${escaped}(\\|[^\\]]*)?\\]\\]`, 'gi');
+  return body.replace(pattern, (_, caret, label) => `[[${caret ?? ''}${newTitle}${label ?? ''}]]`);
+}
