@@ -19,7 +19,7 @@ import { ScrollEdgeButton, scrollToEnd } from './ScrollEdgeButton';
 import { extractHeadings } from '../lib/toc';
 import { eventInEmbedded, EMBEDDED_ATTR } from '../lib/embeddedFocus';
 import { useEditorModeScrollSync } from '../hooks/useEditorModeScrollSync';
-import { useEditorEmbeds } from '../hooks/useEditorEmbeds';
+import { useEmbeds } from '../hooks/useEmbeds';
 import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
 export interface ZettelEditFormProps {
@@ -120,7 +120,7 @@ export function ZettelEditForm({
       body: rewriteLinkTitle(originalValuesRef.current.body, oldTitle, newTitle),
     };
   }, []);
-  const { embed, wikiLinkAction, bridge, portal, previewSlotRef, editorSlotRef } = useEditorEmbeds({
+  const { embed, wikiLinkAction, embedSlot, bridge, portals } = useEmbeds({
     parentId: zettelId ?? '',
     body,
     previewOpen,
@@ -434,11 +434,11 @@ export function ZettelEditForm({
               onLinkPress={handleLinkPress}
               onBodyChange={handleChordsBodyChange}
               wikiLinkAction={embed.hasChildren ? wikiLinkAction : undefined}
+              embedSlot={embed.hasChildren ? embedSlot : undefined}
             />
           ) : (
             <p className="text-sm text-zinc-400 italic">Nenhum conteúdo ainda.</p>
           )}
-          <div ref={previewSlotRef} />
         </div>
 
         <div className={`relative flex-1 min-h-0 flex flex-col ${previewOpen ? 'hidden' : ''}`}>
@@ -461,7 +461,6 @@ export function ZettelEditForm({
               zettels={zettels}
               embedBridge={bridge}
             />
-            <div ref={editorSlotRef} />
             <div
               className="min-h-[12rem] cursor-text"
               onClick={() => editorRef.current?.focusEnd()}
@@ -509,7 +508,7 @@ export function ZettelEditForm({
         />
       )}
 
-      {portal}
+      {portals}
 
       <LinkPickerModal
         open={linkPickerOpen}

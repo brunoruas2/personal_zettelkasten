@@ -9,9 +9,7 @@ import { OfflineLink } from '../../../components/OfflineLink';
 import { TocDrawer } from '../../../components/TocDrawer';
 import { ScrollEdgeButton, scrollToEnd } from '../../../components/ScrollEdgeButton';
 import { ExportScopeModal } from '../../../components/ExportScopeModal';
-import { EmbeddedChildrenSection } from '../../../components/EmbeddedChildrenSection';
-import { EmbedActionButton } from '../../../components/EmbeddedZettel';
-import { useEmbeddedChildren } from '../../../hooks/useEmbeddedChildren';
+import { useEmbeds } from '../../../hooks/useEmbeds';
 import { eventInEmbedded } from '../../../lib/embeddedFocus';
 import { useOfflineRouter } from '../../../hooks/useOfflineRouter';
 import { extractHeadings } from '../../../lib/toc';
@@ -29,16 +27,20 @@ export default function ZettelDetailPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const embed = useEmbeddedChildren({ parentId: id, body: zettel?.body ?? '', useLinkTable: true });
-  const { childForTitle, isOpen, toggleChild } = embed;
-  const wikiLinkAction = useCallback(
-    (title: string) => {
-      const child = childForTitle(title);
-      if (!child) return null;
-      return <EmbedActionButton open={isOpen(child.id)} onToggle={() => toggleChild(child.id)} />;
-    },
-    [childForTitle, isOpen, toggleChild],
-  );
+  // Renomear um filho reescreve `[[antigo]]` no corpo do pai (rewriteLinks); o
+  // pai em tela ainda tem o corpo velho.
+  const handleChildTitleChanged = useCallback(() => {
+    controller?.getById(id).then((z) => z && setZettel(z));
+  }, [controller, id]);
+
+  // Cada filho aberto vira uma faixa logo abaixo do bloco que o referencia.
+  const { embed, wikiLinkAction, embedSlot, portals } = useEmbeds({
+    parentId: id,
+    body: zettel?.body ?? '',
+    previewOpen: true,
+    useLinkTable: true,
+    onChildRenamed: handleChildTitleChanged,
+  });
 
   const hasHeadings = useMemo(
     () => extractHeadings(zettel?.body ?? '').length > 0,
@@ -126,12 +128,6 @@ export default function ZettelDetailPage() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
-
-  // Renomear um filho reescreve `[[antigo]]` no corpo do pai (rewriteLinks); o
-  // pai em tela ainda tem o corpo velho.
-  const handleChildTitleChanged = useCallback(() => {
-    controller?.getById(id).then((z) => z && setZettel(z));
-  }, [controller, id]);
 
   const handleLinkPress = async (title: string) => {
     if (!controller) return;
@@ -301,16 +297,10 @@ export default function ZettelDetailPage() {
           onLinkPress={handleLinkPress}
           onBodyChange={handleChordsBodyChange}
           wikiLinkAction={embed.hasChildren ? wikiLinkAction : undefined}
+          embedSlot={embed.hasChildren ? embedSlot : undefined}
         />
       </div>
-
-      {/* Fora do `contentRef`: o Sumário e o botão de rolagem medem só o pai. */}
-      <EmbeddedChildrenSection
-        zettels={embed.children}
-        isOpen={embed.isOpen}
-        onCollapse={embed.toggleChild}
-        onChildTitleChanged={handleChildTitleChanged}
-      />
+      {portals}
 
       {zettel.tags.length > 0 && (
         <div className="mt-6 flex flex-wrap gap-2">

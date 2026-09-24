@@ -36,6 +36,7 @@ import { MermaidBlock } from './MermaidBlock';
 import { useDiagramLayout } from '../lib/diagramLayout';
 import { isImageFile, ImageCompressError } from '../lib/imageCompress';
 import { createEmbedHoverExtension, type EmbedHoverBridge } from '../lib/embedHoverExtension';
+import { createEmbedSlotExtension } from '../lib/embedSlotExtension';
 import { importImage, ImageUploadError } from '../lib/imageSync';
 import { ZK_IMG_PREFIX } from './ZettelImage';
 
@@ -1027,6 +1028,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         WikiLinkExtension,
         SlashCommandExtension,
         createEmbedHoverExtension(() => embedBridgeRef.current),
+        createEmbedSlotExtension(() => embedBridgeRef.current),
       ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -1106,6 +1108,14 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         onChange(serializeToMarkdown(editor));
       },
     });
+
+    // Abrir/fechar um zettel embutido muda o `embedBridge`, não o texto. As
+    // decorations só se recalculam numa transação, então força uma vazia (sem
+    // `docChanged`: não dispara `onUpdate` nem suja o documento).
+    useEffect(() => {
+      if (!editor || editor.isDestroyed) return;
+      editor.view.dispatch(editor.state.tr.setMeta('embedRefresh', true));
+    }, [editor, embedBridge]);
 
     // Sync external value changes without resetting caret mid-typing
     useEffect(() => {

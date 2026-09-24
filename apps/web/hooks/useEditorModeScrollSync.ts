@@ -32,7 +32,10 @@ const SETTLE_MS = 100;
 const FALLBACK_MS = 500;
 
 function headingsOf(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>('h1, h2, h3'));
+  // Headings de zettels filhos embutidos (`data-toc-ignore`) não são âncoras do pai.
+  return Array.from(container.querySelectorAll<HTMLElement>('h1, h2, h3')).filter(
+    (el) => !el.closest('[data-toc-ignore]'),
+  );
 }
 
 function readAnchor(container: HTMLElement): Anchor {

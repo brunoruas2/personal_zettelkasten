@@ -52,3 +52,18 @@ export function selectEmbeddableChildren(
   }
   return result;
 }
+
+/**
+ * Títulos dos `[[links]]` comuns de um trecho de texto (um bloco do Markdown ou
+ * um parágrafo do editor), na ordem em que aparecem. Exclui `[[^pai]]` e o que
+ * está em code span, onde `[[x]]` é código. É o que decide em qual bloco cada
+ * filho é ancorado: tanto o `MarkdownRenderer` quanto o editor usam esta função,
+ * cada um contando só a primeira ocorrência de cada título.
+ */
+export function extractPlainWikiTitles(text: string): string[] {
+  if (!text.includes('[[')) return [];
+  const withoutCode = text.replace(/`[^`\n]*`/g, (m) => ' '.repeat(m.length));
+  return parseLinks(withoutCode)
+    .filter((p) => !p.isParentRef)
+    .map((p) => p.target);
+}

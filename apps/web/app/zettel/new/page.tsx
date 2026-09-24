@@ -19,7 +19,7 @@ import { TocDrawer } from '../../../components/TocDrawer';
 import { ScrollEdgeButton, scrollToEnd } from '../../../components/ScrollEdgeButton';
 import { extractHeadings } from '../../../lib/toc';
 import { useEditorModeScrollSync } from '../../../hooks/useEditorModeScrollSync';
-import { useEditorEmbeds } from '../../../hooks/useEditorEmbeds';
+import { useEmbeds } from '../../../hooks/useEmbeds';
 import { eventInEmbedded } from '../../../lib/embeddedFocus';
 import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
@@ -83,7 +83,7 @@ export default function NewZettelPage() {
     setBody((prev) => rewriteLinkTitle(prev, oldTitle, newTitle));
     originalBodyRef.current = rewriteLinkTitle(originalBodyRef.current, oldTitle, newTitle);
   }, []);
-  const { embed, wikiLinkAction, bridge, portal, previewSlotRef, editorSlotRef } = useEditorEmbeds({
+  const { embed, wikiLinkAction, embedSlot, bridge, portals } = useEmbeds({
     parentId: '',
     body,
     previewOpen,
@@ -341,11 +341,11 @@ export default function NewZettelPage() {
               onLinkPress={handleLinkPress}
               onBodyChange={handleChordsBodyChange}
               wikiLinkAction={embed.hasChildren ? wikiLinkAction : undefined}
+              embedSlot={embed.hasChildren ? embedSlot : undefined}
             />
           ) : (
             <p className="text-sm text-zinc-400 italic">Nenhum conteúdo ainda.</p>
           )}
-          <div ref={previewSlotRef} />
         </div>
 
         <div className={`relative flex-1 min-h-0 flex flex-col ${previewOpen ? 'hidden' : ''}`}>
@@ -368,7 +368,6 @@ export default function NewZettelPage() {
               zettels={zettels}
               embedBridge={bridge}
             />
-            <div ref={editorSlotRef} />
             <div
               className="min-h-[12rem] cursor-text"
               onClick={() => editorRef.current?.focusEnd()}
@@ -419,7 +418,7 @@ export default function NewZettelPage() {
         />
       )}
 
-      {portal}
+      {portals}
 
       <LinkPickerModal
         open={linkPickerOpen}

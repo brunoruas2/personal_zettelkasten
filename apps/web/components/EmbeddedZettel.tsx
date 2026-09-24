@@ -73,7 +73,9 @@ export function EmbeddedZettel({ zettel: initial, onCollapse, onTitleChanged }: 
     <div
       {...{ [EMBEDDED_ATTR]: '' }}
       data-embedded-band=""
-      className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-zinc-700 dark:bg-zinc-900/40"
+      // Fora do sumário do pai: os headings do filho não são do pai.
+      data-toc-ignore=""
+      className="my-3 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-zinc-700 dark:bg-zinc-900/40"
     >
       <div className="flex items-center gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-700">
         <OfflineLink

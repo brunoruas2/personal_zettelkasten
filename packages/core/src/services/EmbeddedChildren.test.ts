@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Link } from '../models/Link';
 import type { Zettel } from '../models/Zettel';
-import { selectEmbeddableChildren } from './EmbeddedChildren';
+import { extractPlainWikiTitles, selectEmbeddableChildren } from './EmbeddedChildren';
 
 const NOW = 1_757_000_000_000;
 
@@ -82,5 +82,27 @@ describe('selectEmbeddableChildren', () => {
   it('links = null com pai novo (sem id salvo) não embute a si mesmo', () => {
     const result = selectEmbeddableChildren('', '[[F1]]', null, all);
     expect(ids(result)).toEqual(['F1']);
+  });
+});
+
+describe('extractPlainWikiTitles', () => {
+  it('devolve os links comuns na ordem, com alias resolvido para o alvo', () => {
+    expect(extractPlainWikiTitles('a [[F1]] b [[F2|texto]] c')).toEqual(['F1', 'F2']);
+  });
+
+  it('ignora parent-ref', () => {
+    expect(extractPlainWikiTitles('[[^Pai]] e [[Filho]]')).toEqual(['Filho']);
+  });
+
+  it('ignora link dentro de code span', () => {
+    expect(extractPlainWikiTitles('use `[[x]]` e [[Real]]')).toEqual(['Real']);
+  });
+
+  it('sem colchetes duplos devolve vazio', () => {
+    expect(extractPlainWikiTitles('texto [simples](url)')).toEqual([]);
+  });
+
+  it('mantém repetições (quem decide a primeira ocorrência é o consumidor)', () => {
+    expect(extractPlainWikiTitles('[[A]] [[A]]')).toEqual(['A', 'A']);
   });
 });

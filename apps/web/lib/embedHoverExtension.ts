@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import type { EmbedSlotRegistry } from './embedSlots';
 
 /**
  * Ponte entre o editor e o estado de "zettels embutidos" da página. Chega ao
@@ -13,6 +14,8 @@ export interface EmbedHoverBridge {
   resolve: (title: string) => { id: string } | undefined;
   isOpen: (id: string) => boolean;
   toggle: (id: string) => void;
+  /** Onde as faixas ancoram; a extensão de slots registra aqui os widgets do modo Editar. */
+  registry: EmbedSlotRegistry;
 }
 
 interface HoverRange {
