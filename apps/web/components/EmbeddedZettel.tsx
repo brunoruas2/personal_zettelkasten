@@ -109,7 +109,7 @@ export function EmbeddedZettel({ zettel: initial, onCollapse, onTitleChanged }: 
       {mode === 'preview' ? (
         <div className="max-h-[70vh] overflow-y-auto px-4 py-3">
           {zettel.body.trim() ? (
-            <MarkdownRenderer body={zettel.body} onLinkPress={handleLinkPress} disableHeavyBlocks />
+            <MarkdownRenderer body={zettel.body} onLinkPress={handleLinkPress} />
           ) : (
             <p className="text-sm italic text-zinc-400">Nenhum conteúdo ainda.</p>
           )}
