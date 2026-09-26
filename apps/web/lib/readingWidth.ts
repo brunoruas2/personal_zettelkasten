@@ -14,9 +14,9 @@ export interface ReadingWidth {
 }
 
 export const READING_WIDTHS: ReadingWidth[] = [
-  { id: 'narrow', label: 'Estreita', description: 'Coluna de leitura compacta', className: 'lg:max-w-4xl' },
-  { id: 'medium', label: 'Média', description: 'Coluna mais larga', className: 'lg:max-w-6xl' },
-  { id: 'wide', label: 'Larga', description: 'Aproveita telas grandes', className: 'lg:max-w-[96rem]' },
+  { id: 'narrow', label: 'Estreita', description: 'Coluna de leitura compacta', className: 'lg:max-w-5xl' },
+  { id: 'medium', label: 'Média', description: 'Coluna mais larga', className: 'lg:max-w-7xl' },
+  { id: 'wide', label: 'Larga', description: 'Aproveita telas grandes', className: 'lg:max-w-[120rem]' },
 ];
 
 export const DEFAULT_READING_WIDTH_ID: ReadingWidthId = 'narrow';
