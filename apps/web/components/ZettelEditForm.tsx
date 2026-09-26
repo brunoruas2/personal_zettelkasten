@@ -17,6 +17,7 @@ import { buildExtractedZettel, defaultExtractTitle } from '../lib/extractSelecti
 import { TocDrawer } from './TocDrawer';
 import { ScrollEdgeButton, scrollToEnd } from './ScrollEdgeButton';
 import { extractHeadings } from '../lib/toc';
+import { useReadingWidthClass } from '../lib/readingWidth';
 import { eventInEmbedded, EMBEDDED_ATTR } from '../lib/embeddedFocus';
 import { useEditorModeScrollSync } from '../hooks/useEditorModeScrollSync';
 import { useEmbeds } from '../hooks/useEmbeds';
@@ -77,6 +78,7 @@ export function ZettelEditForm({
       : !eventInEmbedded(e);
 
   const isPage = layout === 'page';
+  const widthClass = useReadingWidthClass();
   const hasHeadings = useMemo(() => isPage && extractHeadings(body).length > 0, [isPage, body]);
 
   useEffect(() => {
@@ -346,7 +348,7 @@ export function ZettelEditForm({
     ? `h-[100dvh] lg:h-full ${tocOpen && hasHeadings ? 'lg:pr-64' : ''}`
     : 'h-full';
   const innerClassName = isPage
-    ? 'mx-auto max-w-2xl px-4 pt-4 flex flex-col h-[100dvh] lg:max-w-4xl lg:pt-6 lg:pb-4 lg:h-full'
+    ? `mx-auto max-w-2xl px-4 pt-4 flex flex-col h-[100dvh] ${widthClass} lg:pt-6 lg:pb-4 lg:h-full`
     : 'flex flex-col h-full px-4 pt-4 pb-4';
 
   return (

@@ -18,6 +18,7 @@ import { buildExtractedZettel, defaultExtractTitle } from '../../../lib/extractS
 import { TocDrawer } from '../../../components/TocDrawer';
 import { ScrollEdgeButton, scrollToEnd } from '../../../components/ScrollEdgeButton';
 import { extractHeadings } from '../../../lib/toc';
+import { useReadingWidthClass } from '../../../lib/readingWidth';
 import { useEditorModeScrollSync } from '../../../hooks/useEditorModeScrollSync';
 import { useEmbeds } from '../../../hooks/useEmbeds';
 import { eventInEmbedded } from '../../../lib/embeddedFocus';
@@ -26,6 +27,7 @@ import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
 export default function NewZettelPage() {
   const router = useOfflineRouter();
+  const widthClass = useReadingWidthClass();
   const { createZettel, zettels, controller } = useZettelStore();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -263,7 +265,7 @@ export default function NewZettelPage() {
           centralizar. O `lg:h-full` precisa ser repetido aqui para a cadeia de
           altura continuar chegando ao container. */}
       <div className={`h-[100dvh] lg:h-full ${tocOpen && hasHeadings ? 'lg:pr-64' : ''}`}>
-      <div className="mx-auto max-w-2xl px-4 pt-4 flex flex-col h-[100dvh] lg:max-w-4xl lg:pt-6 lg:pb-4 lg:h-full">
+      <div className={`mx-auto max-w-2xl px-4 pt-4 flex flex-col h-[100dvh] ${widthClass} lg:pt-6 lg:pb-4 lg:h-full`}>
         {/* Nav */}
         <div className="mb-5 flex items-center justify-between">
           <button onClick={() => { isDirtyRef.current = false; router.push('/'); }} className="text-sm font-medium text-brand hover:opacity-80">

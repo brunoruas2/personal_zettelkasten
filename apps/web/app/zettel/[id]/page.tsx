@@ -13,6 +13,7 @@ import { useEmbeds } from '../../../hooks/useEmbeds';
 import { eventInEmbedded } from '../../../lib/embeddedFocus';
 import { useOfflineRouter } from '../../../hooks/useOfflineRouter';
 import { extractHeadings } from '../../../lib/toc';
+import { useReadingWidthClass } from '../../../lib/readingWidth';
 import type { Zettel } from '@zettelkasten/core';
 
 export default function ZettelDetailPage() {
@@ -23,6 +24,7 @@ export default function ZettelDetailPage() {
   const [zettel, setZettel] = useState<Zettel | null>(null);
   const [backlinks, setBacklinks] = useState<Zettel[]>([]);
   const [readFontSize, setReadFontSize] = useState(16);
+  const widthClass = useReadingWidthClass();
   const [tocOpen, setTocOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -64,14 +66,6 @@ export default function ZettelDetailPage() {
     const saved = parseInt(localStorage.getItem('zettel_read_font_size') ?? '', 10);
     if (!isNaN(saved)) setReadFontSize(saved);
   }, []);
-
-  const adjustReadFont = (delta: number) => {
-    setReadFontSize((prev) => {
-      const next = Math.min(26, Math.max(12, prev + delta));
-      localStorage.setItem('zettel_read_font_size', String(next));
-      return next;
-    });
-  };
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -178,7 +172,7 @@ export default function ZettelDetailPage() {
         `mx-auto`, ele fixaria a margem direita e só a esquerda seguiria `auto`,
         encostando a coluna no drawer em vez de centralizar. */}
     <div className={tocOpen && hasHeadings ? 'lg:pr-64' : ''}>
-    <div className="mx-auto max-w-2xl px-4 pb-20 pt-4 lg:max-w-4xl lg:pt-8">
+    <div className={`mx-auto max-w-2xl px-4 pb-20 pt-4 ${widthClass} lg:pt-8`}>
       {/* Nav */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3 lg:hidden">
@@ -260,23 +254,6 @@ export default function ZettelDetailPage() {
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
             </svg>
           </button>
-          {/* Font size control */}
-          <div className="flex items-center overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800">
-            <button
-              onClick={() => adjustReadFont(-1)}
-              aria-label="Diminuir fonte"
-              className="flex h-9 w-8 items-center justify-center text-xs font-bold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 active:bg-zinc-200 dark:active:bg-zinc-700"
-            >
-              A−
-            </button>
-            <button
-              onClick={() => adjustReadFont(1)}
-              aria-label="Aumentar fonte"
-              className="flex h-9 w-8 items-center justify-center text-sm font-bold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 active:bg-zinc-200 dark:active:bg-zinc-700"
-            >
-              A+
-            </button>
-          </div>
           <button onClick={handleDelete} className="text-zinc-400 hover:text-red-500" title="Excluir">
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
@@ -285,7 +262,7 @@ export default function ZettelDetailPage() {
         </div>
       </div>
 
-      {/* Content — font size controlled by A−/A+ buttons above */}
+      {/* Content — font size set in Settings → Aparência */}
       <div style={{ fontSize: readFontSize }}>
       <div className="mb-5 flex items-start gap-3">
         <h1 className="flex-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">{zettel.title}</h1>

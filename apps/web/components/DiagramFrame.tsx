@@ -10,7 +10,15 @@ const CTRL_BTN =
   'flex items-center justify-center w-10 h-10 rounded-full bg-zinc-800/80 text-zinc-200 hover:bg-zinc-700 hover:text-white transition-colors';
 
 /** Modal de tela cheia com zoom/pan; compartilhado por diagramas (SVG) e imagens (ZettelImage). */
-export function ZoomModal({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+export function ZoomModal({
+  children,
+  onClose,
+  surfaceClassName = 'bg-white',
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  surfaceClassName?: string;
+}) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLDivElement>(null);
   const { zoomIn, zoomOut, reset } = usePinchZoom(surfaceRef, targetRef);
@@ -41,7 +49,7 @@ export function ZoomModal({ children, onClose }: { children: ReactNode; onClose:
       {/* Surface: recebe os gestos. Os botões ficam fora dela para não disparar pan/captura. */}
       <div
         ref={surfaceRef}
-        className="relative h-full w-full overflow-hidden rounded-xl bg-white shadow-2xl"
+        className={`relative h-full w-full overflow-hidden rounded-xl shadow-2xl ${surfaceClassName}`}
         style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
       >
         <div

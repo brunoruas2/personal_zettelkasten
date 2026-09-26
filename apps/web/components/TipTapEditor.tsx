@@ -307,6 +307,16 @@ function normalizeAutolinks(md: string): string {
 // \[\[wiki\]\], \[label\](url) e \* — que eram casos particulares desta mesma regra.
 const ESCAPED_MARKER_RE = /\\([[\]*~])/g;
 
+// Com `html: false` o serializador emite `<`, `>` e `&` como entidade (`&lt;`, `&gt;`, `&amp;`),
+// e o MarkdownRenderer não decodifica entidade nenhuma: `<>` digitado aparecia como `&lt;&gt;`
+// no Preview. Passada única (nunca em cascata) para que `&amp;lt;` vire `&lt;` e pare aí.
+const ENTITY_RE = /&(lt|gt|amp);/g;
+const ENTITY_CHARS: Record<string, string> = { lt: '<', gt: '>', amp: '&' };
+
+function unescapeText(s: string): string {
+  return s.replace(ESCAPED_MARKER_RE, '$1').replace(ENTITY_RE, (_, name: string) => ENTITY_CHARS[name]);
+}
+
 // Dentro de code fence e code span o serializador não escapa nada, então um backslash ali
 // foi escrito pelo usuário: `/\[x\]/` num bloco js é um regex, e reescrevê-lo para `/[x]/`
 // mudaria o código sem quebrar nada na hora. Por isso a varredura pula esses contextos.
@@ -334,10 +344,10 @@ function unescapeOutsideCodeSpans(line: string): string {
   while (i < line.length) {
     const tick = line.indexOf('`', i);
     if (tick === -1) {
-      out += line.slice(i).replace(ESCAPED_MARKER_RE, '$1');
+      out += unescapeText(line.slice(i));
       break;
     }
-    out += line.slice(i, tick).replace(ESCAPED_MARKER_RE, '$1');
+    out += unescapeText(line.slice(i, tick));
 
     let runLen = 0;
     while (line[tick + runLen] === '`') runLen++;

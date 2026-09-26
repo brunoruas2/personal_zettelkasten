@@ -134,7 +134,7 @@ export function ZettelImage({ id, alt }: { id: string; alt: string }) {
         </button>
       </span>
       {zoomed && (
-        <ZoomModal onClose={() => setZoomed(false)}>
+        <ZoomModal onClose={() => setZoomed(false)} surfaceClassName="bg-black">
           <img src={url} alt={alt} className="h-full w-full object-contain" draggable={false} />
         </ZoomModal>
       )}

@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { useSyncStore } from '../../store/useSyncStore';
 import { THEMES, applyTheme, getSavedThemeId, type ThemeId } from '../../lib/theme';
 import { FONTS, applyFont, getSavedFontId, type FontId } from '../../lib/font';
+import { READING_WIDTHS, applyReadingWidth, useReadingWidth } from '../../lib/readingWidth';
 import { DIAGRAM_LAYOUTS, applyDiagramLayout, getSavedDiagramLayoutId, type DiagramLayoutId } from '../../lib/diagramLayout';
 import { useReviewStore } from '../../store/useReviewStore'
 import { useZettelStore } from '../../store/useZettelStore';
@@ -81,6 +82,8 @@ export default function SettingsPage() {
   const [themeId, setThemeId] = useState<ThemeId>('purple')
   const [fontId, setFontId] = useState<FontId>('system')
   const [diagramLayoutId, setDiagramLayoutId] = useState<DiagramLayoutId>('side')
+  const readingWidthId = useReadingWidth()
+  const [readFontSize, setReadFontSize] = useState(16)
   const graphExcludedTags = useZettelStore((s) => s.graphExcludedTags)
   const setGraphExcludedTags = useZettelStore((s) => s.setGraphExcludedTags)
   const [excludedTagsSaved, setExcludedTagsSaved] = useState(false)
@@ -111,7 +114,15 @@ export default function SettingsPage() {
     setFontId(getSavedFontId())
     setDiagramLayoutId(getSavedDiagramLayoutId())
     setImagePrefetch(isPrefetchEnabled())
+    const savedSize = parseInt(localStorage.getItem('zettel_read_font_size') ?? '', 10)
+    if (!isNaN(savedSize)) setReadFontSize(Math.min(26, Math.max(12, savedSize)))
   }, [])
+
+  const adjustReadFontSize = (delta: number) => {
+    const next = Math.min(26, Math.max(12, readFontSize + delta))
+    setReadFontSize(next)
+    try { localStorage.setItem('zettel_read_font_size', String(next)) } catch { /* sessão apenas */ }
+  }
 
   useEffect(() => {
     api.get('/api/auth/settings')
@@ -634,6 +645,55 @@ export default function SettingsPage() {
             </div>
             <p className="mt-3 text-xs text-zinc-400">
               {FONTS.find(f => f.id === fontId)?.label} · salvo neste dispositivo
+            </p>
+
+            <p className="mb-3 mt-6 text-sm text-zinc-500">Tamanho da fonte de leitura.</p>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700">
+                <button
+                  onClick={() => adjustReadFontSize(-1)}
+                  disabled={readFontSize <= 12}
+                  aria-label="Diminuir fonte de leitura"
+                  className="flex h-10 w-10 items-center justify-center text-xs font-bold text-zinc-500 hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800"
+                >
+                  A−
+                </button>
+                <span className="w-14 text-center text-sm tabular-nums text-zinc-700 dark:text-zinc-300">{readFontSize}px</span>
+                <button
+                  onClick={() => adjustReadFontSize(1)}
+                  disabled={readFontSize >= 26}
+                  aria-label="Aumentar fonte de leitura"
+                  className="flex h-10 w-10 items-center justify-center text-sm font-bold text-zinc-500 hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800"
+                >
+                  A+
+                </button>
+              </div>
+              <span className="text-zinc-600 dark:text-zinc-300" style={{ fontSize: readFontSize }}>Texto de exemplo</span>
+            </div>
+            <p className="mt-3 text-xs text-zinc-400">Salvo neste dispositivo · vale para a leitura de zettels</p>
+
+            <p className="mb-3 mt-6 text-sm text-zinc-500">Largura do texto no desktop.</p>
+            <div className="flex gap-3 flex-wrap">
+              {READING_WIDTHS.map((width) => {
+                const isActive = readingWidthId === width.id;
+                return (
+                  <button
+                    key={width.id}
+                    onClick={() => applyReadingWidth(width.id)}
+                    title={width.description}
+                    className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm transition-all ${
+                      isActive
+                        ? 'border-brand bg-brand/10 font-semibold text-brand dark:bg-brand/20'
+                        : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-500'
+                    }`}
+                  >
+                    {width.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-xs text-zinc-400">
+              {READING_WIDTHS.find(w => w.id === readingWidthId)?.label} · salvo neste dispositivo · vale a partir de telas largas
             </p>
 
             <p className="mb-3 mt-6 text-sm text-zinc-500">Diagramas no editor.</p>
