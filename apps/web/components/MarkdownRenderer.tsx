@@ -25,7 +25,7 @@ import langC from 'highlight.js/lib/languages/c';
 import langCsharp from 'highlight.js/lib/languages/csharp';
 import langLua from 'highlight.js/lib/languages/lua';
 import { extractPlainWikiTitles } from '@zettelkasten/core';
-import { INLINE_RE } from '../lib/markdownInline';
+import { INLINE_RE, decodeText } from '../lib/markdownInline';
 import { headingIdsByLine } from '../lib/toc';
 
 hljs.registerLanguage('javascript', langJavascript);
@@ -326,7 +326,7 @@ function renderInline(
 
   while ((m = INLINE_RE.exec(text)) !== null) {
     if (m.index > last) {
-      parts.push(<span key={`${keyPrefix}-t${k++}`}>{text.slice(last, m.index)}</span>);
+      parts.push(<span key={`${keyPrefix}-t${k++}`}>{decodeText(text.slice(last, m.index))}</span>);
     }
     if (m[1] !== undefined) {
       const rawTarget = m[1];
@@ -346,9 +346,9 @@ function renderInline(
         ),
       );
     } else if (m[3] !== undefined) {
-      parts.push(<strong key={`${keyPrefix}-b${k++}`}>{m[3]}</strong>);
+      parts.push(<strong key={`${keyPrefix}-b${k++}`}>{decodeText(m[3])}</strong>);
     } else if (m[4] !== undefined) {
-      parts.push(<em key={`${keyPrefix}-i${k++}`}>{m[4]}</em>);
+      parts.push(<em key={`${keyPrefix}-i${k++}`}>{decodeText(m[4])}</em>);
     } else if (m[5] !== undefined) {
       parts.push(
         <code
@@ -359,7 +359,7 @@ function renderInline(
         </code>,
       );
     } else if (m[6] !== undefined) {
-      parts.push(<s key={`${keyPrefix}-s${k++}`} className="text-zinc-400 dark:text-zinc-500">{m[6]}</s>);
+      parts.push(<s key={`${keyPrefix}-s${k++}`} className="text-zinc-400 dark:text-zinc-500">{decodeText(m[6])}</s>);
     } else if (m[8] !== undefined) {
       // markdown image syntax: ![alt](url)
       const id = `${keyPrefix}-img${k++}`;
@@ -378,7 +378,7 @@ function renderInline(
           rel="noopener noreferrer"
           className="text-brand-light underline hover:opacity-80 transition-opacity"
         >
-          {m[10]}
+          {decodeText(m[10])}
         </a>,
       );
     } else if (m[12] !== undefined) {
@@ -407,12 +407,15 @@ function renderInline(
           {m[13]}
         </a>,
       );
+    } else if (m[14] !== undefined) {
+      // escape CommonMark: \* \[ \- … renderiza só o caractere
+      parts.push(<span key={`${keyPrefix}-e${k++}`}>{m[14]}</span>);
     }
     last = m.index + m[0].length;
   }
 
   if (last < text.length) {
-    parts.push(<span key={`${keyPrefix}-t${k++}`}>{text.slice(last)}</span>);
+    parts.push(<span key={`${keyPrefix}-t${k++}`}>{decodeText(text.slice(last))}</span>);
   }
   return parts;
 }
@@ -521,7 +524,7 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
       const id = headingIds.get(i);
       const className = HEADING_CLASSES[level - 1];
       const HeadingTag = `h${level}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
-      blocks.push(<HeadingTag key={`h${i}`} id={id} className={className}>{text}</HeadingTag>);
+      blocks.push(<HeadingTag key={`h${i}`} id={id} className={className}>{decodeText(text)}</HeadingTag>);
       pushSlot(text, `sl-h${i}`);
       i++; continue;
     }

@@ -299,23 +299,14 @@ function normalizeAutolinks(md: string): string {
 }
 
 // prosemirror-markdown escapa ` * \ ~ [ ] _ em todo texto de parágrafo (esc(), to_markdown).
-// O MarkdownRenderer não desfaz escape nenhum, então o backslash aparece na tela. Aqui
-// desfazemos os quatro que o INLINE_RE trata como sintaxe. Fora do conjunto de propósito:
+// Aqui desfazemos só os quatro que o servidor (syncLinks) e o LinkParser leem cru — `\[\[x\]\]`
+// quebraria o wiki link salvo. Todo o resto (`\-`, `&lt;`…) o MarkdownRenderer resolve sozinho
+// (decodeText em lib/markdownInline.ts), não precisa de remendo aqui. Fora do conjunto de propósito:
 // ` (desescapar crase solta abriria um code span onde o usuário queria crase literal),
 // _ (o esc() já pula _ intra-palavra e o renderer não trata _ como ênfase) e \\ (é o
 // mecanismo do escape, não o sintoma). Substitui três normalizadores pontuais anteriores —
 // \[\[wiki\]\], \[label\](url) e \* — que eram casos particulares desta mesma regra.
 const ESCAPED_MARKER_RE = /\\([[\]*~])/g;
-
-// Com `html: false` o serializador emite `<`, `>` e `&` como entidade (`&lt;`, `&gt;`, `&amp;`),
-// e o MarkdownRenderer não decodifica entidade nenhuma: `<>` digitado aparecia como `&lt;&gt;`
-// no Preview. Passada única (nunca em cascata) para que `&amp;lt;` vire `&lt;` e pare aí.
-const ENTITY_RE = /&(lt|gt|amp);/g;
-const ENTITY_CHARS: Record<string, string> = { lt: '<', gt: '>', amp: '&' };
-
-function unescapeText(s: string): string {
-  return s.replace(ESCAPED_MARKER_RE, '$1').replace(ENTITY_RE, (_, name: string) => ENTITY_CHARS[name]);
-}
 
 // Dentro de code fence e code span o serializador não escapa nada, então um backslash ali
 // foi escrito pelo usuário: `/\[x\]/` num bloco js é um regex, e reescrevê-lo para `/[x]/`
@@ -344,10 +335,10 @@ function unescapeOutsideCodeSpans(line: string): string {
   while (i < line.length) {
     const tick = line.indexOf('`', i);
     if (tick === -1) {
-      out += unescapeText(line.slice(i));
+      out += line.slice(i).replace(ESCAPED_MARKER_RE, '$1');
       break;
     }
-    out += unescapeText(line.slice(i, tick));
+    out += line.slice(i, tick).replace(ESCAPED_MARKER_RE, '$1');
 
     let runLen = 0;
     while (line[tick + runLen] === '`') runLen++;

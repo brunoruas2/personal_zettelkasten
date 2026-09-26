@@ -1,9 +1,32 @@
-// Groups: 1=wikiTarget 2=wikiLabel 3=bold 4=italic 5=code 6=strike 7=imgAlt 8=imgUrl 9=bareImgUrl 10=linkText 11=linkUrl 12=bareUrl 13=autolinkUrl
+// Groups: 1=wikiTarget 2=wikiLabel 3=bold 4=italic 5=code 6=strike 7=imgAlt 8=imgUrl 9=bareImgUrl 10=linkText 11=linkUrl 12=bareUrl 13=autolinkUrl 14=escapedChar
+// O grupo 14 (`\` + pontuação ASCII, CommonMark) fica no fim para não renumerar os demais. Como
+// o regex casa na posição mais à esquerda e o `\` precede o caractere escapado, o escape vence:
+// `\*a\*` nunca abre itálico e `\[[x]]` nunca abre wiki link.
 // O grupo 8 aceita http(s) e o scheme local zk:img/<id>. A alternância usa
 // grupo NÃO-CAPTURANTE de propósito: capturar aqui deslocaria a numeração
 // 1-13 acima e quebraria buildLineOffsetMap.
 export const INLINE_RE =
-  /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|~~(.+?)~~|!\[([^\]]*)\]\(((?:https?:\/\/|zk:img\/)[^)]+)\)|(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:[?#]\S*)?)|(?<!!)\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s<>"]+)|<(https?:\/\/[^>\s]+)>/gi;
+  /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|~~(.+?)~~|!\[([^\]]*)\]\(((?:https?:\/\/|zk:img\/)[^)]+)\)|(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:[?#]\S*)?)|(?<!!)\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s<>"]+)|<(https?:\/\/[^>\s]+)>|\\([!-/:-@[-`{-~])/gi;
+
+const ENTITY_NAMES: Record<string, string> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
+
+// Escapes CommonMark e entidades em UMA passada: a saída de um não é reprocessada, então
+// `&amp;lt;` vira `&lt;` e `\&lt;` mostra `&lt;` literal, como no CommonMark. O editor
+// (prosemirror-markdown, html:false) emite os dois; o renderer não entendia nenhum.
+const ESCAPE_OR_ENTITY_RE = /\\([!-/:-@[-`{-~])|&(#x[0-9a-f]+|#\d+|lt|gt|amp|quot|apos);/gi;
+
+export function decodeText(s: string): string {
+  if (!s.includes('\\') && !s.includes('&')) return s;
+  return s.replace(ESCAPE_OR_ENTITY_RE, (whole, esc: string | undefined, ent: string | undefined) => {
+    if (esc !== undefined) return esc;
+    const e = ent!;
+    if (e[0] !== '#') return ENTITY_NAMES[e.toLowerCase()];
+    const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+    // 0 e surrogates isolados não são caracteres válidos: deixa a entidade como escrita
+    if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return whole;
+    return String.fromCodePoint(code);
+  });
+}
 
 /**
  * Maps each boundary position in the rendered (marker-free) text of a line
