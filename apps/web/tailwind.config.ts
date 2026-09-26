@@ -5,6 +5,7 @@ const config: Config = {
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
     './providers/**/*.{ts,tsx}',
+    './lib/**/*.{ts,tsx}',
   ],
   darkMode: 'media',
   theme: {
