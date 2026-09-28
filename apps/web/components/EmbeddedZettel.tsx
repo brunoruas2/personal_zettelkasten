@@ -37,7 +37,8 @@ export function EmbeddedZettel({ zettel: initial, parentMode, onCollapse, onTitl
 
   // A faixa acompanha o modo do pai a cada troca. O Preview/Editar da própria
   // faixa segue valendo como override até a próxima troca. Uma edição pendente
-  // nunca é rebaixada: fica em Editar, com o aviso "não salvo", até salvar/cancelar.
+  // nunca é rebaixada: fica em Editar, com o aviso "não salvo", até cancelar
+  // (salvar limpa o aviso mas não sai de Editar — ver handleSaved).
   useEffect(() => {
     if (parentMode === 'preview' && dirtyRef.current) return;
     setMode(parentMode);
@@ -68,7 +69,6 @@ export function EmbeddedZettel({ zettel: initial, parentMode, onCollapse, onTitl
       const oldTitle = zettel.title;
       setZettel(saved);
       setDirty(false);
-      setMode('preview');
       if (saved.title !== oldTitle) onTitleChanged?.(oldTitle, saved.title);
     },
     [zettel.title, onTitleChanged],
