@@ -5,19 +5,51 @@
 // acontece aqui, antes de qualquer I/O — nada grande chega a tocar o IndexedDB,
 // a rede ou o SQLite.
 
-/** Lado maior alvo, em px. */
-export const MAX_DIMENSION = 1200
+import { getSavedCompressionLevel, type CompressionLevel } from './imageCompressLevel'
 
-/** Segunda passada, quando a primeira não cabe no teto. */
-const FALLBACK_DIMENSION = 900
+export interface CompressionProfile {
+  /** Lado maior alvo, em px. */
+  maxDimension: number
+  /** Degraus de qualidade da primeira passada. */
+  qualitySteps: number[]
+  /** Teto por imagem, em bytes. */
+  maxBytes: number
+  /** Segunda passada, quando a primeira não cabe no teto. */
+  fallbackDimension: number
+  fallbackQuality: number
+}
 
-/** Teto por imagem, em bytes. */
-export const MAX_BYTES = 120 * 1024
-
-/** Degraus de qualidade da primeira passada. */
-const QUALITY_STEPS = [0.8, 0.65, 0.5, 0.38]
-
-const FALLBACK_QUALITY = 0.45
+/**
+ * Os cinco valores andam juntos: um teto maior com a escada de qualidade antiga
+ * nunca seria usado, e o fallback só faz sentido relativo ao lado maior do nível.
+ * `strong` é o perfil que existia antes da preferência — não mexer.
+ *
+ * O teto de todo nível fica abaixo dos 512 KB que o servidor aceita no upload
+ * (o blob final é exatamente o corpo do POST).
+ */
+export const COMPRESSION_PROFILES: Record<CompressionLevel, CompressionProfile> = {
+  strong: {
+    maxDimension: 1200,
+    qualitySteps: [0.8, 0.65, 0.5, 0.38],
+    maxBytes: 120 * 1024,
+    fallbackDimension: 900,
+    fallbackQuality: 0.45,
+  },
+  medium: {
+    maxDimension: 1600,
+    qualitySteps: [0.85, 0.75, 0.65, 0.5],
+    maxBytes: 250 * 1024,
+    fallbackDimension: 1200,
+    fallbackQuality: 0.5,
+  },
+  light: {
+    maxDimension: 2000,
+    qualitySteps: [0.9, 0.82, 0.72, 0.6],
+    maxBytes: 400 * 1024,
+    fallbackDimension: 1600,
+    fallbackQuality: 0.55,
+  },
+}
 
 /** Tamanho do id: sha256 do conteúdo truncado em 128 bits. */
 export const IMAGE_ID_LENGTH = 32
@@ -42,13 +74,20 @@ export function isImageFile(file: File): boolean {
 }
 
 /**
- * Comprime um arquivo até caber em MAX_BYTES e MAX_DIMENSION.
+ * Comprime um arquivo até caber no teto e no lado maior do nível.
+ * O nível é lido no momento da chamada, então trocar a preferência vale para a
+ * próxima importação sem recarregar.
  * SVG passa direto (é texto, rasterizar só pioraria).
  * GIF animado é rejeitado: o canvas achataria a animação no primeiro frame.
  */
-export async function compressImage(file: File): Promise<CompressedImage> {
+export async function compressImage(
+  file: File,
+  level: CompressionLevel = getSavedCompressionLevel(),
+): Promise<CompressedImage> {
+  const profile = COMPRESSION_PROFILES[level]
+
   if (file.type === 'image/svg+xml') {
-    return compressSvg(file)
+    return compressSvg(file, profile.maxBytes)
   }
 
   if (file.type === 'image/gif' && (await isAnimatedGif(file))) {
@@ -65,9 +104,14 @@ export async function compressImage(file: File): Promise<CompressedImage> {
   }
 
   try {
-    let result = await encodeWithinBudget(bitmap, MAX_DIMENSION, QUALITY_STEPS)
-    if (result.blob.size > MAX_BYTES) {
-      result = await encodeWithinBudget(bitmap, FALLBACK_DIMENSION, [FALLBACK_QUALITY])
+    let result = await encodeWithinBudget(bitmap, profile.maxDimension, profile.qualitySteps, profile.maxBytes)
+    if (result.blob.size > profile.maxBytes) {
+      result = await encodeWithinBudget(
+        bitmap,
+        profile.fallbackDimension,
+        [profile.fallbackQuality],
+        profile.maxBytes,
+      )
     }
 
     const id = await hashId(result.blob)
@@ -85,10 +129,10 @@ export async function compressImage(file: File): Promise<CompressedImage> {
   }
 }
 
-async function compressSvg(file: File): Promise<CompressedImage> {
-  if (file.size > MAX_BYTES) {
+async function compressSvg(file: File, maxBytes: number): Promise<CompressedImage> {
+  if (file.size > maxBytes) {
     throw new ImageCompressError(
-      `SVG acima de ${Math.round(MAX_BYTES / 1024)} KB — simplifique o arquivo antes de importar.`,
+      `SVG acima de ${Math.round(maxBytes / 1024)} KB — simplifique o arquivo antes de importar.`,
     )
   }
   const blob = new Blob([await file.arrayBuffer()], { type: 'image/svg+xml' })
@@ -111,6 +155,7 @@ async function encodeWithinBudget(
   bitmap: ImageBitmap,
   maxDimension: number,
   qualities: number[],
+  maxBytes: number,
 ): Promise<EncodeResult> {
   const { width, height } = fitWithin(bitmap.width, bitmap.height, maxDimension)
 
@@ -118,7 +163,7 @@ async function encodeWithinBudget(
   for (const quality of qualities) {
     const blob = await drawAndEncode(bitmap, width, height, quality)
     best = blob
-    if (blob.size <= MAX_BYTES) break
+    if (blob.size <= maxBytes) break
   }
 
   return { blob: best!, width, height }

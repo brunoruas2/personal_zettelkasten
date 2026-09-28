@@ -188,7 +188,8 @@ do servidor e no IndexedDB do navegador; nunca no `body`.
 
 Toda imagem é comprimida no cliente antes de qualquer envio: lado maior no máximo
 **1200 px**, convertida para **WebP**, com a qualidade reduzida em degraus até caber em
-**120 KB**. SVG passa sem rasterizar. GIF animado não é aceito (a conversão achataria a
+**120 KB** (perfil padrão; o usuário pode escolher perfis mais leves — até 2000 px e 400 KB —
+em Configurações, sempre abaixo do teto de 512 KB do servidor). SVG passa sem rasterizar. GIF animado não é aceito (a conversão achataria a
 animação no primeiro frame).
 
 ### ⚠️ O export JSON não contém as imagens

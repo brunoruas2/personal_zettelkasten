@@ -13,9 +13,17 @@ import { useZettelStore } from '../../store/useZettelStore';
 import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 import { TagInput } from '../../components/TagInput';
 import { CLUSTER_COLORS, type NodeColorRule } from '../../lib/graphColors';
+import { COMPRESSION_LEVELS, getSavedCompressionLevel, saveCompressionLevel, type CompressionLevel } from '../../lib/imageCompressLevel';
+import { COMPRESSION_PROFILES } from '../../lib/imageCompress';
 import { isPrefetchEnabled, setPrefetchEnabled, prefetchImages, imageStore, countRejectedImages } from '../../lib/imageSync';
 
 const CHUNK = 50
+
+const COMPRESSION_LABELS: Record<CompressionLevel, string> = {
+  strong: 'Muita compressão',
+  medium: 'Média',
+  light: 'Pouca compressão',
+}
 
 type ImportState =
   | { status: 'idle' }
@@ -62,6 +70,7 @@ export default function SettingsPage() {
   const offlineRouter = useOfflineRouter()
   const [exporting, setExporting] = useState<'json' | 'markdown' | 'zip' | null>(null)
   const [imagePrefetch, setImagePrefetch] = useState(true)
+  const [compressionLevel, setCompressionLevel] = useState<CompressionLevel>('strong')
   const [exportError, setExportError] = useState<string | null>(null)
   const [importState, setImportState] = useState<ImportState>({ status: 'idle' })
   const fileRef = useRef<HTMLInputElement>(null)
@@ -114,6 +123,7 @@ export default function SettingsPage() {
     setFontId(getSavedFontId())
     setDiagramLayoutId(getSavedDiagramLayoutId())
     setImagePrefetch(isPrefetchEnabled())
+    setCompressionLevel(getSavedCompressionLevel())
     const savedSize = parseInt(localStorage.getItem('zettel_read_font_size') ?? '', 10)
     if (!isNaN(savedSize)) setReadFontSize(Math.min(26, Math.max(12, savedSize)))
   }, [])
@@ -802,6 +812,37 @@ export default function SettingsPage() {
               elas são baixadas em segundo plano após cada sincronização — assim um zettel que você nunca
               abriu neste aparelho já aparece com imagem quando você estiver sem conexão.
             </p>
+
+            <p className="mb-3 text-sm text-zinc-500">
+              Compressão ao importar. Níveis mais leves preservam mais detalhe, mas cada imagem ocupa mais
+              da sua cota de armazenamento. Vale só para imagens importadas depois da troca.
+            </p>
+            <div className="mb-3 flex flex-wrap gap-3">
+              {COMPRESSION_LEVELS.map((level) => {
+                const isActive = compressionLevel === level
+                const profile = COMPRESSION_PROFILES[level]
+                return (
+                  <button
+                    key={level}
+                    onClick={() => { setCompressionLevel(level); saveCompressionLevel(level) }}
+                    className={`flex flex-col items-start rounded-xl border px-4 py-2.5 text-left text-sm transition-all ${
+                      isActive
+                        ? 'border-brand bg-brand/10 font-semibold text-brand dark:bg-brand/20'
+                        : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-500'
+                    }`}
+                  >
+                    <span>{COMPRESSION_LABELS[level]}</span>
+                    <span className="text-xs font-normal opacity-70">
+                      até {profile.maxDimension} px · {Math.round(profile.maxBytes / 1024)} KB
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mb-5 text-xs text-zinc-400">
+              {COMPRESSION_LABELS[compressionLevel]} · salvo neste dispositivo
+            </p>
+
             <label className="flex cursor-pointer items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
               <input
                 type="checkbox"
