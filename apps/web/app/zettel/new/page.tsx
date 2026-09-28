@@ -21,6 +21,7 @@ import { extractHeadings } from '../../../lib/toc';
 import { useReadingWidthClass } from '../../../lib/readingWidth';
 import { useEditorModeScrollSync } from '../../../hooks/useEditorModeScrollSync';
 import { useEmbeds } from '../../../hooks/useEmbeds';
+import { useWheelForward } from '../../../hooks/useWheelForward';
 import { eventInEmbedded } from '../../../lib/embeddedFocus';
 import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
@@ -64,6 +65,8 @@ export default function NewZettelPage() {
   // sumário precisa apontar para o container do modo visível — a troca de
   // identidade do ref é o que faz o TocDrawer reconsultar.
   const tocContainerRef = previewOpen ? previewRef : editorScrollRef;
+  const pageRootRef = useRef<HTMLDivElement>(null);
+  useWheelForward(pageRootRef, tocContainerRef);
 
   const originalBodyRef = useRef('');
   const isDirtyRef = useRef(false);
@@ -264,7 +267,7 @@ export default function NewZettelPage() {
           ele fixaria a margem direita e a coluna encostaria no drawer em vez de
           centralizar. O `lg:h-full` precisa ser repetido aqui para a cadeia de
           altura continuar chegando ao container. */}
-      <div className={`h-[100dvh] lg:h-full ${tocOpen && hasHeadings ? 'lg:pr-64' : ''}`}>
+      <div ref={pageRootRef} className={`h-[100dvh] lg:h-full ${tocOpen && hasHeadings ? 'lg:pr-64' : ''}`}>
       <div className={`mx-auto max-w-2xl px-4 pt-4 flex flex-col h-[100dvh] ${widthClass} lg:pt-6 lg:pb-4 lg:h-full`}>
         {/* Nav */}
         <div className="mb-5 flex items-center justify-between">
