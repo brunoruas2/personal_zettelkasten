@@ -21,6 +21,7 @@ import { useReadingWidthClass } from '../lib/readingWidth';
 import { eventInEmbedded, EMBEDDED_ATTR } from '../lib/embeddedFocus';
 import { useEditorModeScrollSync } from '../hooks/useEditorModeScrollSync';
 import { useEmbeds } from '../hooks/useEmbeds';
+import { useWheelForward } from '../hooks/useWheelForward';
 import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
 export interface ZettelEditFormProps {
@@ -95,6 +96,7 @@ export function ZettelEditForm({
   };
 
   const tocContainerRef = previewOpen ? previewRef : editorScrollRef;
+  useWheelForward(rootRef, tocContainerRef, isPage);
 
   const originalValuesRef = useRef<{ title: string; body: string; tags: string[] }>({
     title: initialValues?.title ?? '',
