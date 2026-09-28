@@ -70,6 +70,7 @@ export function useEmbedHosts({ embed, mode, onTitleChanged }: Options) {
     return createPortal(
       <EmbeddedZettel
         zettel={c}
+        parentMode={mode}
         onCollapse={() => embed.toggleChild(c.id)}
         onTitleChanged={onTitleChanged}
       />,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Zettel } from '@zettelkasten/core';
 import { useZettelStore } from '../store/useZettelStore';
 import { useOfflineRouter } from '../hooks/useOfflineRouter';
@@ -11,6 +11,8 @@ import { ZettelEditForm } from './ZettelEditForm';
 
 interface EmbeddedZettelProps {
   zettel: Zettel;
+  /** Modo do pai: a faixa nasce nele e o acompanha quando o pai troca de modo. */
+  parentMode: 'preview' | 'edit';
   onCollapse: () => void;
   /** O título do filho mudou ao salvar: o corpo do pai pode ter sido reescrito. */
   onTitleChanged?: (oldTitle: string, newTitle: string) => void;
@@ -21,12 +23,25 @@ interface EmbeddedZettelProps {
  * Preview e Editar próprios; a edição é o `ZettelEditForm` do painel do mapa,
  * em versão `embedded`.
  */
-export function EmbeddedZettel({ zettel: initial, onCollapse, onTitleChanged }: EmbeddedZettelProps) {
+export function EmbeddedZettel({ zettel: initial, parentMode, onCollapse, onTitleChanged }: EmbeddedZettelProps) {
   const { controller } = useZettelStore();
   const offlineRouter = useOfflineRouter();
   const [zettel, setZettel] = useState<Zettel>(initial);
-  const [mode, setMode] = useState<'preview' | 'edit'>('preview');
+  const [mode, setMode] = useState<'preview' | 'edit'>(parentMode);
   const [dirty, setDirty] = useState(false);
+
+  // Lido por ref para o efeito abaixo depender só de `parentMode`: digitar no
+  // filho não pode reexecutá-lo.
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+
+  // A faixa acompanha o modo do pai a cada troca. O Preview/Editar da própria
+  // faixa segue valendo como override até a próxima troca. Uma edição pendente
+  // nunca é rebaixada: fica em Editar, com o aviso "não salvo", até salvar/cancelar.
+  useEffect(() => {
+    if (parentMode === 'preview' && dirtyRef.current) return;
+    setMode(parentMode);
+  }, [parentMode]);
 
   // Mudanças externas (ex.: o pai reescreveu um link) chegam pela lista do
   // store; só ressincroniza em preview, para nunca pisar numa edição aberta.
