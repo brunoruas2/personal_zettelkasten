@@ -10,6 +10,7 @@ import { useOfflineRouter } from '../hooks/useOfflineRouter';
 import { useReviewCounts } from '../hooks/useReviewCounts';
 import type { SyncStatus } from '../lib/sync';
 import { MarkdownCheatsheet } from './MarkdownCheatsheet';
+import { useSidebarCollapsed } from '../lib/sidebarCollapsed';
 
 function SyncDot({ status }: { status: SyncStatus }) {
   const map: Record<SyncStatus, { color: string; title: string }> = {
@@ -42,6 +43,18 @@ export function Sidebar() {
   const offlineRouter = useOfflineRouter();
   const pathname = usePathname();
   const searchRef = useRef<HTMLInputElement>(null);
+  const [collapsed, setCollapsed, toggleCollapsed] = useSidebarCollapsed();
+  const collapsedRef = useRef(collapsed);
+  collapsedRef.current = collapsed;
+  // Ctrl+K com a barra retraída: o input está `invisible` até o commit, então o foco espera o efeito.
+  const pendingFocusRef = useRef(false);
+
+  useEffect(() => {
+    if (!collapsed && pendingFocusRef.current) {
+      pendingFocusRef.current = false;
+      searchRef.current?.focus();
+    }
+  }, [collapsed]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -62,7 +75,12 @@ export function Sidebar() {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key === 'k') {
         e.preventDefault();
-        searchRef.current?.focus();
+        if (collapsedRef.current) {
+          pendingFocusRef.current = true;
+          setCollapsed(false);
+        } else {
+          searchRef.current?.focus();
+        }
       }
       if (mod && e.key === 'n') {
         e.preventDefault();
@@ -74,10 +92,14 @@ export function Sidebar() {
         e.preventDefault();
         offlineRouter.push('/review');
       }
+      if (e.altKey && e.code === 'KeyL') {
+        e.preventDefault();
+        toggleCollapsed();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [router]);
+  }, [router, setCollapsed, toggleCollapsed]);
 
   const activeId = pathname.match(/\/zettel\/([^/]+)(?:\/edit)?$/)?.[1];
 
@@ -89,8 +111,26 @@ export function Sidebar() {
 
   if (pathname === '/login' || pathname === '/agent-skill') return null;
 
+  // Strings completas, não concatenação: o Tailwind só enxerga classes literais.
+  const asideClass = collapsed
+    ? 'app-sidebar hidden lg:flex flex-col shrink-0 h-screen bg-white dark:bg-zinc-900 lg:w-0 lg:overflow-hidden lg:border-r-0 lg:invisible'
+    : 'app-sidebar hidden lg:flex flex-col w-80 shrink-0 h-screen bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800';
+
   return (
-    <aside className="app-sidebar hidden lg:flex flex-col w-80 shrink-0 h-screen bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800">
+    <>
+    {collapsed && (
+      <button
+        onClick={() => setCollapsed(false)}
+        className="fixed left-0 top-3 z-30 hidden lg:flex h-8 w-7 items-center justify-center rounded-r-lg border border-l-0 border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+        title="Mostrar barra lateral (Alt+L)"
+        aria-label="Mostrar barra lateral"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+        </svg>
+      </button>
+    )}
+    <aside className={asideClass} aria-hidden={collapsed}>
       {/* Header */}
       <div className="px-4 pt-5 pb-3 shrink-0">
         <div className="flex items-center justify-between mb-4">
@@ -105,6 +145,16 @@ export function Sidebar() {
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
               </svg>
             </Link>
+            <button
+              onClick={toggleCollapsed}
+              className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 transition-colors"
+              title="Recolher barra lateral (Alt+L)"
+              aria-label="Recolher barra lateral"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -309,5 +359,6 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }
