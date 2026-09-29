@@ -21,7 +21,6 @@ import { useReadingWidthClass } from '../lib/readingWidth';
 import { eventInEmbedded, EMBEDDED_ATTR } from '../lib/embeddedFocus';
 import { useEditorModeScrollSync } from '../hooks/useEditorModeScrollSync';
 import { useEmbeds } from '../hooks/useEmbeds';
-import { useWheelForward } from '../hooks/useWheelForward';
 import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
 export interface ZettelEditFormProps {
@@ -96,7 +95,6 @@ export function ZettelEditForm({
   };
 
   const tocContainerRef = previewOpen ? previewRef : editorScrollRef;
-  useWheelForward(rootRef, tocContainerRef, isPage);
 
   const originalValuesRef = useRef<{ title: string; body: string; tags: string[] }>({
     title: initialValues?.title ?? '',
@@ -350,12 +348,16 @@ export function ZettelEditForm({
     ? `h-[100dvh] lg:h-full ${tocOpen && hasHeadings ? 'lg:pr-64' : ''}`
     : 'h-full';
   const innerClassName = isPage
-    ? `mx-auto max-w-2xl px-4 pt-4 flex flex-col h-[100dvh] ${widthClass} lg:pt-6 lg:pb-4 lg:h-full`
+    ? 'pt-4 flex flex-col h-[100dvh] lg:pt-6 lg:pb-4 lg:h-full'
     : 'flex flex-col h-full px-4 pt-4 pb-4';
+  // Coluna de texto: o contêiner de scroll é full-width e esta coluna vive dentro dele.
+  // Na faixa embutida a largura é a da própria faixa.
+  const columnClassName = isPage ? `mx-auto w-full max-w-2xl px-4 ${widthClass}` : '';
 
   return (
     <div ref={rootRef} className={outerClassName} {...(embedded ? { [EMBEDDED_ATTR]: '' } : {})}>
       <div className={innerClassName}>
+        <div className={columnClassName}>
         {/* Nav */}
         <div className="mb-5 flex items-center justify-between">
           <button onClick={handleCancel} className="text-sm font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
@@ -430,8 +432,10 @@ export function ZettelEditForm({
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); editorRef.current?.focus(); } }}
           readOnly={previewOpen}
         />
+        </div>
 
         <div ref={previewRef} className={`flex-1 min-h-0 overflow-y-auto ${previewOpen ? '' : 'hidden'}`}>
+          <div className={columnClassName}>
           {body.trim() ? (
             <MarkdownRenderer
               body={body}
@@ -443,6 +447,7 @@ export function ZettelEditForm({
           ) : (
             <p className="text-sm text-zinc-400 italic">Nenhum conteúdo ainda.</p>
           )}
+          </div>
         </div>
 
         <div className={`relative flex-1 min-h-0 flex flex-col ${previewOpen ? 'hidden' : ''}`}>
@@ -451,6 +456,7 @@ export function ZettelEditForm({
             className="flex-1 min-h-0 overflow-y-auto"
             style={{ '--input-font-size': `${editorFontSize}px` } as React.CSSProperties}
           >
+            <div className={columnClassName}>
             <TipTapEditor
               ref={editorRef}
               value={body}
@@ -469,15 +475,18 @@ export function ZettelEditForm({
               className="min-h-[12rem] cursor-text"
               onClick={() => editorRef.current?.focusEnd()}
             />
+            </div>
           </div>
         </div>
 
         {!previewOpen && !keyboardOpen && (
-          <TagInput
-            tags={tags}
-            onChange={setTags}
-            suggestions={Array.from(new Set(zettels.flatMap((z) => z.tags)))}
-          />
+          <div className={columnClassName}>
+            <TagInput
+              tags={tags}
+              onChange={setTags}
+              suggestions={Array.from(new Set(zettels.flatMap((z) => z.tags)))}
+            />
+          </div>
         )}
         {!embedded && <div aria-hidden className="shrink-0 lg:hidden" style={{ height: `calc(${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom, 0px))` }} />}
       </div>

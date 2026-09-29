@@ -21,7 +21,6 @@ import { extractHeadings } from '../../../lib/toc';
 import { useReadingWidthClass } from '../../../lib/readingWidth';
 import { useEditorModeScrollSync } from '../../../hooks/useEditorModeScrollSync';
 import { useEmbeds } from '../../../hooks/useEmbeds';
-import { useWheelForward } from '../../../hooks/useWheelForward';
 import { eventInEmbedded } from '../../../lib/embeddedFocus';
 import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
@@ -29,6 +28,8 @@ import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 export default function NewZettelPage() {
   const router = useOfflineRouter();
   const widthClass = useReadingWidthClass();
+  // Coluna de texto: o contêiner de scroll é full-width e esta coluna vive dentro dele.
+  const columnClass = `mx-auto w-full max-w-2xl px-4 ${widthClass}`;
   const { createZettel, zettels, controller } = useZettelStore();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -65,8 +66,6 @@ export default function NewZettelPage() {
   // sumário precisa apontar para o container do modo visível — a troca de
   // identidade do ref é o que faz o TocDrawer reconsultar.
   const tocContainerRef = previewOpen ? previewRef : editorScrollRef;
-  const pageRootRef = useRef<HTMLDivElement>(null);
-  useWheelForward(pageRootRef, tocContainerRef);
 
   const originalBodyRef = useRef('');
   const isDirtyRef = useRef(false);
@@ -267,8 +266,9 @@ export default function NewZettelPage() {
           ele fixaria a margem direita e a coluna encostaria no drawer em vez de
           centralizar. O `lg:h-full` precisa ser repetido aqui para a cadeia de
           altura continuar chegando ao container. */}
-      <div ref={pageRootRef} className={`h-[100dvh] lg:h-full ${tocOpen && hasHeadings ? 'lg:pr-64' : ''}`}>
-      <div className={`mx-auto max-w-2xl px-4 pt-4 flex flex-col h-[100dvh] ${widthClass} lg:pt-6 lg:pb-4 lg:h-full`}>
+      <div className={`h-[100dvh] lg:h-full ${tocOpen && hasHeadings ? 'lg:pr-64' : ''}`}>
+      <div className="pt-4 flex flex-col h-[100dvh] lg:pt-6 lg:pb-4 lg:h-full">
+        <div className={columnClass}>
         {/* Nav */}
         <div className="mb-5 flex items-center justify-between">
           <button onClick={() => { isDirtyRef.current = false; router.push('/'); }} className="text-sm font-medium text-brand hover:opacity-80">
@@ -338,8 +338,10 @@ export default function NewZettelPage() {
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); editorRef.current?.focus(); } }}
           readOnly={previewOpen}
         />
+        </div>
 
         <div ref={previewRef} className={`flex-1 min-h-0 overflow-y-auto ${previewOpen ? '' : 'hidden'}`}>
+          <div className={columnClass}>
           {body.trim() ? (
             <MarkdownRenderer
               body={body}
@@ -351,6 +353,7 @@ export default function NewZettelPage() {
           ) : (
             <p className="text-sm text-zinc-400 italic">Nenhum conteúdo ainda.</p>
           )}
+          </div>
         </div>
 
         <div className={`relative flex-1 min-h-0 flex flex-col ${previewOpen ? 'hidden' : ''}`}>
@@ -359,6 +362,7 @@ export default function NewZettelPage() {
             className="flex-1 min-h-0 overflow-y-auto"
             style={{ '--input-font-size': `${editorFontSize}px` } as React.CSSProperties}
           >
+            <div className={columnClass}>
             <TipTapEditor
               ref={editorRef}
               value={body}
@@ -377,15 +381,18 @@ export default function NewZettelPage() {
               className="min-h-[12rem] cursor-text"
               onClick={() => editorRef.current?.focusEnd()}
             />
+            </div>
           </div>
         </div>
 
         {!previewOpen && !keyboardOpen && (
-          <TagInput
-            tags={tags}
-            onChange={setTags}
-            suggestions={Array.from(new Set(zettels.flatMap((z) => z.tags)))}
-          />
+          <div className={columnClass}>
+            <TagInput
+              tags={tags}
+              onChange={setTags}
+              suggestions={Array.from(new Set(zettels.flatMap((z) => z.tags)))}
+            />
+          </div>
         )}
         {/* Reserva a barra do rodapé mais o que o teclado nativo ocupa, para o
             fim do bloco continuar alcançável por scroll com o keypad aberto. */}
