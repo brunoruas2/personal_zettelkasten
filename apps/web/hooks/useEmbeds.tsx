@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useEmbeddedChildren } from './useEmbeddedChildren';
 import { useEmbedHosts } from './useEmbedHosts';
 import { EmbedActionButton } from '../components/EmbeddedZettel';
 import type { EmbedHoverBridge } from '../lib/embedHoverExtension';
+import { eventInEmbedded } from '../lib/embeddedFocus';
 
 interface Options {
   parentId: string;
@@ -48,6 +49,25 @@ export function useEmbeds({
     mode: previewOpen ? 'preview' : 'edit',
     onTitleChanged: onChildRenamed,
   });
+
+  // Alt+K alterna o toggle global. Registrado aqui (e não em cada página)
+  // porque este hook é o ponto único de integração do leitor e dos dois
+  // formulários; `disabled` (form embutido) não registra, então não há disparo
+  // duplo. Sem filhos vira no-op, para não gravar `zettel_embed_children` em
+  // silêncio. `e.code`: no macOS o Option compõe caractere.
+  const shortcutRef = useRef({ toggle: embed.toggleGlobal, hasChildren: embed.hasChildren });
+  shortcutRef.current = { toggle: embed.toggleGlobal, hasChildren: embed.hasChildren };
+  useEffect(() => {
+    if (disabled) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.code !== 'KeyK' || eventInEmbedded(e)) return;
+      if (!shortcutRef.current.hasChildren) return;
+      e.preventDefault();
+      shortcutRef.current.toggle();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [disabled]);
 
   const wikiLinkAction = useCallback(
     (title: string) => {
