@@ -197,6 +197,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   const requestCloseRef = React.useRef(requestClose)
   requestCloseRef.current = requestClose
   const toggleFullscreenRef = React.useRef(toggleFullscreen)
+  const pickToolRef = React.useRef<(t: SketchTool) => void>(() => {})
   toggleFullscreenRef.current = toggleFullscreen
 
   // Teclado no root, na fase de bubble, com `stopPropagation`: nada dos atalhos
@@ -207,6 +208,18 @@ export function DrawingEditorModal({ id, onClose }: Props) {
     if (!root) return
     const onKeyDown = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
+      // Q/W/E: caneta, borracha, mão. Sem modificadores (não colide com Ctrl+E, Alt+E…) e
+      // só com canvas na tela (o desenho legado não tem ferramentas).
+      if (!mod && !e.altKey && !e.shiftKey && !e.repeat && canvasRef.current) {
+        const next: SketchTool | null =
+          e.code === 'KeyQ' ? 'pen' : e.code === 'KeyW' ? 'eraser' : e.code === 'KeyE' ? 'hand' : null
+        if (next) {
+          e.preventDefault()
+          pickToolRef.current(next)
+          e.stopPropagation()
+          return
+        }
+      }
       if (e.altKey && e.code === 'Enter') {
         e.preventDefault()
         toggleFullscreenRef.current()
@@ -300,6 +313,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
     setTool(t)
     canvasRef.current?.setTool(t)
   }
+  pickToolRef.current = pickTool
   const pickColor = (c: string) => {
     setColor(c)
     setTool('pen')
@@ -356,11 +370,14 @@ export function DrawingEditorModal({ id, onClose }: Props) {
           {ready && (
             <>
               <div className="flex items-center gap-1" role="group" aria-label="Ferramenta">
-                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('pen')} aria-pressed={tool === 'pen'} title="Caneta" className={`${btn} ${tool === 'pen' ? btnOn : ''}`}>
+                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('pen')} aria-pressed={tool === 'pen'} title="Caneta (Q)" className={`${btn} ${tool === 'pen' ? btnOn : ''}`}>
                   ✏️<span className="hidden sm:inline">Caneta</span>
                 </button>
-                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('eraser')} aria-pressed={tool === 'eraser'} title="Borracha (apaga o traço inteiro)" className={`${btn} ${tool === 'eraser' ? btnOn : ''}`}>
+                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('eraser')} aria-pressed={tool === 'eraser'} title="Borracha (W): apaga o traço inteiro" className={`${btn} ${tool === 'eraser' ? btnOn : ''}`}>
                   🧽<span className="hidden sm:inline">Borracha</span>
+                </button>
+                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('hand')} aria-pressed={tool === 'hand'} title="Mão (E): arrastar para mover a vista" className={`${btn} ${tool === 'hand' ? btnOn : ''}`}>
+                  ✋<span className="hidden sm:inline">Mão</span>
                 </button>
               </div>
 

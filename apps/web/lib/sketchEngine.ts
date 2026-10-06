@@ -19,7 +19,8 @@ import {
 } from '@zettelkasten/core'
 import { livePath2D, strokePath2D } from './sketchRender'
 
-export type SketchTool = 'pen' | 'eraser'
+/** `hand` só move a vista: não desenha nem apaga. */
+export type SketchTool = 'pen' | 'eraser' | 'hand'
 
 export interface SketchEngineState {
   canUndo: boolean
@@ -298,7 +299,8 @@ export class SketchEngine {
   }
 
   private applyCursor(): void {
-    this.container.style.cursor = this.spaceDown ? 'grab' : this.tool === 'eraser' ? 'cell' : 'crosshair'
+    this.container.style.cursor =
+      this.spaceDown || this.tool === 'hand' ? 'grab' : this.tool === 'eraser' ? 'cell' : 'crosshair'
   }
 
   private local(e: { clientX: number; clientY: number }): Point2 {
@@ -375,23 +377,27 @@ export class SketchEngine {
     this.pointers.set(e.pointerId, { x: l.x, y: l.y, type: e.pointerType })
     this.container.setPointerCapture(e.pointerId)
 
-    // Pan: botão do meio, ou Space + arrastar.
-    if (e.button === 1 || (e.button === 0 && this.spaceDown)) {
+    // Segundo dedo: vira gesto de pan/pinça e tem precedência sobre tudo, inclusive a
+    // Mão; o traço em andamento é descartado para não deixar risco.
+    if (e.pointerType === 'touch' && this.touchCount() >= 2) {
+      this.discardInProgress()
+      this.panning = null
+      this.startPinch()
+      this.applyCursor()
+      return
+    }
+
+    // Pan: botão do meio, Space + arrastar, ou a ferramenta Mão com qualquer ponteiro.
+    // Vem antes do modo caneta, que só restringe quem pode DESENHAR.
+    if (e.button === 1 || (e.button === 0 && (this.spaceDown || this.tool === 'hand'))) {
       this.panning = { pointerId: e.pointerId, x: l.x, y: l.y }
+      this.container.style.cursor = 'grabbing'
       e.preventDefault()
       return
     }
 
-    if (e.pointerType === 'touch') {
-      // Segundo dedo: o traço em andamento vira gesto de pan/pinça, sem deixar risco.
-      if (this.touchCount() >= 2) {
-        this.discardInProgress()
-        this.startPinch()
-        return
-      }
-      // Modo caneta: dedo e palma não desenham.
-      if (this.penMode) return
-    }
+    // Modo caneta: dedo e palma não desenham.
+    if (e.pointerType === 'touch' && this.penMode) return
 
     const erase = this.tool === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32) !== 0)
     if (erase) {
@@ -501,7 +507,10 @@ export class SketchEngine {
     this.pointers.delete(e.pointerId)
     if (this.container.hasPointerCapture(e.pointerId)) this.container.releasePointerCapture(e.pointerId)
 
-    if (this.panning && this.panning.pointerId === e.pointerId) this.panning = null
+    if (this.panning && this.panning.pointerId === e.pointerId) {
+      this.panning = null
+      this.applyCursor()
+    }
     if (this.pinch && this.touchCount() < 2) this.pinch = null
 
     if (this.drawing && this.drawing.pointerId === e.pointerId) {
