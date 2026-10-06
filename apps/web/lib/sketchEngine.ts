@@ -102,7 +102,9 @@ export class SketchEngine {
     this.baseVersion = this.history.version
     this.fitOnFirstSize = initial.length > 0
 
-    container.style.position = 'relative'
+    // Os canvases são `absolute`: o container só precisa ser posicionado. Sobrescrever
+    // um `absolute inset-0` do chamador com `relative` zera a altura do container.
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative'
     container.style.overflow = 'hidden'
     container.style.touchAction = 'none'
     container.style.userSelect = 'none'
