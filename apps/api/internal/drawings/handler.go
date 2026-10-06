@@ -47,7 +47,7 @@ type putBody struct {
 
 // PUT /api/drawings/{id}
 // Upsert com last-write-wins por updated_at. Validação, nesta ordem: tamanho,
-// cena JSON do Excalidraw, SVG inofensivo, quota.
+// cena JSON (zk-sketch, ou excalidraw legada), SVG inofensivo, quota.
 func (h *Handler) Put(w http.ResponseWriter, r *http.Request) {
 	userID := auth.GetUserID(r)
 	id := chi.URLParam(r, "id")

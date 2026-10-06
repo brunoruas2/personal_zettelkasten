@@ -221,7 +221,7 @@ function InlineImage({ src, alt, id }: { src: string; alt: string; id: string })
   if (isZkImageSrc(src)) {
     return <ZettelImage key={id} id={zkImageId(src)} alt={alt} />;
   }
-  // zk:draw/<id>: preview SVG do desenho, sem carregar o Excalidraw.
+  // zk:draw/<id>: preview SVG do desenho, sem carregar o editor.
   if (isZkDrawingSrc(src)) {
     return <DrawingBlock key={id} id={zkDrawingId(src)} alt={alt} />;
   }

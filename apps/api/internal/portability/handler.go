@@ -72,7 +72,7 @@ type exportPayload struct {
 	// backups anteriores simplesmente não trazem o campo.
 	Reviews []models.Review `json:"reviews,omitempty"`
 	// Desenhos: só METADADOS, pelo mesmo motivo das imagens — a cena nunca entra
-	// no JSON. O ZIP leva `drawings/<id>.excalidraw` e `.svg`. `omitempty` mantém
+	// no JSON. O ZIP leva `drawings/<id>.zksketch` e `.svg`. `omitempty` mantém
 	// o gate de version==1 válido para backups antigos.
 	Drawings []drawings.ManifestEntry `json:"drawings,omitempty"`
 }

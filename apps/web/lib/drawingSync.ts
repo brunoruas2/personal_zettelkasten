@@ -86,18 +86,6 @@ function byteLength(s: string): number {
   return new TextEncoder().encode(s).length
 }
 
-/**
- * O servidor recusa SVG que busque recurso externo. O `exportToSvg` do Excalidraw
- * embute as fontes como data URL, mas se o fetch da fonte falhar pode deixar a
- * URL original no `@font-face` — aqui ela vira `url()` vazio em vez de derrubar
- * o upload inteiro.
- */
-export function sanitizeSvgForStorage(svg: string): string {
-  return svg
-    .replace(/@import[^;]*;?/gi, '')
-    .replace(/url\(\s*(['"]?)\s*(?:https?:)?\/\/[^)]*\)/gi, 'url()')
-}
-
 /** Estado local de um desenho vazio, recém-criado pelo `/desenho`: nada a enviar. */
 export function emptyDrawingRecord(id: string, now = Date.now()): DrawingRecord {
   return {
@@ -131,7 +119,8 @@ export type SaveDrawingResult =
  * mesmo que o servidor recuse — nesse caso o resultado traz o erro para a UI.
  */
 export async function saveDrawing(input: SaveDrawingInput): Promise<SaveDrawingResult> {
-  const svg = sanitizeSvgForStorage(input.svg)
+  // O SVG do editor (sceneToSvg) só tem <rect> e <path>: nada a sanitizar antes de gravar.
+  const svg = input.svg
   const byteLen = byteLength(input.scene) + byteLength(svg)
   if (byteLen > MAX_DRAWING_BYTES) throw new DrawingTooLargeError()
 

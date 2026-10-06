@@ -1,5 +1,5 @@
 /**
- * Desenho (cena do Excalidraw + preview SVG). Tabela própria, fora de `zettels`:
+ * Desenho (cena de traços + preview SVG). Tabela própria, fora de `zettels`:
  * o JSON da cena entraria no índice FTS5 do servidor e degradaria a busca.
  *
  * O corpo do zettel guarda só `![alt](zk:draw/<id>)`. O `id` é gerado uma vez e
@@ -7,7 +7,7 @@
  */
 export interface DrawingRecord {
   id: string;
-  /** JSON da cena (`type: "excalidraw"`); string vazia = desenho recém-criado, ainda sem conteúdo. */
+  /** JSON da cena (`type: "zk-sketch"`; `"excalidraw"` é legado); string vazia = desenho recém-criado, ainda sem conteúdo. */
   scene: string;
   /** Preview SVG gerado no client no momento de salvar; vazio junto com `scene`. */
   svg: string;

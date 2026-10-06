@@ -258,7 +258,7 @@ export class ReviewStore implements IReviewRepository {
 }
 
 /**
- * Desenhos (cena Excalidraw + preview SVG). Tabela própria pelo mesmo motivo das
+ * Desenhos (cena de traços + preview SVG). Tabela própria pelo mesmo motivo das
  * imagens: o JSON da cena não pode morar em `zettels.body`, que o servidor indexa
  * no FTS5. `syncState` é a fila de upload — registro vazio (`scene === ''`) nasce
  * `synced` porque não há o que enviar.

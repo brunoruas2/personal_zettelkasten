@@ -221,8 +221,8 @@ zettelkasten-backup-2026-08-19.zip
 │   ├── 0123456789abcdef0123456789abcdef.webp
 │   └── fedcba9876543210fedcba9876543210.png
 └── drawings/
-    ├── 20260517143022k7p2.excalidraw   ← a cena (JSON do Excalidraw, reeditável)
-    └── 20260517143022k7p2.svg          ← o preview
+    ├── 20260517143022k7p2.zksketch   ← a cena (JSON dos traços, reeditável)
+    └── 20260517143022k7p2.svg        ← o preview
 ```
 
 O nome de cada arquivo é o id da imagem mais a extensão do seu tipo. No import, o id é lido
@@ -230,7 +230,7 @@ do nome do arquivo — renomear quebra as referências do `body`.
 
 ### Desenhos
 
-Um desenho (cena do Excalidraw + preview SVG) é referenciado no `body` com a mesma sintaxe de
+Um desenho (cena de traços à mão livre + preview SVG) é referenciado no `body` com a mesma sintaxe de
 imagem, usando o scheme `zk:draw/`:
 
 ```markdown
@@ -240,14 +240,14 @@ imagem, usando o scheme `zk:draw/`:
 O `<id>` é alfanumérico (até 64 caracteres) e **não** é hash de conteúdo: o desenho é editável,
 então o id fica fixo e muda só o conteúdo. A cena **não** entra no `body` nem no JSON de
 export — o JSON traz apenas metadados (`drawings: [{ id, updated_at, byte_len }]`, campo
-opcional). O ZIP é o único export que leva o conteúdo: `drawings/<id>.excalidraw` e
+opcional). O ZIP é o único export que leva o conteúdo: `drawings/<id>.zksketch` e
 `drawings/<id>.svg`.
 
 No import do ZIP, **os dois arquivos do mesmo id são obrigatórios**, e cada desenho passa pela
-mesma validação do upload: até 2 MB (cena + SVG), cena JSON com `"type": "excalidraw"`, SVG bem
+mesma validação do upload: até 2 MB (cena + SVG), cena JSON com `"type": "zk-sketch"` (`"version": 1`, `"strokes"` em array) ou `"type": "excalidraw"` (cena legada), SVG bem
 formado sem `<script>`, `<foreignObject>`, atributos `on*` ou referências externas, e a quota do
 usuário (`DRAWING_QUOTA_BYTES`, padrão 100 MB). Um desenho inválido vai para `errors` e não
-impede o resto do import. O export Markdown troca `zk:draw/<id>` por `drawings/<id>.svg` e leva
+impede o resto do import. O nome da cena pode ser `.zksketch` ou `.excalidraw` (backups antigos); **quem decide o tipo é o campo `type` dentro do JSON**, não a extensão. O export Markdown troca `zk:draw/<id>` por `drawings/<id>.svg` e leva
 só os SVGs.
 
 Tanto o export quanto o import do ZIP trabalham com memória constante: o export escreve

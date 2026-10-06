@@ -229,7 +229,7 @@ func migrate(db *sql.DB) error {
 
 		CREATE INDEX IF NOT EXISTS idx_reviews_due ON reviews(user_id, due_at);
 
-		-- Desenhos (cena Excalidraw + preview SVG) em tabela própria, pelo mesmo
+		-- Desenhos (cena de traços + preview SVG) em tabela própria, pelo mesmo
 		-- motivo das imagens: o JSON da cena é grande e, numa coluna de zettels,
 		-- os triggers zettels_* o arrastariam para o índice FTS5. O id é gerado
 		-- no cliente e é mutável (não é hash de conteúdo); a escrita é

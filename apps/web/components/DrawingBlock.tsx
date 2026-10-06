@@ -60,7 +60,7 @@ type State =
  * Preview de um desenho: o SVG gravado junto da cena, renderizado como `<img>`
  * de um object URL — nunca `dangerouslySetInnerHTML`. SVG em `<img>` não executa
  * script nem busca recurso externo, o que importa porque o SVG pode vir do
- * servidor, de outro dispositivo. Não carrega o Excalidraw: a leitura só lê o
+ * servidor, de outro dispositivo. Não carrega o editor de desenho: a leitura só lê o
  * Dexie (ou `GET /api/drawings/{id}` quando o registro não existe aqui).
  */
 export function DrawingBlock({ id, alt }: { id: string; alt: string }) {

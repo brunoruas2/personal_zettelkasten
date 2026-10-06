@@ -158,7 +158,7 @@ func collectDrawingEntry(f *zip.File, into map[string]*pendingDrawing) error {
 }
 
 // importDrawings valida e grava os desenhos coletados do ZIP, com as mesmas
-// regras do PUT (teto, cena do Excalidraw, SVG inofensivo, quota). Roda antes
+// regras do PUT (teto, cena zk-sketch ou legada, SVG inofensivo, quota). Roda antes
 // dos zettels, para as referências encontrarem as linhas ao reconciliar.
 func (h *Handler) importDrawings(userID string, pending map[string]*pendingDrawing) []string {
 	errs := []string{}
