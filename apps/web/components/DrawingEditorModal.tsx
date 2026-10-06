@@ -25,9 +25,14 @@ interface Props {
 
 type Phase = 'loading' | 'ready' | 'error'
 
-function systemTheme(): ExcalidrawTheme {
+// Padrão claro, como o excalidraw.com: o tema escuro do Excalidraw é um filtro CSS
+// (invert + hue-rotate) sobre o canvas inteiro, que pesa e atrasa o traço em GPU
+// fraca. A escolha é por dispositivo e só vale se o usuário a fizer.
+const THEME_KEY = 'zettel_drawing_theme'
+
+function savedTheme(): ExcalidrawTheme {
   try {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light'
   } catch {
     return 'light'
   }
@@ -66,6 +71,8 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   const [savedLocally, setSavedLocally] = React.useState(false)
   const [fullscreen, setFullscreen] = React.useState(false)
   const [penMode, setPenMode] = React.useState(false)
+  const [theme, setThemeState] = React.useState<ExcalidrawTheme>('light')
+  React.useEffect(() => setThemeState(savedTheme()), [])
 
   // Refs espelham o estado lido pelos listeners nativos, que não podem re-registrar a cada tecla.
   const dirtyRef = React.useRef(false)
@@ -101,7 +108,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
         if (!el || cancelled) return
         handle = await mountExcalidraw(el, {
           scene: record?.scene || null,
-          theme: systemTheme(),
+          theme: savedTheme(),
           onChange: ({ version, empty: isEmpty }) => {
             // A primeira chamada é a carga inicial: vira a linha de base do "alterado".
             if (baseVersionRef.current === null) baseVersionRef.current = version
@@ -131,19 +138,6 @@ export function DrawingEditorModal({ id, onClose }: Props) {
       handle?.destroy()
     }
   }, [id, attempt])
-
-  // O tema do app segue o sistema (darkMode: 'media'); o editor acompanha.
-  React.useEffect(() => {
-    let mql: MediaQueryList
-    try {
-      mql = window.matchMedia('(prefers-color-scheme: dark)')
-    } catch {
-      return
-    }
-    const onChange = () => handleRef.current?.setTheme(mql.matches ? 'dark' : 'light')
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
-  }, [])
 
   // Estado de tela cheia derivado de `fullscreenchange`: o usuário também sai pelo Escape do navegador.
   React.useEffect(() => {
@@ -261,6 +255,17 @@ export function DrawingEditorModal({ id, onClose }: Props) {
     }
   }
 
+  const toggleTheme = () => {
+    const next: ExcalidrawTheme = theme === 'dark' ? 'light' : 'dark'
+    setThemeState(next)
+    handleRef.current?.setTheme(next)
+    try {
+      localStorage.setItem(THEME_KEY, next)
+    } catch {
+      // sem localStorage a escolha vale só nesta abertura
+    }
+  }
+
   const togglePen = () => {
     const next = !penMode
     setPenMode(next)
@@ -306,6 +311,17 @@ export function DrawingEditorModal({ id, onClose }: Props) {
               <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
             </svg>
             <span className="hidden sm:inline">Caneta</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            disabled={phase !== 'ready'}
+            aria-label={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
+            title={theme === 'dark' ? 'Tema claro (mais leve)' : 'Tema escuro (pode pesar em GPU fraca)'}
+            className={headerBtn}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
           </button>
 
           <button

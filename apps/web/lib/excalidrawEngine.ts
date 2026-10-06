@@ -66,10 +66,15 @@ export function loadExcalidraw(): Promise<ZkExcalidrawApi> {
     enginePromise = (async () => {
       const w = window as unknown as {
         EXCALIDRAW_ASSET_PATH?: string;
+        EXCALIDRAW_THROTTLE_RENDER?: boolean;
         ZkExcalidraw?: ZkExcalidrawApi;
       };
       // Antes da carga: o Excalidraw lê o caminho de fontes/locales na inicialização.
       w.EXCALIDRAW_ASSET_PATH = ASSET_PATH;
+      // Sem isto cada pointermove dispara um render síncrono do canvas inteiro; com
+      // mouse/caneta de alta taxa (Firefox/Zen principalmente) os renders se acumulam
+      // e o traço atrasa. Ligado, o Excalidraw agrupa os renders por frame.
+      w.EXCALIDRAW_THROTTLE_RENDER = true;
       ensureCss();
       if (!w.ZkExcalidraw) {
         await import(/* webpackIgnore: true */ ENGINE_URL);
