@@ -3,6 +3,8 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import {
+  MAX_ZOOM,
+  MIN_ZOOM,
   SKETCH_COLORS,
   SKETCH_SIZES,
   parseSketchScene,
@@ -52,6 +54,9 @@ const COLOR_NAMES: Record<string, string> = {
 }
 const SIZE_NAMES: Record<number, string> = { 2: 'Fina', 4: 'Média', 8: 'Grossa' }
 
+/** Passo dos botões e atalhos de zoom. */
+const ZOOM_STEP = 1.25
+
 function fullscreenSupported(el: HTMLElement | null): boolean {
   return !!el && typeof el.requestFullscreen === 'function'
 }
@@ -82,6 +87,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   const [tool, setTool] = React.useState<SketchTool>('pen')
   const [color, setColor] = React.useState<string>(SKETCH_COLORS[0])
   const [size, setSize] = React.useState<number>(4)
+  const [zoom, setZoom] = React.useState(1)
 
   // Refs espelham o estado lido pelos listeners nativos, que não re-registram a cada render.
   const dirtyRef = React.useRef(false)
@@ -208,6 +214,16 @@ export function DrawingEditorModal({ id, onClose }: Props) {
         e.preventDefault()
         if (e.shiftKey) canvasRef.current?.redo()
         else canvasRef.current?.undo()
+      } else if (mod && (e.code === 'Equal' || e.code === 'NumpadAdd')) {
+        // Zoom do desenho, não o da página: o preventDefault segura o atalho do navegador.
+        e.preventDefault()
+        canvasRef.current?.zoomBy(ZOOM_STEP)
+      } else if (mod && (e.code === 'Minus' || e.code === 'NumpadSubtract')) {
+        e.preventDefault()
+        canvasRef.current?.zoomBy(1 / ZOOM_STEP)
+      } else if (mod && (e.code === 'Digit0' || e.code === 'Numpad0')) {
+        e.preventDefault()
+        canvasRef.current?.resetZoom()
       } else if (e.ctrlKey && e.code === 'KeyY') {
         e.preventDefault()
         canvasRef.current?.redo()
@@ -387,6 +403,13 @@ export function DrawingEditorModal({ id, onClose }: Props) {
                 <button type="button" onMouseDown={keepFocus} onClick={clearAll} disabled={eng.empty} title="Limpar tudo" aria-label="Limpar" className={btn}>🗑</button>
               </div>
 
+              <div className="flex items-center gap-1" role="group" aria-label="Zoom">
+                <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.zoomBy(1 / ZOOM_STEP)} disabled={zoom <= MIN_ZOOM + 1e-6} title="Diminuir o zoom (Ctrl+-)" aria-label="Diminuir o zoom" className={btn}>−</button>
+                <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.resetZoom()} title="Voltar a 100% (Ctrl+0)" aria-label={`Zoom ${Math.round(zoom * 100)}%, voltar a 100%`} className={`${btn} min-w-[3.5rem] tabular-nums`}>{Math.round(zoom * 100)}%</button>
+                <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.zoomBy(ZOOM_STEP)} disabled={zoom >= MAX_ZOOM - 1e-6} title="Aumentar o zoom (Ctrl+=)" aria-label="Aumentar o zoom" className={btn}>+</button>
+                <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.fitToContent()} title="Enquadrar o desenho inteiro" className={btn}>Ajustar</button>
+              </div>
+
               <button type="button" onMouseDown={keepFocus} onClick={togglePen} aria-pressed={penMode} title="Modo caneta: só a caneta desenha, a palma da mão é ignorada" className={`${btn} ${penMode ? btnOn : ''}`}>
                 🖊<span className="hidden sm:inline">Só caneta</span>
               </button>
@@ -452,6 +475,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
               ref={canvasRef}
               initialStrokes={phase.strokes}
               onStateChange={setEng}
+              onZoomChange={setZoom}
               className="absolute inset-0"
             />
           )}

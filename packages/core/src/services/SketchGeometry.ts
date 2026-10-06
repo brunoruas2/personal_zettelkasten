@@ -66,6 +66,27 @@ export function zoomAt(vp: Viewport, factor: number, anchor: Point2): Viewport {
   return { scale, tx: anchor.x - wx * scale, ty: anchor.y - wy * scale };
 }
 
+/**
+ * Viewport de maior zoom em que o bounding box mais `padding` de cada lado cabe em
+ * `size`, limitado a 0,25–8, com o bounding box centralizado. Sem bounding box
+ * (cena vazia) volta a 100% na origem.
+ */
+export function fitViewport(
+  bounds: Bounds | null,
+  size: { width: number; height: number },
+  padding: number,
+): Viewport {
+  if (!bounds || size.width <= 0 || size.height <= 0) return { scale: 1, tx: 0, ty: 0 };
+  const bw = Math.max(bounds.maxX - bounds.minX, 1e-6);
+  const bh = Math.max(bounds.maxY - bounds.minY, 1e-6);
+  const availW = Math.max(1, size.width - padding * 2);
+  const availH = Math.max(1, size.height - padding * 2);
+  const scale = clampScale(Math.min(availW / bw, availH / bh));
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cy = (bounds.minY + bounds.maxY) / 2;
+  return { scale, tx: size.width / 2 - cx * scale, ty: size.height / 2 - cy * scale };
+}
+
 /** Distância de um ponto a um segmento. */
 export function distToSegment(
   px: number,

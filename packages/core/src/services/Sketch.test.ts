@@ -4,6 +4,7 @@ import { MAX_POINTS_PER_STROKE, MAX_STROKES } from '../models/Sketch';
 import { emptyScene, parseSketchScene, serializeSketchScene } from './SketchScene';
 import {
   eraseAt,
+  fitViewport,
   hitTestStroke,
   sceneBounds,
   screenToWorld,
@@ -159,6 +160,54 @@ describe('bounds e viewport', () => {
     const anchor = { x: 0, y: 0 };
     expect(zoomAt({ scale: 7, tx: 0, ty: 0 }, 10, anchor).scale).toBe(8);
     expect(zoomAt({ scale: 0.3, tx: 0, ty: 0 }, 0.01, anchor).scale).toBe(0.25);
+  });
+});
+
+describe('fitViewport', () => {
+  const size = { width: 1000, height: 500 };
+
+  it('desenho grande: cabe inteiro, com margem, e fica centralizado', () => {
+    const b = { minX: 0, minY: 0, maxX: 2000, maxY: 1000 };
+    const vp = fitViewport(b, size, 20);
+    expect(vp.scale).toBeCloseTo(0.46, 9); // limitado pela altura: (500 - 40) / 1000
+    const tl = worldToScreen(vp, { x: b.minX, y: b.minY });
+    const br = worldToScreen(vp, { x: b.maxX, y: b.maxY });
+    expect(tl.x).toBeGreaterThanOrEqual(20 - 1e-9);
+    expect(tl.y).toBeGreaterThanOrEqual(20 - 1e-9);
+    expect(br.x).toBeLessThanOrEqual(1000 - 20 + 1e-9);
+    expect(br.y).toBeLessThanOrEqual(500 - 20 + 1e-9);
+    // centralizado: as folgas dos dois lados são iguais
+    expect(tl.x).toBeCloseTo(1000 - br.x, 9);
+    expect(tl.y).toBeCloseTo(500 - br.y, 9);
+  });
+
+  it('desenho pequeno: o zoom para em 800% e o desenho fica no centro', () => {
+    const b = { minX: 100, minY: 100, maxX: 110, maxY: 110 };
+    const vp = fitViewport(b, { width: 1000, height: 1000 }, 20);
+    expect(vp.scale).toBe(8);
+    const c = worldToScreen(vp, { x: 105, y: 105 });
+    expect(c.x).toBeCloseTo(500, 9);
+    expect(c.y).toBeCloseTo(500, 9);
+  });
+
+  it('desenho enorme: o zoom para em 25%', () => {
+    const vp = fitViewport({ minX: 0, minY: 0, maxX: 100000, maxY: 100000 }, size, 20);
+    expect(vp.scale).toBe(0.25);
+  });
+
+  it('cena vazia ou área sem tamanho: 100% na origem', () => {
+    expect(fitViewport(null, size, 20)).toEqual({ scale: 1, tx: 0, ty: 0 });
+    expect(fitViewport({ minX: 0, minY: 0, maxX: 10, maxY: 10 }, { width: 0, height: 0 }, 20)).toEqual({
+      scale: 1,
+      tx: 0,
+      ty: 0,
+    });
+  });
+
+  it('margem maior que a área não quebra (escala positiva)', () => {
+    const vp = fitViewport({ minX: 0, minY: 0, maxX: 100, maxY: 100 }, { width: 30, height: 30 }, 50);
+    expect(vp.scale).toBeGreaterThan(0);
+    expect(Number.isFinite(vp.tx)).toBe(true);
   });
 });
 

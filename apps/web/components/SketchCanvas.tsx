@@ -19,12 +19,20 @@ export interface SketchCanvasHandle {
   setSize(size: number): void
   setPenMode(on: boolean): void
   setSpaceDown(down: boolean): void
+  /** Zoom multiplicativo ancorado no centro (botões e atalhos). */
+  zoomBy(factor: number): void
+  /** Volta a 100%. */
+  resetZoom(): void
+  /** Enquadra o desenho inteiro; cena vazia volta a 100%. */
+  fitToContent(): void
 }
 
 interface Props {
   /** Traços iniciais; lidos uma vez, na montagem. */
   initialStrokes: Stroke[]
   onStateChange?: (s: SketchEngineState) => void
+  /** Zoom atual (1 = 100%): chamado em roda, pinça, botões e atalhos. */
+  onZoomChange?: (scale: number) => void
   className?: string
 }
 
@@ -34,21 +42,29 @@ interface Props {
  * agregado (desfazer/refazer/vazio/sujo) pelo callback.
  */
 export const SketchCanvas = forwardRef<SketchCanvasHandle, Props>(function SketchCanvas(
-  { initialStrokes, onStateChange, className },
+  { initialStrokes, onStateChange, onZoomChange, className },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null)
   const engineRef = useRef<SketchEngine | null>(null)
   const onStateRef = useRef(onStateChange)
   onStateRef.current = onStateChange
+  const onZoomRef = useRef(onZoomChange)
+  onZoomRef.current = onZoomChange
   const initialRef = useRef(initialStrokes)
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    const engine = new SketchEngine(host, initialRef.current, (s) => onStateRef.current?.(s))
+    const engine = new SketchEngine(
+      host,
+      initialRef.current,
+      (s) => onStateRef.current?.(s),
+      (scale) => onZoomRef.current?.(scale),
+    )
     engineRef.current = engine
     onStateRef.current?.(engine.state())
+    onZoomRef.current?.(engine.scale)
     return () => {
       engine.destroy()
       engineRef.current = null
@@ -69,6 +85,9 @@ export const SketchCanvas = forwardRef<SketchCanvasHandle, Props>(function Sketc
       setSize: (n) => engineRef.current?.setSize(n),
       setPenMode: (on) => engineRef.current?.setPenMode(on),
       setSpaceDown: (d) => engineRef.current?.setSpaceDown(d),
+      zoomBy: (f) => engineRef.current?.zoomBy(f),
+      resetZoom: () => engineRef.current?.resetZoom(),
+      fitToContent: () => engineRef.current?.fitToContent(),
     }),
     [],
   )

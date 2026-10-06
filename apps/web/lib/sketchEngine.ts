@@ -1,6 +1,7 @@
 import {
   SketchHistory,
   eraseAt,
+  fitViewport,
   newStrokeId,
   sceneBounds,
   screenToWorld,
@@ -34,6 +35,8 @@ const SPLIT_AT_POINTS = 4000
 const ERASER_RADIUS_PX = 6
 /** Pontos mais próximos que isto (px de tela) do anterior são ruído e não entram. */
 const MIN_POINT_DISTANCE_PX = 0.4
+/** Margem do "Ajustar", em px de tela. */
+const FIT_PADDING_PX = 32
 
 type TouchPoint = { x: number; y: number; type: string }
 
@@ -65,6 +68,7 @@ export class SketchEngine {
   private history: SketchHistory
   private baseVersion: number
   private onState?: (s: SketchEngineState) => void
+  private onScale?: (scale: number) => void
 
   private vp: Viewport = { scale: 1, tx: 0, ty: 0 }
   private cssW = 0
@@ -95,9 +99,11 @@ export class SketchEngine {
     container: HTMLElement,
     initial: Stroke[],
     onState?: (s: SketchEngineState) => void,
+    onScale?: (scale: number) => void,
   ) {
     this.container = container
     this.onState = onState
+    this.onScale = onScale
     this.history = new SketchHistory(initial)
     this.baseVersion = this.history.version
     this.fitOnFirstSize = initial.length > 0
@@ -183,6 +189,42 @@ export class SketchEngine {
     this.penMode = on
   }
 
+  /** Zoom atual (1 = 100%). */
+  get scale(): number {
+    return this.vp.scale
+  }
+
+  /** Zoom multiplicativo ancorado no centro do canvas (botões e atalhos). */
+  zoomBy(factor: number): void {
+    this.setVp(zoomAt(this.vp, factor, { x: this.cssW / 2, y: this.cssH / 2 }))
+    this.staticDirty = true
+    this.schedule()
+  }
+
+  /** Volta a 100%, ancorado no centro do canvas. */
+  resetZoom(): void {
+    const vp = zoomAt(this.vp, 1 / this.vp.scale, { x: this.cssW / 2, y: this.cssH / 2 })
+    // `scale * (1 / scale)` pode sobrar um ε; 100% tem que ser exatamente 1.
+    this.setVp({ ...vp, scale: 1 })
+    this.staticDirty = true
+    this.schedule()
+  }
+
+  /** Enquadra o desenho inteiro com margem; cena vazia volta a 100% na origem. */
+  fitToContent(): void {
+    const b = sceneBounds([...this.history.strokes])
+    this.setVp(fitViewport(b, { width: this.cssW, height: this.cssH }, FIT_PADDING_PX))
+    this.staticDirty = true
+    this.schedule()
+  }
+
+  /** Único ponto que troca a viewport: avisa a UI quando o zoom muda. */
+  private setVp(vp: Viewport): void {
+    const prev = this.vp.scale
+    this.vp = vp
+    if (vp.scale !== prev) this.onScale?.(vp.scale)
+  }
+
   /** `Space` pressionado: arrastar passa a fazer pan. */
   setSpaceDown(down: boolean): void {
     this.spaceDown = down
@@ -248,11 +290,11 @@ export class SketchEngine {
   private centerOnContent(): void {
     const b = sceneBounds([...this.history.strokes])
     if (!b) return
-    this.vp = {
+    this.setVp({
       scale: 1,
       tx: (this.cssW - (b.maxX - b.minX)) / 2 - b.minX,
       ty: (this.cssH - (b.maxY - b.minY)) / 2 - b.minY,
-    }
+    })
   }
 
   private applyCursor(): void {
@@ -380,7 +422,7 @@ export class SketchEngine {
 
     if (this.panning && this.panning.pointerId === e.pointerId) {
       const l = this.local(e)
-      this.vp = { ...this.vp, tx: this.vp.tx + (l.x - this.panning.x), ty: this.vp.ty + (l.y - this.panning.y) }
+      this.setVp({ ...this.vp, tx: this.vp.tx + (l.x - this.panning.x), ty: this.vp.ty + (l.y - this.panning.y) })
       this.panning.x = l.x
       this.panning.y = l.y
       this.staticDirty = true
@@ -540,7 +582,7 @@ export class SketchEngine {
     // Zoom ancorado no centro da pinça, depois o deslocamento do centro vira pan.
     let vp = zoomAt(this.vp, dist / this.pinch.dist, { x: cx, y: cy })
     vp = { ...vp, tx: vp.tx + (cx - this.pinch.cx), ty: vp.ty + (cy - this.pinch.cy) }
-    this.vp = vp
+    this.setVp(vp)
     this.pinch = { dist, cx, cy }
     this.staticDirty = true
     this.schedule()
@@ -552,11 +594,11 @@ export class SketchEngine {
     if (e.ctrlKey || e.metaKey) {
       // Pinça de trackpad chega como ctrl+wheel com deltas pequenos; roda de mouse com ctrl, deltas grandes.
       const unit = e.deltaMode === 1 ? 0.05 : 0.0025
-      this.vp = zoomAt(this.vp, Math.exp(-e.deltaY * unit), l)
+      this.setVp(zoomAt(this.vp, Math.exp(-e.deltaY * unit), l))
     } else {
       const dx = e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX
       const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY
-      this.vp = { ...this.vp, tx: this.vp.tx - dx, ty: this.vp.ty - dy }
+      this.setVp({ ...this.vp, tx: this.vp.tx - dx, ty: this.vp.ty - dy })
     }
     this.staticDirty = true
     this.schedule()
