@@ -10,6 +10,9 @@ const SHELL_CACHE = 'zettelkasten-shell-v1';
 // Routes cache is cleared on every SW install so stale HTML (old JS bundle
 // hashes after a deploy) is never served.
 const ROUTES_CACHE = 'zettelkasten-routes-v1';
+// Fora do prefixo 'zettelkasten-shell-' para o activate não apagá-lo.
+const EXCALIDRAW_CACHE = 'zettelkasten-excalidraw-v1';
+const EXCALIDRAW_BASE = '/vendor/excalidraw/';
 
 // Pre-cache the app shell on every SW install/update.
 // Also clear the routes cache so stale zettel HTML is replaced after a deploy.
@@ -25,8 +28,43 @@ self.addEventListener('install', (event) => {
         .open(SHELL_CACHE)
         .then((cache) => cache.add('/vendor/mermaid/mermaid.min.js'))
         .catch(() => undefined),
+      precacheExcalidraw(),
       caches.delete(ROUTES_CACHE),
     ]),
+  );
+});
+
+// Excalidraw vendorizado: ~200 arquivos (chunks ESM + fontes), listados em
+// manifest.json pelo build de tools/excalidraw-vendor. Cache próprio e
+// recriado a cada install (os nomes dos chunks mudam com a versão). Fora do
+// addAll atômico do shell: falha de rede aqui não pode derrubar a instalação.
+async function precacheExcalidraw(): Promise<void> {
+  try {
+    await caches.delete(EXCALIDRAW_CACHE);
+    const cache = await caches.open(EXCALIDRAW_CACHE);
+    const manifestUrl = `${EXCALIDRAW_BASE}manifest.json`;
+    const res = await fetch(manifestUrl);
+    if (!res.ok) return;
+    const { files } = (await res.clone().json()) as { files: string[] };
+    await cache.put(manifestUrl, res);
+    for (let i = 0; i < files.length; i += 8) {
+      await Promise.all(
+        files.slice(i, i + 8).map((f) => cache.add(`${EXCALIDRAW_BASE}${f}`).catch(() => undefined)),
+      );
+    }
+  } catch {
+    // ignore: o runtime caching do Workbox ainda cobre o que for carregado online
+  }
+}
+
+// Serve os assets do Excalidraw do cache próprio (cache-first), caindo na rede.
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET') return;
+  const { pathname } = new URL(request.url);
+  if (!pathname.startsWith(EXCALIDRAW_BASE)) return;
+  event.respondWith(
+    caches.match(request, { cacheName: EXCALIDRAW_CACHE }).then((hit) => hit ?? fetch(request)),
   );
 });
 

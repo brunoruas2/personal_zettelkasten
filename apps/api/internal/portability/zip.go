@@ -60,12 +60,14 @@ func (h *Handler) exportZipForUser(w http.ResponseWriter, userID string) {
 		Links:      links,
 		Images:     h.imageManifest(userID),
 		Reviews:    h.reviewsForExport(userID),
+		Drawings:   h.drawingManifest(userID),
 	}
 	if f, err := zw.Create("zettels.json"); err == nil {
 		json.NewEncoder(f).Encode(payload)
 	}
 
 	h.writeImageEntries(zw, userID)
+	h.writeDrawingEntries(zw, userID, true)
 }
 
 // POST /api/import/zip
@@ -98,6 +100,7 @@ func (h *Handler) importZip(w http.ResponseWriter, r *http.Request) {
 
 	var payload *exportPayload
 	errs := []string{}
+	pendingDrawings := map[string]*pendingDrawing{}
 
 	// Imagens primeiro: assim os zettels importados em seguida já encontram os
 	// blobs ao sincronizar as referências.
@@ -118,8 +121,16 @@ func (h *Handler) importZip(w http.ResponseWriter, r *http.Request) {
 			if err := h.importImageEntry(userID, f); err != nil {
 				errs = append(errs, f.Name+": "+err.Error())
 			}
+		case strings.HasPrefix(name, drawingDir+"/"):
+			if err := collectDrawingEntry(f, pendingDrawings); err != nil {
+				errs = append(errs, f.Name+": "+err.Error())
+			}
 		}
 	}
+
+	// Desenhos antes dos zettels, como as imagens: cena e SVG chegam em arquivos
+	// separados, então só dá para gravar depois de ler o pacote inteiro.
+	errs = append(errs, h.importDrawings(userID, pendingDrawings)...)
 
 	if payload == nil {
 		jsonError(w, http.StatusBadRequest, "zip has no zettels.json")
@@ -140,6 +151,7 @@ func (h *Handler) importZip(w http.ResponseWriter, r *http.Request) {
 	for _, z := range done {
 		h.syncLinks(userID, z.ID, z.Body)
 		h.syncImageRefs(userID, z.ID, z.Body)
+		h.syncDrawingRefs(userID, z.ID, z.Body)
 	}
 
 	h.importReviews(userID, payload.Reviews)

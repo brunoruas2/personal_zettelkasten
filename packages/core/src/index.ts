@@ -9,3 +9,5 @@ export * from './services/SearchService';
 export * from './services/SpacedRepetition';
 export * from './services/ZettelHierarchy';
 export * from './services/EmbeddedChildren';
+export * from './models/Drawing';
+export * from './services/DrawingRefs';

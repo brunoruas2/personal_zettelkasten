@@ -12,6 +12,7 @@ interface Props {
   onTogglePreview: () => void;
   onInsertLink: () => void;
   onInsertImage: () => void;
+  onInsertDrawing: () => void;
   onOpenCheatsheet: () => void;
   fontSize: number;
   onFontSizeChange: (size: number) => void;
@@ -67,6 +68,7 @@ export function MobileFormattingToolbar({
   onTogglePreview,
   onInsertLink,
   onInsertImage,
+  onInsertDrawing,
   onOpenCheatsheet,
   fontSize,
   onFontSizeChange,
@@ -253,6 +255,14 @@ export function MobileFormattingToolbar({
           className={`${base} ${inactive} text-brand text-xl leading-none`}
         >
           🖼
+        </button>
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onInsertDrawing}
+          aria-label="Inserir desenho"
+          className={`${base} ${inactive} text-brand text-xl leading-none`}
+        >
+          ✏️
         </button>
 
         <Divider />

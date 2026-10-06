@@ -2,11 +2,11 @@
 // O grupo 14 (`\` + pontuação ASCII, CommonMark) fica no fim para não renumerar os demais. Como
 // o regex casa na posição mais à esquerda e o `\` precede o caractere escapado, o escape vence:
 // `\*a\*` nunca abre itálico e `\[[x]]` nunca abre wiki link.
-// O grupo 8 aceita http(s) e o scheme local zk:img/<id>. A alternância usa
+// O grupo 8 aceita http(s) e os schemes locais zk:img/<id> e zk:draw/<id>. A alternância usa
 // grupo NÃO-CAPTURANTE de propósito: capturar aqui deslocaria a numeração
 // 1-13 acima e quebraria buildLineOffsetMap.
 export const INLINE_RE =
-  /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|~~(.+?)~~|!\[([^\]]*)\]\(((?:https?:\/\/|zk:img\/)[^)]+)\)|(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:[?#]\S*)?)|(?<!!)\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s<>"]+)|<(https?:\/\/[^>\s]+)>|\\([!-/:-@[-`{-~])/gi;
+  /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|~~(.+?)~~|!\[([^\]]*)\]\(((?:https?:\/\/|zk:img\/|zk:draw\/)[^)]+)\)|(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:[?#]\S*)?)|(?<!!)\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s<>"]+)|<(https?:\/\/[^>\s]+)>|\\([!-/:-@[-`{-~])/gi;
 
 const ENTITY_NAMES: Record<string, string> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
 

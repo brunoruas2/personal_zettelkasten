@@ -9,6 +9,7 @@ import { LinkPickerModal } from './LinkPickerModal';
 import { ExtractTitleModal } from './ExtractTitleModal';
 import { MarkdownCheatsheet } from './MarkdownCheatsheet';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { DrawingEditHost } from '../hooks/useDrawingEditHost';
 import { TipTapEditor, type TipTapEditorHandle } from './TipTapEditor';
 import { MobileFormattingToolbar, TOOLBAR_HEIGHT } from './MobileFormattingToolbar';
 import { ChordKeypad, KEYPAD_HEIGHT } from './ChordKeypad';
@@ -437,13 +438,15 @@ export function ZettelEditForm({
         <div ref={previewRef} className={`flex-1 min-h-0 overflow-y-auto ${previewOpen ? '' : 'hidden'}`}>
           <div className={columnClassName}>
           {body.trim() ? (
-            <MarkdownRenderer
-              body={body}
-              onLinkPress={handleLinkPress}
-              onBodyChange={handleChordsBodyChange}
-              wikiLinkAction={embed.hasChildren ? wikiLinkAction : undefined}
-              embedSlot={embed.hasChildren ? embedSlot : undefined}
-            />
+            <DrawingEditHost>
+              <MarkdownRenderer
+                body={body}
+                onLinkPress={handleLinkPress}
+                onBodyChange={handleChordsBodyChange}
+                wikiLinkAction={embed.hasChildren ? wikiLinkAction : undefined}
+                embedSlot={embed.hasChildren ? embedSlot : undefined}
+              />
+            </DrawingEditHost>
           ) : (
             <p className="text-sm text-zinc-400 italic">Nenhum conteúdo ainda.</p>
           )}
@@ -506,6 +509,7 @@ export function ZettelEditForm({
           onTogglePreview={previewOpen ? switchToEdit : switchToPreview}
           onInsertLink={() => setLinkPickerOpen(true)}
           onInsertImage={() => editorRef.current?.pickImages()}
+          onInsertDrawing={() => editorRef.current?.insertDrawing()}
           onOpenCheatsheet={() => setCheatsheetOpen(true)}
           fontSize={editorFontSize}
           onFontSizeChange={setEditorFontSize}

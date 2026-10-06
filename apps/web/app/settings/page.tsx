@@ -16,6 +16,7 @@ import { CLUSTER_COLORS, type NodeColorRule } from '../../lib/graphColors';
 import { COMPRESSION_LEVELS, getSavedCompressionLevel, saveCompressionLevel, type CompressionLevel } from '../../lib/imageCompressLevel';
 import { COMPRESSION_PROFILES } from '../../lib/imageCompress';
 import { isPrefetchEnabled, setPrefetchEnabled, prefetchImages, imageStore, countRejectedImages } from '../../lib/imageSync';
+import { countRejectedDrawings } from '../../lib/drawingSync';
 
 const CHUNK = 50
 
@@ -99,6 +100,7 @@ export default function SettingsPage() {
   const zettels = useZettelStore((s) => s.zettels)
   const [imageUsage, setImageUsage] = useState<ImageUsage>({ status: 'loading' })
   const [rejectedImages, setRejectedImages] = useState(0)
+  const [rejectedDrawings, setRejectedDrawings] = useState(0)
 
   // Node color rules — synced to server
   const graphNodeColors = useZettelStore((s) => s.graphNodeColors)
@@ -181,6 +183,7 @@ export default function SettingsPage() {
     }
 
     void countRejectedImages().then((n) => { if (!cancelled) setRejectedImages(n) })
+    void countRejectedDrawings().then((n) => { if (!cancelled) setRejectedDrawings(n) })
 
     api.get('/api/images/manifest')
       .then((r) => (r.ok ? r.json() : null))
@@ -793,6 +796,13 @@ export default function SettingsPage() {
                 <p className="pb-1.5 text-xs text-amber-600 dark:text-amber-400">
                   {rejectedImages} {rejectedImages === 1 ? 'imagem não pôde ser enviada' : 'imagens não puderam ser enviadas'} ao
                   servidor — {rejectedImages === 1 ? 'ela existe' : 'elas existem'} apenas neste aparelho e não {rejectedImages === 1 ? 'entra' : 'entram'} no backup.
+                </p>
+              )}
+
+              {rejectedDrawings > 0 && (
+                <p className="pb-1.5 text-xs text-amber-600 dark:text-amber-400">
+                  {rejectedDrawings} {rejectedDrawings === 1 ? 'desenho não pôde ser enviado' : 'desenhos não puderam ser enviados'} ao
+                  servidor — {rejectedDrawings === 1 ? 'ele existe' : 'eles existem'} apenas neste aparelho e não {rejectedDrawings === 1 ? 'entra' : 'entram'} no backup.
                 </p>
               )}
 

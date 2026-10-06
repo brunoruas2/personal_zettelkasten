@@ -164,6 +164,12 @@ export function MarkdownCheatsheet({ open, onClose }: Props) {
             />
           </Section>
 
+          <Section title="Desenho e escrita à mão">
+            <Row syntax="/desenho" desc="Insere um desenho (Excalidraw, local e offline) e abre o editor; funciona com mouse, toque e caneta" />
+            <Row syntax="![alt](zk:draw/<id>)" desc="Referência ao desenho; clique no preview para editar" />
+            <Row syntax="Alt+Enter" desc="Tela cheia dentro do editor de desenho" />
+          </Section>
+
           <Section title="Atalhos no editor">
             <Row syntax="[[ ..." desc="Abre autocomplete de links para outros zettels" />
             <Row syntax="/ ..." desc="Abre menu de blocos no início de uma linha" />

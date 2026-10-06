@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useZettelStore } from '../../../store/useZettelStore';
 import { MarkdownRenderer } from '../../../components/MarkdownRenderer';
+import { DrawingEditHost } from '../../../hooks/useDrawingEditHost';
 import { OfflineLink } from '../../../components/OfflineLink';
 import { TocDrawer } from '../../../components/TocDrawer';
 import { ScrollEdgeButton, scrollToEnd } from '../../../components/ScrollEdgeButton';
@@ -269,13 +270,15 @@ export default function ZettelDetailPage() {
       </div>
 
       <div ref={contentRef}>
-        <MarkdownRenderer
-          body={zettel.body}
-          onLinkPress={handleLinkPress}
-          onBodyChange={handleChordsBodyChange}
-          wikiLinkAction={embed.hasChildren ? wikiLinkAction : undefined}
-          embedSlot={embed.hasChildren ? embedSlot : undefined}
-        />
+        <DrawingEditHost>
+          <MarkdownRenderer
+            body={zettel.body}
+            onLinkPress={handleLinkPress}
+            onBodyChange={handleChordsBodyChange}
+            wikiLinkAction={embed.hasChildren ? wikiLinkAction : undefined}
+            embedSlot={embed.hasChildren ? embedSlot : undefined}
+          />
+        </DrawingEditHost>
       </div>
       {portals}
 

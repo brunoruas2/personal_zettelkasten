@@ -5,8 +5,10 @@ import type {
   Link,
   ReviewRow,
   ReviewState,
+  DrawingRecord,
   ZettelRepository as IZettelRepository,
   ReviewRepository as IReviewRepository,
+  DrawingRepository as IDrawingRepository,
 } from '@zettelkasten/core';
 import { rowToZettel, zettelToRow, rowToReview, reviewToRow } from '@zettelkasten/core';
 
@@ -35,6 +37,7 @@ class ZettelDb extends Dexie {
   links!: Table<Link, [string, string]>;
   images!: Table<ImageRecord, string>;
   reviews!: Table<ReviewRow, string>;
+  drawings!: Table<DrawingRecord, string>;
 
   constructor() {
     super('zettelkasten');
@@ -61,6 +64,14 @@ class ZettelDb extends Dexie {
       links: '[sourceId+targetId], sourceId, targetId',
       images: 'id, syncState',
       reviews: 'zettel_id, due_at',
+    });
+    // Tabela nova, nada a converter — sem `.upgrade()`.
+    this.version(15).stores({
+      zettels: 'id, title, updated_at',
+      links: '[sourceId+targetId], sourceId, targetId',
+      images: 'id, syncState',
+      reviews: 'zettel_id, due_at',
+      drawings: 'id, syncState, updatedAt',
     });
   }
 }
@@ -149,13 +160,15 @@ export class ZettelRepository implements IZettelRepository {
   }
 
   async clearAll(): Promise<void> {
-    // As imagens e os estados de revisão entram aqui também: sem isso, o logout
-    // deixaria blobs e progresso de estudo de uma sessão visíveis na seguinte.
-    await db.transaction('rw', db.zettels, db.links, db.images, db.reviews, async () => {
+    // As imagens, os estados de revisão e os desenhos entram aqui também: sem isso,
+    // o logout deixaria blobs, progresso de estudo e rabiscos de uma sessão
+    // visíveis na seguinte.
+    await db.transaction('rw', [db.zettels, db.links, db.images, db.reviews, db.drawings], async () => {
       await db.zettels.clear();
       await db.links.clear();
       await db.images.clear();
       await db.reviews.clear();
+      await db.drawings.clear();
     });
   }
 }
@@ -241,5 +254,66 @@ export class ReviewStore implements IReviewRepository {
 
   async clearAll(): Promise<void> {
     await db.reviews.clear();
+  }
+}
+
+/**
+ * Desenhos (cena Excalidraw + preview SVG). Tabela própria pelo mesmo motivo das
+ * imagens: o JSON da cena não pode morar em `zettels.body`, que o servidor indexa
+ * no FTS5. `syncState` é a fila de upload — registro vazio (`scene === ''`) nasce
+ * `synced` porque não há o que enviar.
+ */
+export class DrawingStore implements IDrawingRepository {
+  async get(id: string): Promise<DrawingRecord | undefined> {
+    return db.drawings.get(id);
+  }
+
+  async put(record: DrawingRecord): Promise<void> {
+    await db.drawings.put(record);
+  }
+
+  async delete(id: string): Promise<void> {
+    await db.drawings.delete(id);
+  }
+
+  async listIds(): Promise<string[]> {
+    return db.drawings.toCollection().primaryKeys();
+  }
+
+  async listPending(): Promise<DrawingRecord[]> {
+    return db.drawings.where('syncState').equals('pending').toArray();
+  }
+
+  /**
+   * Só vira `synced` se o registro ainda é o que foi enviado: uma edição feita
+   * durante o upload avança `updatedAt` e precisa continuar `pending`.
+   */
+  async markSynced(id: string, updatedAt: number): Promise<void> {
+    await db.transaction('rw', db.drawings, async () => {
+      const row = await db.drawings.get(id);
+      if (row && row.updatedAt === updatedAt) {
+        await db.drawings.update(id, { syncState: 'synced' });
+      }
+    });
+  }
+
+  async markRejected(id: string): Promise<void> {
+    await db.drawings.update(id, { syncState: 'rejected' });
+  }
+
+  async countRejected(): Promise<number> {
+    return db.drawings.where('syncState').equals('rejected').count();
+  }
+
+  async usedBytes(): Promise<number> {
+    let total = 0;
+    await db.drawings.each((r) => {
+      total += r.byteLen;
+    });
+    return total;
+  }
+
+  async clearAll(): Promise<void> {
+    await db.drawings.clear();
   }
 }

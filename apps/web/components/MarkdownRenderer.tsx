@@ -6,6 +6,7 @@ import { MermaidBlock } from './MermaidBlock';
 import { Chords } from './Chords';
 import { AbcNotation } from './AbcNotation';
 import { ZettelImage, isZkImageSrc, zkImageId } from './ZettelImage';
+import { DrawingBlock, isZkDrawingSrc, zkDrawingId } from './DrawingBlock';
 import 'highlight.js/styles/github.css';
 import hljs from 'highlight.js/lib/core';
 import langJavascript from 'highlight.js/lib/languages/javascript';
@@ -219,6 +220,10 @@ function InlineImage({ src, alt, id }: { src: string; alt: string; id: string })
   // zk:img/<id> resolve pelo store local; URLs remotas seguem o caminho de sempre.
   if (isZkImageSrc(src)) {
     return <ZettelImage key={id} id={zkImageId(src)} alt={alt} />;
+  }
+  // zk:draw/<id>: preview SVG do desenho, sem carregar o Excalidraw.
+  if (isZkDrawingSrc(src)) {
+    return <DrawingBlock key={id} id={zkDrawingId(src)} alt={alt} />;
   }
   if (failed) {
     return (

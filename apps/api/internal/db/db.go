@@ -228,6 +228,39 @@ func migrate(db *sql.DB) error {
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_reviews_due ON reviews(user_id, due_at);
+
+		-- Desenhos (cena Excalidraw + preview SVG) em tabela própria, pelo mesmo
+		-- motivo das imagens: o JSON da cena é grande e, numa coluna de zettels,
+		-- os triggers zettels_* o arrastariam para o índice FTS5. O id é gerado
+		-- no cliente e é mutável (não é hash de conteúdo); a escrita é
+		-- last-write-wins por updated_at, resolvida no SQL (ver drawings.Upsert).
+		CREATE TABLE IF NOT EXISTS drawings (
+			id          TEXT    NOT NULL,
+			user_id     TEXT    NOT NULL REFERENCES users(id),
+			scene       TEXT    NOT NULL,
+			svg         TEXT    NOT NULL,
+			byte_len    INTEGER NOT NULL,
+			width       INTEGER NOT NULL DEFAULT 0,
+			height      INTEGER NOT NULL DEFAULT 0,
+			created_at  INTEGER NOT NULL,
+			updated_at  INTEGER NOT NULL,
+			orphaned_at INTEGER,
+			PRIMARY KEY (user_id, id)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_drawings_updated ON drawings(user_id, updated_at);
+		CREATE INDEX IF NOT EXISTS idx_drawings_orphaned ON drawings(orphaned_at);
+
+		-- user_id entra na PK de refs (as de imagem não têm): ids de desenho vêm
+		-- de generateId() no cliente, e dois usuários podem, em tese, colidir.
+		CREATE TABLE IF NOT EXISTS drawing_refs (
+			user_id    TEXT NOT NULL,
+			drawing_id TEXT NOT NULL,
+			zettel_id  TEXT NOT NULL,
+			PRIMARY KEY (user_id, drawing_id, zettel_id)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_drawing_refs_zettel ON drawing_refs(user_id, zettel_id);
 	`)
 	return err
 }

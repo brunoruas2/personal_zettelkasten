@@ -1,0 +1,17 @@
+{
+  "name": "excalidraw-vendor",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Gera o bundle vendorizado do Excalidraw para apps/web/public/vendor/excalidraw. Fora do workspace pnpm de propósito.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

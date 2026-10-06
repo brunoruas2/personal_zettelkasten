@@ -13,6 +13,7 @@ import { useSyncStore } from '../store/useSyncStore';
 import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
 import { uploadPending, prefetchImages } from '../lib/imageSync';
 import { drainReviewQueue, pullReviews } from '../lib/reviewSync';
+import { uploadPendingDrawings, pullDrawings } from '../lib/drawingSync';
 const repo = new ZettelRepository();
 const controller = new ZettelController(repo);
 const reviewStore = new ReviewStore();
@@ -83,6 +84,9 @@ async function pullAll() {
   } catch {
     // Servidor antigo ou rede instável — a fila local cobre o caso.
   }
+
+  // Desenhos: pull por manifesto (silencioso; nunca interrompe a sincronização).
+  await pullDrawings();
 }
 
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
@@ -139,6 +143,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         //    zettel_sync_queue é string-only e estouraria com bytes.
         await syncService.drainQueue();
         void uploadPending();
+        void uploadPendingDrawings();
         void drainReviewQueue().catch(() => {});
 
         // 2. Push local IndexedDB data to server if this is the first sync ever
@@ -187,6 +192,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       if (isAuthenticated) {
         syncService.drainQueue().then(() => loadAll()).catch(() => {});
         void uploadPending();
+        void uploadPendingDrawings();
         void drainReviewQueue().then(() => loadReviewStates()).catch(() => {});
       }
     };

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
+	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/models"
 	"github.com/brunofullstack/zettelkasten/api/internal/review"
@@ -37,6 +38,9 @@ type Handler struct {
 	userLookup UserLookup
 	images     *images.Repository
 	reviews    *review.Repository
+	// Desenhos: opcionais (ver WithDrawings em drawings.go).
+	drawings     *drawings.Repository
+	drawingQuota int64
 }
 
 func NewHandler(repo *zettel.Repository, userLookup UserLookup, imageRepo *images.Repository, reviewRepo *review.Repository) *Handler {
@@ -67,6 +71,10 @@ type exportPayload struct {
 	// Agendamento de revisão. `omitempty` mantém o gate de version==1 válido:
 	// backups anteriores simplesmente não trazem o campo.
 	Reviews []models.Review `json:"reviews,omitempty"`
+	// Desenhos: só METADADOS, pelo mesmo motivo das imagens — a cena nunca entra
+	// no JSON. O ZIP leva `drawings/<id>.excalidraw` e `.svg`. `omitempty` mantém
+	// o gate de version==1 válido para backups antigos.
+	Drawings []drawings.ManifestEntry `json:"drawings,omitempty"`
 }
 
 // GET /api/backup/export?key=<64-hex-char-key>
@@ -123,6 +131,7 @@ func (h *Handler) exportJSONForUser(w http.ResponseWriter, userID string) {
 		Links:      links,
 		Images:     h.imageManifest(userID),
 		Reviews:    h.reviewsForExport(userID),
+		Drawings:   h.drawingManifest(userID),
 	}
 
 	date := time.Now().Format("2006-01-02")
@@ -161,6 +170,7 @@ func (h *Handler) exportMarkdown(w http.ResponseWriter, r *http.Request) {
 	// Referências zk:img/<id> viram caminhos relativos, para o pacote abrir em
 	// Obsidian e afins.
 	imgPaths := h.imagePathMap(userID)
+	drawPaths := h.drawingPathMap(userID)
 
 	seen := map[string]int{}
 	for _, z := range zettels {
@@ -175,10 +185,14 @@ func (h *Handler) exportMarkdown(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		z.Body = rewriteImageRefs(z.Body, imgPaths)
+		z.Body = rewriteDrawingRefs(z.Body, drawPaths)
 		writeMarkdownFile(f, z)
 	}
 
 	h.writeImageEntries(zw, userID)
+	// Markdown leva só o SVG (legível em qualquer visualizador); a cena
+	// reeditável vive no ZIP de backup.
+	h.writeDrawingEntries(zw, userID, false)
 
 	indexFile, err := zw.Create("index.json")
 	if err == nil {
@@ -213,6 +227,7 @@ func (h *Handler) importJSON(w http.ResponseWriter, r *http.Request) {
 	for _, z := range done {
 		h.syncLinks(userID, z.ID, z.Body)
 		h.syncImageRefs(userID, z.ID, z.Body)
+		h.syncDrawingRefs(userID, z.ID, z.Body)
 	}
 
 	h.importReviews(userID, payload.Reviews)

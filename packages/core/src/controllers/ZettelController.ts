@@ -2,7 +2,7 @@ import type { Zettel } from '../models/Zettel';
 
 const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
-function generateId(): string {
+export function generateId(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const date =

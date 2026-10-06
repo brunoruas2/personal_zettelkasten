@@ -217,13 +217,38 @@ do heap de 384 MB usado no build, e acima do que a RAM do VPS aguenta serializar
 ```
 zettelkasten-backup-2026-08-19.zip
 ├── zettels.json        ← o mesmo envelope descrito acima
-└── images/
-    ├── 0123456789abcdef0123456789abcdef.webp
-    └── fedcba9876543210fedcba9876543210.png
+├── images/
+│   ├── 0123456789abcdef0123456789abcdef.webp
+│   └── fedcba9876543210fedcba9876543210.png
+└── drawings/
+    ├── 20260517143022k7p2.excalidraw   ← a cena (JSON do Excalidraw, reeditável)
+    └── 20260517143022k7p2.svg          ← o preview
 ```
 
 O nome de cada arquivo é o id da imagem mais a extensão do seu tipo. No import, o id é lido
 do nome do arquivo — renomear quebra as referências do `body`.
+
+### Desenhos
+
+Um desenho (cena do Excalidraw + preview SVG) é referenciado no `body` com a mesma sintaxe de
+imagem, usando o scheme `zk:draw/`:
+
+```markdown
+![legenda opcional](zk:draw/20260517143022k7p2)
+```
+
+O `<id>` é alfanumérico (até 64 caracteres) e **não** é hash de conteúdo: o desenho é editável,
+então o id fica fixo e muda só o conteúdo. A cena **não** entra no `body` nem no JSON de
+export — o JSON traz apenas metadados (`drawings: [{ id, updated_at, byte_len }]`, campo
+opcional). O ZIP é o único export que leva o conteúdo: `drawings/<id>.excalidraw` e
+`drawings/<id>.svg`.
+
+No import do ZIP, **os dois arquivos do mesmo id são obrigatórios**, e cada desenho passa pela
+mesma validação do upload: até 2 MB (cena + SVG), cena JSON com `"type": "excalidraw"`, SVG bem
+formado sem `<script>`, `<foreignObject>`, atributos `on*` ou referências externas, e a quota do
+usuário (`DRAWING_QUOTA_BYTES`, padrão 100 MB). Um desenho inválido vai para `errors` e não
+impede o resto do import. O export Markdown troca `zk:draw/<id>` por `drawings/<id>.svg` e leva
+só os SVGs.
 
 Tanto o export quanto o import do ZIP trabalham com memória constante: o export escreve
 direto na resposta lendo um blob por vez, e o import grava o upload num arquivo temporário
@@ -231,7 +256,7 @@ antes de ler.
 
 ### Ciclo de vida
 
-Uma imagem que deixa de ser referenciada por **qualquer** zettel do usuário não é apagada na
+Uma imagem (ou desenho) que deixa de ser referenciada por **qualquer** zettel do usuário não é apagada na
 hora: ela é marcada como órfã e só é removida de fato depois de **30 dias**. Se voltar a ser
 referenciada nesse período — um desfazer, ou um aparelho que passou semanas offline e só
 agora sincronizou o zettel que a cita — a marca é removida e nada se perde.
@@ -247,9 +272,9 @@ sqlite3 zettelkasten.db "VACUUM;"
 
 | Rota | Saída |
 |---|---|
-| `GET /api/export/zip` | **Backup completo.** `zettels.json` + `images/`. Streamado. |
+| `GET /api/export/zip` | **Backup completo.** `zettels.json` + `images/` + `drawings/`. Streamado. |
 | `GET /api/export/json` | Este mesmo envelope, **sem os bytes das imagens**. Reimportável. |
-| `GET /api/export/markdown` | `.zip` com um `.md` por zettel (frontmatter `id`/`tags`/`created_at`/`updated_at`) + `index.json` com os links + `images/`. As referências `zk:img/` são reescritas para caminhos relativos, então abre direto no Obsidian. |
+| `GET /api/export/markdown` | `.zip` com um `.md` por zettel (frontmatter `id`/`tags`/`created_at`/`updated_at`) + `index.json` com os links + `images/` + `drawings/` (só os `.svg`). As referências `zk:img/` e `zk:draw/` são reescritas para caminhos relativos, então abre direto no Obsidian. |
 | `GET /api/backup/export?key=<64-hex>` | Autenticado por chave em vez de JWT — para cron. Aceita `&format=zip` para o backup completo. |
 
 ## Importando
@@ -257,7 +282,7 @@ sqlite3 zettelkasten.db "VACUUM;"
 | Rota | Entrada |
 |---|---|
 | `POST /api/import/json` | O envelope JSON. Até 50 MB. |
-| `POST /api/import/zip` | O pacote ZIP com texto e imagens. Até 500 MB. |
+| `POST /api/import/zip` | O pacote ZIP com texto, imagens e desenhos. Até 500 MB. |
 
 > Em produção atrás do Nginx, confira que o `location /api/` tem `client_max_body_size`
 > configurado — o default de 1 MB corta o upload antes de ele chegar na API.

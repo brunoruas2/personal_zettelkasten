@@ -5,6 +5,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useContext,
   useRef,
   useState,
 } from 'react';
@@ -30,7 +31,7 @@ import Suggestion, {
 } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
 import type { Slice } from '@tiptap/pm/model';
-import type { Zettel } from '@zettelkasten/core';
+import { generateId, type Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { useDiagramLayout } from '../lib/diagramLayout';
@@ -39,6 +40,9 @@ import { createEmbedHoverExtension, type EmbedHoverBridge } from '../lib/embedHo
 import { createEmbedSlotExtension } from '../lib/embedSlotExtension';
 import { importImage, ImageUploadError } from '../lib/imageSync';
 import { ZK_IMG_PREFIX } from './ZettelImage';
+import { DrawingEditContext, ZK_DRAW_PREFIX } from './DrawingBlock';
+import { useDrawingEditHost } from '../hooks/useDrawingEditHost';
+import { drawingStore, emptyDrawingRecord, subscribeDrawingsBusy, getDrawingsBusy } from '../lib/drawingSync';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -116,6 +120,8 @@ export interface TipTapEditorHandle {
   insertCodeBlock: (language: string, template?: string) => void;
   /** Abre o seletor de arquivos de imagem (usado pela toolbar mobile). */
   pickImages: () => void;
+  /** Insere uma referência a um desenho novo no cursor e abre o editor de desenho (toolbar mobile). */
+  insertDrawing: () => void;
 }
 
 interface Props {
@@ -159,6 +165,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { id: 'tabela', label: 'Tabela', description: 'Insere tabela vazia', icon: '⊞' },
   { id: 'codigo', label: 'Código', description: 'Bloco de código genérico', icon: '{}' },
   { id: 'imagem', label: 'Imagem', description: 'Importa imagem do dispositivo', icon: '🖼' },
+  { id: 'desenho', label: 'Desenho', description: 'Desenha ou escreve à mão', icon: '✏️' },
 ];
 
 interface SlashPopupState {
@@ -641,7 +648,13 @@ function ImageChipNodeView({ node, selected }: {
 }) {
   const src = node.attrs.src ?? '';
   const alt = node.attrs.alt ?? '';
-  const id = src.startsWith(ZK_IMG_PREFIX) ? src.slice(ZK_IMG_PREFIX.length) : src;
+  const isDrawing = src.startsWith(ZK_DRAW_PREFIX);
+  const id = isDrawing
+    ? src.slice(ZK_DRAW_PREFIX.length)
+    : src.startsWith(ZK_IMG_PREFIX)
+      ? src.slice(ZK_IMG_PREFIX.length)
+      : src;
+  const openDrawing = useContext(DrawingEditContext);
 
   return (
     <NodeViewWrapper as="div" className="my-2">
@@ -654,11 +667,22 @@ function ImageChipNodeView({ node, selected }: {
             : 'border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
         }`}
       >
-        <span aria-hidden>🖼</span>
-        <span className="font-medium">{alt || 'Imagem'}</span>
+        <span aria-hidden>{isDrawing ? '✏️' : '🖼'}</span>
+        <span className="font-medium">{alt || (isDrawing ? 'Desenho' : 'Imagem')}</span>
         <code className="rounded bg-black/5 px-1 py-0.5 text-xs dark:bg-white/10">
           {id.slice(0, 8)}
         </code>
+        {isDrawing && openDrawing && (
+          <button
+            type="button"
+            // mousedown não pode mover a seleção do ProseMirror antes do clique.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => openDrawing(id)}
+            className="rounded-md bg-brand px-2 py-0.5 text-xs font-medium text-white hover:opacity-90"
+          >
+            Editar
+          </button>
+        )}
       </span>
     </NodeViewWrapper>
   );
@@ -798,13 +822,61 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
     const onPendingImagesChangeRef = useRef(onPendingImagesChange);
     onPendingImagesChangeRef.current = onPendingImagesChange;
 
+    // Contagem que trava o Salvar: imagens em voo + 1 enquanto um desenho está
+    // sendo gravado no Dexie (o corpo nunca pode referenciar um id que ainda não
+    // existe localmente).
+    const pendingImagesRef = useRef(0);
     const bumpPending = useRef((delta: number) => {
       setPendingImages((n) => {
         const next = Math.max(0, n + delta);
-        onPendingImagesChangeRef.current?.(next);
+        pendingImagesRef.current = next;
+        onPendingImagesChangeRef.current?.(next + (getDrawingsBusy() ? 1 : 0));
         return next;
       });
     }).current;
+
+    useEffect(() => {
+      return subscribeDrawingsBusy(() => {
+        onPendingImagesChangeRef.current?.(pendingImagesRef.current + (getDrawingsBusy() ? 1 : 0));
+      });
+    }, []);
+
+    // ── Desenhos ──
+    // Modal hospedado aqui para o chip, o `/desenho` e a toolbar mobile abrirem o mesmo.
+    const editorForDrawingRef = useRef<Editor | null>(null);
+    const drawingHost = useDrawingEditHost((id, result) => {
+      // Cancelou um desenho que nunca teve conteúdo: não deixa referência nem
+      // registro vazio para trás.
+      if (result.outcome !== 'cancelled' || !result.wasEmpty) return;
+      void drawingStore.delete(id).catch(() => {});
+      const ed = editorForDrawingRef.current;
+      if (!ed || ed.isDestroyed) return;
+      const positions: Array<{ from: number; to: number }> = [];
+      ed.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'image' && node.attrs.src === `${ZK_DRAW_PREFIX}${id}`) {
+          positions.push({ from: pos, to: pos + node.nodeSize });
+        }
+      });
+      if (positions.length === 0) return;
+      const chain = ed.chain();
+      for (const { from, to } of positions.reverse()) chain.deleteRange({ from, to });
+      chain.run();
+    });
+    const openDrawingRef = useRef(drawingHost.open);
+    openDrawingRef.current = drawingHost.open;
+
+    // Referência estável (o slash command é criado uma vez): gera o id, grava o
+    // registro vazio, insere a referência no cursor e abre o editor. `range`
+    // remove o `/desenho` digitado na mesma transação da inserção.
+    const startDrawingRef = useRef<(ed: Editor, range?: { from: number; to: number }) => void>(() => {});
+    startDrawingRef.current = (ed, range) => {
+      const id = generateId();
+      void drawingStore.put(emptyDrawingRecord(id)).catch(() => {});
+      const chain = ed.chain().focus();
+      if (range) chain.deleteRange(range);
+      chain.insertContent({ type: 'image', attrs: { src: `${ZK_DRAW_PREFIX}${id}`, alt: '' } }).run();
+      openDrawingRef.current(id);
+    };
 
     // Extensions — stable (empty deps), communicate via refs
     const extensions = useMemo(() => {
@@ -922,6 +994,8 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
                     attrs: { language: '' },
                     content: [],
                   }).run();
+                } else if (cmd.id === 'desenho') {
+                  startDrawingRef.current(editor, range);
                 } else if (cmd.id === 'imagem') {
                   // Remove o /... na mesma transação; o seletor de arquivo abre
                   // depois e a inserção acontece quando a compressão termina.
@@ -1151,15 +1225,21 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
           .run();
       },
       pickImages() { pickImagesRef.current(); },
+      insertDrawing() { if (editor) startDrawingRef.current(editor); },
     }), [editor, pickImagesRef]);
+
+    editorForDrawingRef.current = editor;
 
     return (
       <>
-        <EditorContent
-          editor={editor}
-          className={className}
-          style={fontSize ? ({ '--input-font-size': `${fontSize}px` } as React.CSSProperties) : undefined}
-        />
+        <DrawingEditContext.Provider value={drawingHost.open}>
+          <EditorContent
+            editor={editor}
+            className={className}
+            style={fontSize ? ({ '--input-font-size': `${fontSize}px` } as React.CSSProperties) : undefined}
+          />
+        </DrawingEditContext.Provider>
+        {drawingHost.modal}
         {wikiPopup && (
           <WikiLinkPopup
             ref={wikiPopupRef}

@@ -9,18 +9,28 @@ import (
 	"time"
 
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
+	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/models"
 	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct {
-	repo   *Repository
-	images *images.Repository
+	repo     *Repository
+	images   *images.Repository
+	drawings *drawings.Repository
 }
 
 func NewHandler(repo *Repository, imageRepo *images.Repository) *Handler {
 	return &Handler{repo: repo, images: imageRepo}
+}
+
+// WithDrawings liga a contagem de referências de desenho (`zk:draw/<id>`) aos
+// mesmos pontos em que as de imagem rodam. Opcional para não quebrar quem
+// constrói o handler só com imagens.
+func (h *Handler) WithDrawings(repo *drawings.Repository) *Handler {
+	h.drawings = repo
+	return h
 }
 
 func (h *Handler) Routes() chi.Router {
@@ -113,6 +123,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	h.syncLinks(userID, z.ID, z.Body)
 	h.syncImageRefs(userID, z.ID, z.Body)
+	h.syncDrawingRefs(userID, z.ID, z.Body)
 
 	created, _ := h.repo.GetByID(userID, z.ID)
 	w.WriteHeader(http.StatusCreated)
@@ -158,6 +169,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	h.syncLinks(userID, id, z.Body)
 	h.syncImageRefs(userID, id, z.Body)
+	h.syncDrawingRefs(userID, id, z.Body)
 
 	updated, _ := h.repo.GetByID(userID, id)
 	jsonOK(w, updated)
@@ -177,6 +189,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 	// Corpo vazio: solta todas as referências de imagem deste zettel.
 	h.syncImageRefs(userID, id, "")
+	h.syncDrawingRefs(userID, id, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -205,6 +218,7 @@ func (h *Handler) rebuildLinks(w http.ResponseWriter, r *http.Request) {
 	for _, z := range zettels {
 		h.syncLinks(userID, z.ID, z.Body)
 		h.syncImageRefs(userID, z.ID, z.Body)
+	h.syncDrawingRefs(userID, z.ID, z.Body)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -252,6 +266,32 @@ func (h *Handler) syncImageRefs(userID, zettelID, body string) {
 		return
 	}
 	_ = h.images.SyncRefs(userID, zettelID, ParseImageIDs(body), time.Now().UnixMilli())
+}
+
+var drawingRefRE = regexp.MustCompile(`zk:draw/([A-Za-z0-9]{1,64})`)
+
+// ParseDrawingIDs extrai os ids de desenho referenciados por um corpo, sem repetir.
+func ParseDrawingIDs(body string) []string {
+	matches := drawingRefRE.FindAllStringSubmatch(body, -1)
+	seen := make(map[string]struct{}, len(matches))
+	ids := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if _, dup := seen[m[1]]; dup {
+			continue
+		}
+		seen[m[1]] = struct{}{}
+		ids = append(ids, m[1])
+	}
+	return ids
+}
+
+// syncDrawingRefs reescreve as referências de desenho do zettel e reconcilia
+// orphaned_at. Roda nos mesmos pontos que syncImageRefs.
+func (h *Handler) syncDrawingRefs(userID, zettelID, body string) {
+	if h.drawings == nil {
+		return
+	}
+	_ = h.drawings.SyncRefs(userID, zettelID, ParseDrawingIDs(body), time.Now().UnixMilli())
 }
 
 // --- helpers ---

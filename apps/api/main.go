@@ -11,6 +11,7 @@ import (
 
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
 	"github.com/brunofullstack/zettelkasten/api/internal/db"
+	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/portability"
 	"github.com/brunofullstack/zettelkasten/api/internal/review"
@@ -31,6 +32,7 @@ func main() {
 	waRPName := getenv("WEBAUTHN_RP_NAME", "Zettelkasten")
 	waRPOrigin := getenv("WEBAUTHN_RP_ORIGIN", "http://localhost:3000")
 	imageQuota := getenvInt64("IMAGE_QUOTA_BYTES", 250<<20)
+	drawingQuota := getenvInt64("DRAWING_QUOTA_BYTES", 100<<20)
 
 	database, err := db.Open(dbPath)
 	if err != nil {
@@ -50,14 +52,18 @@ func main() {
 	imageRepo := images.NewRepository(database)
 	imageHandler := images.NewHandler(imageRepo, imageQuota)
 
+	drawingRepo := drawings.NewRepository(database)
+	drawingHandler := drawings.NewHandler(drawingRepo, drawingQuota)
+
 	zettelRepo := zettel.NewRepository(database)
-	zettelHandler := zettel.NewHandler(zettelRepo, imageRepo)
+	zettelHandler := zettel.NewHandler(zettelRepo, imageRepo).WithDrawings(drawingRepo)
 	reviewRepo := review.NewRepository(database)
 	reviewHandler := review.NewHandler(reviewRepo)
 
-	portabilityHandler := portability.NewHandler(zettelRepo, authRepo, imageRepo, reviewRepo)
+	portabilityHandler := portability.NewHandler(zettelRepo, authRepo, imageRepo, reviewRepo).
+		WithDrawings(drawingRepo, drawingQuota)
 
-	startOrphanPurge(imageRepo)
+	startOrphanPurge(imageRepo, drawingRepo)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -93,6 +99,14 @@ func main() {
 		r.Post("/api/images/{id}", imageHandler.Upload)
 		r.Get("/api/images/{id}", imageHandler.Get)
 		r.Delete("/api/images/{id}", imageHandler.Delete)
+
+		// Desenhos: inline pelo mesmo motivo. Só JWT — uma chave de API (zk_…)
+		// recebe 401 aqui, fora da allowlist de RequireAuthOrKey. A rota
+		// estática precede a paramétrica.
+		r.Get("/api/drawings/manifest", drawingHandler.Manifest)
+		r.Put("/api/drawings/{id}", drawingHandler.Put)
+		r.Get("/api/drawings/{id}", drawingHandler.Get)
+		r.Delete("/api/drawings/{id}", drawingHandler.Delete)
 
 		// Revisão espaçada: inline pelo mesmo motivo das imagens — o Mount em
 		// "/api" acima impede um Mount novo sob esse prefixo.
@@ -167,19 +181,23 @@ func getenvInt64(key string, fallback int64) int64 {
 	return n
 }
 
-// startOrphanPurge apaga imagens órfãs há mais que a carência, no boot e a cada
-// 24 h. Libera páginas dentro do .db mas não encolhe o arquivo — recuperar
-// espaço em disco exige VACUUM manual.
-func startOrphanPurge(repo *images.Repository) {
+// startOrphanPurge apaga imagens e desenhos órfãos há mais que a carência, no
+// boot e a cada 24 h. Libera páginas dentro do .db mas não encolhe o arquivo —
+// recuperar espaço em disco exige VACUUM manual.
+func startOrphanPurge(imageRepo *images.Repository, drawingRepo *drawings.Repository) {
 	purge := func() {
-		cutoff := time.Now().UnixMilli() - images.OrphanGraceMillis
-		n, err := repo.PurgeOrphans(cutoff)
+		now := time.Now().UnixMilli()
+		n, err := imageRepo.PurgeOrphans(now - images.OrphanGraceMillis)
 		if err != nil {
 			log.Printf("orphan image purge failed: %v", err)
-			return
-		}
-		if n > 0 {
+		} else if n > 0 {
 			log.Printf("purged %d orphaned image(s)", n)
+		}
+		n, err = drawingRepo.PurgeOrphans(now - drawings.OrphanGraceMillis)
+		if err != nil {
+			log.Printf("orphan drawing purge failed: %v", err)
+		} else if n > 0 {
+			log.Printf("purged %d orphaned drawing(s)", n)
 		}
 	}
 	purge()
