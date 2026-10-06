@@ -414,7 +414,7 @@ export function ZettelEditForm({
             className={`rounded-xl px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90 ${justSaved ? 'bg-green-600' : 'bg-brand'}`}
           >
             {pendingImages > 0
-              ? `Aguardando ${pendingImages} imagem${pendingImages > 1 ? 'ns' : ''}…`
+              ? `Aguardando ${pendingImages} anexo${pendingImages > 1 ? 's' : ''}…`
               : isSaving
               ? 'Salvando…'
               : justSaved

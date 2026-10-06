@@ -871,11 +871,16 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
     const startDrawingRef = useRef<(ed: Editor, range?: { from: number; to: number }) => void>(() => {});
     startDrawingRef.current = (ed, range) => {
       const id = generateId();
-      void drawingStore.put(emptyDrawingRecord(id)).catch(() => {});
+      // A inserção é síncrona e numa transação só: o `range` do `/desenho` fica
+      // inválido se o documento mudar entre o comando e a escrita. O modal, porém,
+      // só abre depois que o registro vazio está gravado — ele lê o Dexie ao montar.
       const chain = ed.chain().focus();
       if (range) chain.deleteRange(range);
       chain.insertContent({ type: 'image', attrs: { src: `${ZK_DRAW_PREFIX}${id}`, alt: '' } }).run();
-      openDrawingRef.current(id);
+      void drawingStore
+        .put(emptyDrawingRecord(id))
+        .catch(() => {})
+        .then(() => openDrawingRef.current(id));
     };
 
     // Extensions — stable (empty deps), communicate via refs

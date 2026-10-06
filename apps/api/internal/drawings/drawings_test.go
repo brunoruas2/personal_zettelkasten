@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -274,5 +275,60 @@ func TestAPIKeyGetsNoAccess(t *testing.T) {
 	// Sem JWT válido a rota responde 401 (a chave zk_ só passa na allowlist de /api/zettels).
 	if rec := e.do("GET", "/api/drawings/manifest", "zk_"+strings.Repeat("ab", 32), ""); rec.Code != 401 {
 		t.Fatalf("api key must get 401, got %d", rec.Code)
+	}
+}
+
+// SVG gerado de verdade pelo editor (sceneToSvg com dois traços, ver
+// apps/web/lib/sketchRender.ts): o validador do servidor precisa aceitá-lo sem
+// nenhum ajuste prévio no cliente.
+func TestValidateSVGAcceptsEditorOutput(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "sketch.svg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := drawings.ValidateSVG(string(data)); err != nil {
+		t.Fatalf("editor svg must be accepted: %v", err)
+	}
+}
+
+const sketchScene = `{"type":"zk-sketch","version":1,"strokes":[{"id":"a","tool":"pen","color":"#e03131","size":4,"points":[[1,2,0.5],[3,4,0.6]]}]}`
+
+func TestSceneTypes(t *testing.T) {
+	e := newEnv(t, 1<<20)
+	svg, err := os.ReadFile(filepath.Join("testdata", "sketch.svg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accepted := map[string]string{
+		"zk-sketch v1":      sketchScene,
+		"zk-sketch vazio":   `{"type":"zk-sketch","version":1,"strokes":[]}`,
+		"legado excalidraw": goodScene,
+		"version como 1.0":  `{"type":"zk-sketch","version":1.0,"strokes":[]}`,
+	}
+	for name, scene := range accepted {
+		if rec := e.do("PUT", "/api/drawings/ok", e.tokenA, putBody(scene, string(svg), time.Now().UnixMilli())); rec.Code != 200 {
+			t.Errorf("%s: want 200, got %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+
+	rejected := map[string]string{
+		"version 2":         `{"type":"zk-sketch","version":2,"strokes":[]}`,
+		"sem version":       `{"type":"zk-sketch","strokes":[]}`,
+		"sem strokes":       `{"type":"zk-sketch","version":1}`,
+		"strokes é objeto":  `{"type":"zk-sketch","version":1,"strokes":{}}`,
+		"strokes é string":  `{"type":"zk-sketch","version":1,"strokes":"x"}`,
+		"strokes null":      `{"type":"zk-sketch","version":1,"strokes":null}`,
+		"tipo desconhecido": `{"type":"tldraw","version":1,"strokes":[]}`,
+		"sem type":          `{"version":1,"strokes":[]}`,
+		"não é json":        `nope`,
+	}
+	for name, scene := range rejected {
+		if rec := e.do("PUT", "/api/drawings/bad", e.tokenA, putBody(scene, string(svg), time.Now().UnixMilli())); rec.Code != 400 {
+			t.Errorf("%s: want 400, got %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if d, _ := e.repo.Get(e.userAID, "bad"); d != nil {
+		t.Fatal("nothing must be stored for rejected scenes")
 	}
 }

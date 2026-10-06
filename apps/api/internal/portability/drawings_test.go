@@ -25,7 +25,10 @@ import (
 
 const jwtSecret = "test-secret"
 
-const scene = `{"type":"excalidraw","version":2,"elements":[{"id":"a"}],"appState":{},"files":{}}`
+const scene = `{"type":"zk-sketch","version":1,"strokes":[{"id":"a","tool":"pen","color":"#e03131","size":4,"points":[[1,2,0.5],[3,4,0.6]]}]}`
+
+// Cena do editor antigo: continua aceita no import (backups anteriores).
+const legacyScene = `{"type":"excalidraw","version":2,"elements":[{"id":"a"}],"appState":{},"files":{}}`
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80"/></svg>`
 
 type env struct {
@@ -121,11 +124,11 @@ func TestZipExportCarriesDrawings(t *testing.T) {
 		t.Fatalf("export: %d", rec.Code)
 	}
 	files := zipEntries(t, rec.Body.Bytes())
-	if files["drawings/dr1.excalidraw"] != scene || files["drawings/dr1.svg"] != svg {
+	if files["drawings/dr1.zksketch"] != scene || files["drawings/dr1.svg"] != svg {
 		t.Fatalf("zip must carry scene and svg, got keys: %v", keys(files))
 	}
 	// O JSON dentro do ZIP leva só metadados, nunca a cena.
-	if strings.Contains(files["zettels.json"], `"elements"`) {
+	if strings.Contains(files["zettels.json"], `"strokes"`) {
 		t.Fatal("zettels.json must not contain the scene")
 	}
 	if !strings.Contains(files["zettels.json"], `"drawings"`) {
@@ -140,7 +143,7 @@ func TestJSONExportHasNoScene(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("export: %d", rec.Code)
 	}
-	if strings.Contains(rec.Body.String(), `"elements"`) || strings.Contains(rec.Body.String(), "<svg") {
+	if strings.Contains(rec.Body.String(), `"strokes"`) || strings.Contains(rec.Body.String(), "<svg") {
 		t.Fatal("json export must not carry scene or svg")
 	}
 }
@@ -156,7 +159,7 @@ func TestZipRoundtripRestoresDrawingForAnotherUser(t *testing.T) {
 	zw := zip.NewWriter(&buf)
 	w, _ := zw.Create("zettels.json")
 	w.Write([]byte(`{"version":1,"zettels":[{"id":"zimp1","title":"importado","body":"![](zk:draw/dr1)","tags":[],"created_at":1,"updated_at":2}],"links":[]}`))
-	for _, name := range []string{"drawings/dr1.excalidraw", "drawings/dr1.svg"} {
+	for _, name := range []string{"drawings/dr1.zksketch", "drawings/dr1.svg"} {
 		f, _ := zw.Create(name)
 		f.Write([]byte(exported[name]))
 	}
@@ -275,7 +278,7 @@ func TestMarkdownExportRewritesRefsToSVG(t *testing.T) {
 	if files["drawings/dr1.svg"] != svg {
 		t.Fatal("markdown package must include the svg")
 	}
-	if _, has := files["drawings/dr1.excalidraw"]; has {
+	if _, has := files["drawings/dr1.zksketch"]; has {
 		t.Fatal("markdown package must not include the scene")
 	}
 }
@@ -286,4 +289,66 @@ func keys(m map[string]string) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func importZipWith(t *testing.T, e *env, files map[string]string) (*httptest.ResponseRecorder, []string) {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("zettels.json")
+	w.Write([]byte(`{"version":1,"zettels":[],"links":[]}`))
+	for name, content := range files {
+		f, _ := zw.Create(name)
+		f.Write([]byte(content))
+	}
+	zw.Close()
+	rec := e.do("POST", "/api/import/zip", e.tokenB, &buf)
+	var res struct {
+		Errors []string `json:"errors"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &res)
+	return rec, res.Errors
+}
+
+// Backup feito antes do editor de traços: cena em `.excalidraw`, JSON do Excalidraw.
+func TestImportLegacyExcalidrawBackup(t *testing.T) {
+	e := newEnv(t, 1<<20)
+	rec, errs := importZipWith(t, e, map[string]string{
+		"drawings/old1.excalidraw": legacyScene,
+		"drawings/old1.svg":        svg,
+	})
+	if rec.Code != 200 || len(errs) != 0 {
+		t.Fatalf("legacy import: %d %v", rec.Code, errs)
+	}
+	d, _ := e.dRepo.Get(e.userB, "old1")
+	if d == nil || d.Scene != legacyScene || d.SVG != svg {
+		t.Fatalf("legacy drawing must be restored as-is: %+v", d)
+	}
+}
+
+// A extensão não decide o tipo: o `type` dentro do JSON é que manda.
+func TestExtensionDoesNotDecideSceneType(t *testing.T) {
+	e := newEnv(t, 1<<20)
+	_, errs := importZipWith(t, e, map[string]string{
+		// cena legada num arquivo .zksketch: aceita (o tipo é excalidraw)
+		"drawings/a1.zksketch": legacyScene,
+		"drawings/a1.svg":      svg,
+		// cena nova num arquivo .excalidraw: aceita (o tipo é zk-sketch)
+		"drawings/b1.excalidraw": scene,
+		"drawings/b1.svg":        svg,
+		// tipo desconhecido, qualquer extensão: recusada
+		"drawings/c1.zksketch": `{"type":"tldraw"}`,
+		"drawings/c1.svg":      svg,
+	})
+	if len(errs) != 1 || !strings.Contains(errs[0], "c1") {
+		t.Fatalf("want exactly one error for c1, got %v", errs)
+	}
+	for _, id := range []string{"a1", "b1"} {
+		if d, _ := e.dRepo.Get(e.userB, id); d == nil {
+			t.Fatalf("%s must be imported", id)
+		}
+	}
+	if d, _ := e.dRepo.Get(e.userB, "c1"); d != nil {
+		t.Fatal("c1 must not be imported")
+	}
 }

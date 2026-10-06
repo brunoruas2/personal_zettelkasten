@@ -11,3 +11,8 @@ export * from './services/ZettelHierarchy';
 export * from './services/EmbeddedChildren';
 export * from './models/Drawing';
 export * from './services/DrawingRefs';
+export * from './models/Sketch';
+export * from './services/SketchScene';
+export * from './services/SketchGeometry';
+export * from './services/SketchHistory';
+export * from './services/SketchPath';

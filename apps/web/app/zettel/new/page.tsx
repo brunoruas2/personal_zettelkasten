@@ -323,7 +323,7 @@ export default function NewZettelPage() {
             className="rounded-xl bg-brand px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
           >
             {pendingImages > 0
-              ? `Aguardando ${pendingImages} imagem${pendingImages > 1 ? 'ns' : ''}…`
+              ? `Aguardando ${pendingImages} anexo${pendingImages > 1 ? 's' : ''}…`
               : 'Salvar'}
           </button>
         </div>

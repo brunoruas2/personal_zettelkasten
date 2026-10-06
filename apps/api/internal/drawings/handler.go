@@ -1,6 +1,7 @@
 package drawings
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -180,21 +181,37 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ValidateScene exige JSON válido com type == "excalidraw".
+// ValidateScene aceita a cena do editor novo (`zk-sketch`, versão 1, com `strokes`
+// em array) e a do editor antigo (`excalidraw`), que continua valendo como legado:
+// rejeitar o que já foi sincronizado quebraria o pull dos outros dispositivos. O
+// servidor não renderiza a cena, então não confere os pontos — o teto de 2 MB e o
+// parse do cliente já os limitam.
 func ValidateScene(scene string) error {
 	if scene == "" {
 		return errors.New("scene is required")
 	}
 	var head struct {
-		Type string `json:"type"`
+		Type    string          `json:"type"`
+		Version *float64        `json:"version"`
+		Strokes json.RawMessage `json:"strokes"`
 	}
 	if err := json.Unmarshal([]byte(scene), &head); err != nil {
 		return errors.New("scene is not valid json")
 	}
-	if head.Type != "excalidraw" {
-		return errors.New("scene type must be excalidraw")
+	switch head.Type {
+	case "excalidraw":
+		return nil
+	case "zk-sketch":
+		if head.Version == nil || *head.Version != 1 {
+			return errors.New("scene version must be 1")
+		}
+		if t := bytes.TrimSpace(head.Strokes); len(t) == 0 || t[0] != '[' {
+			return errors.New("scene strokes must be an array")
+		}
+		return nil
+	default:
+		return errors.New("scene type must be zk-sketch")
 	}
-	return nil
 }
 
 var (

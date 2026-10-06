@@ -15,12 +15,15 @@ import (
 )
 
 // drawingDir é a pasta dos desenhos dentro do pacote ZIP: para cada id,
-// `<id>.excalidraw` (a cena, reeditável) e `<id>.svg` (o preview).
+// `<id>.zksketch` (a cena, reeditável) e `<id>.svg` (o preview).
 const drawingDir = "drawings"
 
 const (
-	sceneExt = ".excalidraw"
-	svgExt   = ".svg"
+	sceneExt = ".zksketch"
+	// Backups feitos antes do editor de traços guardavam a cena como `.excalidraw`.
+	// O import ainda os aceita; quem decide o tipo da cena é o `type` dentro do JSON.
+	legacySceneExt = ".excalidraw"
+	svgExt         = ".svg"
 )
 
 var (
@@ -118,7 +121,8 @@ func collectDrawingEntry(f *zip.File, into map[string]*pendingDrawing) error {
 	base := path.Base(f.Name)
 	ext := strings.ToLower(path.Ext(base))
 	id := strings.TrimSuffix(base, path.Ext(base))
-	if ext != sceneExt && ext != svgExt {
+	isScene := ext == sceneExt || ext == legacySceneExt
+	if !isScene && ext != svgExt {
 		return fmt.Errorf("unexpected file in drawings/")
 	}
 	if !drawingIDRE.MatchString(id) {
@@ -145,7 +149,7 @@ func collectDrawingEntry(f *zip.File, into map[string]*pendingDrawing) error {
 		into[id] = p
 	}
 	p.hasData = true
-	if ext == sceneExt {
+	if isScene {
 		p.scene = string(data)
 	} else {
 		p.svg = string(data)
