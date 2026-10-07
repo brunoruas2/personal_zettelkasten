@@ -3,12 +3,16 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import {
+  DARK_BG,
+  LIGHT_BG,
   MAX_ZOOM,
   MIN_ZOOM,
   SKETCH_COLORS,
   SKETCH_SIZES,
   parseSketchScene,
   serializeSketchScene,
+  themeColor,
+  type SketchTheme,
   type Stroke,
 } from '@zettelkasten/core'
 import {
@@ -57,6 +61,27 @@ const SIZE_NAMES: Record<number, string> = { 2: 'Fina', 4: 'Média', 8: 'Grossa'
 /** Passo dos botões e atalhos de zoom. */
 const ZOOM_STEP = 1.25
 
+const THEME_KEY = 'zettel_drawing_theme'
+
+/**
+ * Tema inicial do canvas: a escolha salva neste dispositivo ou, sem ela, o do
+ * sistema. Todo acesso é protegido: sem `localStorage` (ou sem `matchMedia`) o
+ * editor abre no claro e a escolha vale só naquela abertura.
+ */
+function readInitialTheme(): SketchTheme {
+  try {
+    const saved = localStorage.getItem(THEME_KEY)
+    if (saved === 'dark' || saved === 'light') return saved
+  } catch {
+    // segue para o tema do sistema
+  }
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
 function fullscreenSupported(el: HTMLElement | null): boolean {
   return !!el && typeof el.requestFullscreen === 'function'
 }
@@ -88,6 +113,8 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   const [color, setColor] = React.useState<string>(SKETCH_COLORS[0])
   const [size, setSize] = React.useState<number>(4)
   const [zoom, setZoom] = React.useState(1)
+  // Lazy: o valor tem que existir antes de o canvas montar (a primeira pintura já sai no tema certo).
+  const [theme, setTheme] = React.useState<SketchTheme>(readInitialTheme)
 
   // Refs espelham o estado lido pelos listeners nativos, que não re-registram a cada render.
   const dirtyRef = React.useRef(false)
@@ -329,6 +356,16 @@ export function DrawingEditorModal({ id, onClose }: Props) {
     setPenMode(next)
     canvasRef.current?.setPenMode(next)
   }
+  const toggleTheme = () => {
+    const next: SketchTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    canvasRef.current?.setTheme(next)
+    try {
+      localStorage.setItem(THEME_KEY, next)
+    } catch {
+      // sem localStorage a escolha vale só nesta abertura
+    }
+  }
   const clearAll = () => {
     if (eng.empty) return
     if (window.confirm('Limpar todo o desenho? Dá para desfazer.')) canvasRef.current?.clear()
@@ -344,6 +381,8 @@ export function DrawingEditorModal({ id, onClose }: Props) {
 
   const btn =
     'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-sm text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'
+  const btnLight =
+    'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-sm text-zinc-700 transition-colors hover:bg-zinc-100'
   const btnOn = '!border-brand !bg-brand/10 text-brand-light'
   // mousedown não pode tirar o foco do root: é nele que o teclado do modal escuta.
   const keepFocus = (e: React.MouseEvent) => e.preventDefault()
@@ -391,7 +430,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
                     aria-label={COLOR_NAMES[c]}
                     aria-pressed={color === c && tool === 'pen'}
                     title={COLOR_NAMES[c]}
-                    style={{ backgroundColor: c }}
+                    style={{ backgroundColor: themeColor(c, theme) }}
                     className={`h-7 w-7 rounded-full border-2 transition-transform ${color === c && tool === 'pen' ? 'scale-110 border-brand' : 'border-zinc-300 dark:border-zinc-600'}`}
                   />
                 ))}
@@ -432,6 +471,18 @@ export function DrawingEditorModal({ id, onClose }: Props) {
               </button>
             </>
           )}
+
+          <button
+            type="button"
+            onMouseDown={keepFocus}
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
+            aria-pressed={theme === 'dark'}
+            title={theme === 'dark' ? 'Tema escuro (clique para o claro). O desenho é salvo com as cores originais.' : 'Tema claro (clique para o escuro)'}
+            className={btn}
+          >
+            {theme === 'dark' ? '🌙' : '☀️'}
+          </button>
 
           <button
             type="button"
@@ -482,7 +533,11 @@ export function DrawingEditorModal({ id, onClose }: Props) {
           </div>
         )}
 
-        <div className="relative min-h-0 flex-1 bg-white">
+        {/* Fundo do canvas segue o tema; o aviso de desenho legado é sempre branco. */}
+        <div
+          className="relative min-h-0 flex-1"
+          style={{ backgroundColor: ready && theme === 'dark' ? DARK_BG : LIGHT_BG }}
+        >
           {phase.kind === 'loading' && (
             <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">Carregando…</div>
           )}
@@ -491,6 +546,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
             <SketchCanvas
               ref={canvasRef}
               initialStrokes={phase.strokes}
+              theme={theme}
               onStateChange={setEng}
               onZoomChange={setZoom}
               className="absolute inset-0"
@@ -509,7 +565,8 @@ export function DrawingEditorModal({ id, onClose }: Props) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={phase.svgUrl} alt="Preview do desenho" className="max-h-[60%] max-w-full rounded-lg border border-zinc-200" />
               )}
-              <button type="button" onClick={replaceLocked} className={btn}>
+              {/* Sem variantes dark: o aviso fica sobre branco mesmo com o sistema em escuro. */}
+              <button type="button" onClick={replaceLocked} className={btnLight}>
                 Substituir por novo desenho
               </button>
             </div>

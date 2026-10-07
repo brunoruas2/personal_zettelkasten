@@ -1,7 +1,7 @@
 'use client'
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import type { SketchScene, Stroke } from '@zettelkasten/core'
+import type { SketchScene, SketchTheme, Stroke } from '@zettelkasten/core'
 import { SketchEngine, type SketchEngineState, type SketchTool } from '../lib/sketchEngine'
 
 export type { SketchEngineState, SketchTool }
@@ -25,11 +25,15 @@ export interface SketchCanvasHandle {
   resetZoom(): void
   /** Enquadra o desenho inteiro; cena vazia volta a 100%. */
   fitToContent(): void
+  /** Tema de exibição (fundo e cores); não altera a cena nem o histórico. */
+  setTheme(theme: SketchTheme): void
 }
 
 interface Props {
   /** Traços iniciais; lidos uma vez, na montagem. */
   initialStrokes: Stroke[]
+  /** Tema da primeira pintura; depois, use `setTheme` do handle. */
+  theme?: SketchTheme
   onStateChange?: (s: SketchEngineState) => void
   /** Zoom atual (1 = 100%): chamado em roda, pinça, botões e atalhos. */
   onZoomChange?: (scale: number) => void
@@ -42,7 +46,7 @@ interface Props {
  * agregado (desfazer/refazer/vazio/sujo) pelo callback.
  */
 export const SketchCanvas = forwardRef<SketchCanvasHandle, Props>(function SketchCanvas(
-  { initialStrokes, onStateChange, onZoomChange, className },
+  { initialStrokes, theme, onStateChange, onZoomChange, className },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -52,6 +56,7 @@ export const SketchCanvas = forwardRef<SketchCanvasHandle, Props>(function Sketc
   const onZoomRef = useRef(onZoomChange)
   onZoomRef.current = onZoomChange
   const initialRef = useRef(initialStrokes)
+  const initialThemeRef = useRef(theme ?? 'light')
 
   useEffect(() => {
     const host = hostRef.current
@@ -61,6 +66,7 @@ export const SketchCanvas = forwardRef<SketchCanvasHandle, Props>(function Sketc
       initialRef.current,
       (s) => onStateRef.current?.(s),
       (scale) => onZoomRef.current?.(scale),
+      initialThemeRef.current,
     )
     engineRef.current = engine
     onStateRef.current?.(engine.state())
@@ -88,6 +94,7 @@ export const SketchCanvas = forwardRef<SketchCanvasHandle, Props>(function Sketc
       zoomBy: (f) => engineRef.current?.zoomBy(f),
       resetZoom: () => engineRef.current?.resetZoom(),
       fitToContent: () => engineRef.current?.fitToContent(),
+      setTheme: (t) => engineRef.current?.setTheme(t),
     }),
     [],
   )

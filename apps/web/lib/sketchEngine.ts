@@ -7,6 +7,9 @@ import {
   screenToWorld,
   strokeBounds,
   zoomAt,
+  themeColor,
+  DARK_BG,
+  LIGHT_BG,
   SKETCH_TYPE,
   SKETCH_VERSION,
   DEFAULT_COLOR,
@@ -14,6 +17,7 @@ import {
   type Point2,
   type SketchPoint,
   type SketchScene,
+  type SketchTheme,
   type Stroke,
   type Viewport,
 } from '@zettelkasten/core'
@@ -80,6 +84,7 @@ export class SketchEngine {
   tool: SketchTool = 'pen'
   color: string = DEFAULT_COLOR
   size = 4
+  private theme: SketchTheme
   private penMode = false
   private spaceDown = false
 
@@ -101,10 +106,14 @@ export class SketchEngine {
     initial: Stroke[],
     onState?: (s: SketchEngineState) => void,
     onScale?: (scale: number) => void,
+    // Entra no construtor (e não só em `setTheme`) para a primeira pintura já sair no
+    // tema certo: aplicar depois piscaria branco ao abrir no escuro.
+    theme: SketchTheme = 'light',
   ) {
     this.container = container
     this.onState = onState
     this.onScale = onScale
+    this.theme = theme
     this.history = new SketchHistory(initial)
     this.baseVersion = this.history.version
     this.fitOnFirstSize = initial.length > 0
@@ -115,7 +124,7 @@ export class SketchEngine {
     container.style.overflow = 'hidden'
     container.style.touchAction = 'none'
     container.style.userSelect = 'none'
-    container.style.background = '#ffffff'
+    container.style.background = theme === 'dark' ? DARK_BG : LIGHT_BG
 
     this.staticCanvas = this.makeCanvas()
     this.liveCanvas = this.makeCanvas()
@@ -188,6 +197,20 @@ export class SketchEngine {
 
   setPenMode(on: boolean): void {
     this.penMode = on
+  }
+
+  /**
+   * Troca o tema de EXIBIÇÃO: fundo e cor com que os traços são pintados
+   * (`themeColor`). A cor gravada nos traços não muda, nem histórico, viewport ou
+   * o canvas em si — só marca as camadas como sujas e redesenha.
+   */
+  setTheme(theme: SketchTheme): void {
+    if (theme === this.theme) return
+    this.theme = theme
+    this.container.style.background = theme === 'dark' ? DARK_BG : LIGHT_BG
+    this.staticDirty = true
+    this.liveDirty = true
+    this.schedule()
   }
 
   /** Zoom atual (1 = 100%). */
@@ -342,7 +365,7 @@ export class SketchEngine {
       if (this.hidden.has(s.id)) continue
       const b = cachedBounds(s)
       if (b.maxX < view.minX || b.minX > view.maxX || b.maxY < view.minY || b.minY > view.maxY) continue
-      ctx.fillStyle = s.color
+      ctx.fillStyle = themeColor(s.color, this.theme)
       ctx.fill(strokePath2D(s))
     }
   }
@@ -356,7 +379,7 @@ export class SketchEngine {
     this.applyTransform(ctx)
     // A ponta prevista só existe aqui, na camada viva: nunca entra no traço gravado.
     const points = this.predicted.length ? [...this.drawing.points, ...this.predicted] : this.drawing.points
-    ctx.fillStyle = this.color
+    ctx.fillStyle = themeColor(this.color, this.theme)
     ctx.fill(livePath2D({ points, size: this.size }))
   }
 
@@ -490,7 +513,7 @@ export class SketchEngine {
     this.history.add(stroke)
     // O traço novo é o último da ordem de pintura: basta acrescentá-lo à estática.
     this.applyTransform(this.sctx)
-    this.sctx.fillStyle = stroke.color
+    this.sctx.fillStyle = themeColor(stroke.color, this.theme)
     this.sctx.fill(strokePath2D(stroke))
     this.emit()
   }
