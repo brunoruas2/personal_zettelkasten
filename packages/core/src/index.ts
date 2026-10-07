@@ -17,3 +17,4 @@ export * from './services/SketchGeometry';
 export * from './services/SketchHistory';
 export * from './services/SketchPath';
 export * from './services/SketchTheme';
+export * from './services/SketchSelection';

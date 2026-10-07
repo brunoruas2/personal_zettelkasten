@@ -1,11 +1,18 @@
 import {
   SketchHistory,
+  duplicateStrokes,
   eraseAt,
   fitViewport,
   newStrokeId,
+  normalizeRect,
+  recolorStrokes,
+  resizeStrokes,
   sceneBounds,
   screenToWorld,
+  strokeAtPoint,
   strokeBounds,
+  strokeIntersectsRect,
+  translateStrokes,
   zoomAt,
   themeColor,
   DARK_BG,
@@ -23,8 +30,8 @@ import {
 } from '@zettelkasten/core'
 import { livePath2D, strokePath2D } from './sketchRender'
 
-/** `hand` só move a vista: não desenha nem apaga. */
-export type SketchTool = 'pen' | 'eraser' | 'hand'
+/** `hand` só move a vista (não desenha nem apaga); `select` seleciona e move traços. */
+export type SketchTool = 'pen' | 'eraser' | 'hand' | 'select'
 
 export interface SketchEngineState {
   canUndo: boolean
@@ -32,6 +39,8 @@ export interface SketchEngineState {
   empty: boolean
   /** Houve alguma alteração desde que o editor abriu (ou desde `resetWith`). */
   dirty: boolean
+  /** Quantos traços estão selecionados (a seleção em si não suja o desenho). */
+  selectionCount: number
 }
 
 /** Traço em andamento passa deste tamanho: fecha e continua num traço novo, sem o usuário notar. */
@@ -42,6 +51,26 @@ const ERASER_RADIUS_PX = 6
 const MIN_POINT_DISTANCE_PX = 0.4
 /** Margem do "Ajustar", em px de tela. */
 const FIT_PADDING_PX = 32
+/** O arraste de uma seleção só começa depois deste deslocamento (px de tela). */
+const MOVE_START_PX = 2
+/** Folga da caixa de seleção em volta dos traços (px de tela). */
+const SELECT_PAD_PX = 6
+/** Setas seguidas na mesma direção dentro deste intervalo viram uma operação só. */
+const NUDGE_MERGE_MS = 400
+/** Deslocamento das cópias ao duplicar (unidades do mundo). */
+const DUPLICATE_OFFSET = 16
+
+/** Cor de destaque do app (`--color-brand`) para a seleção; o canvas não lê CSS var sozinho. */
+function brandRgb(): [number, number, number] {
+  try {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim()
+    const parts = raw.split(/\s+/).map(Number)
+    if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) return [parts[0], parts[1], parts[2]]
+  } catch {
+    // cai no padrão
+  }
+  return [124, 58, 237]
+}
 
 type TouchPoint = { x: number; y: number; type: string }
 
@@ -95,6 +124,25 @@ export class SketchEngine {
   private panning: { pointerId: number; x: number; y: number } | null = null
   private pinch: { dist: number; cx: number; cy: number } | null = null
   private hidden = new Set<string>()
+
+  // Seleção: estado transitório do engine (não é histórico e não suja o desenho).
+  private selection = new Set<string>()
+  private marquee: {
+    pointerId: number
+    start: Point2
+    cur: Point2
+    base: Set<string>
+  } | null = null
+  private moving: {
+    pointerId: number
+    startWorld: Point2
+    startScreen: Point2
+    dx: number
+    dy: number
+    started: boolean
+  } | null = null
+  private lastNudge: { key: string; time: number; version: number; before: Stroke[]; dx: number; dy: number } | null = null
+  private brand = brandRgb()
 
   private raf = 0
   private staticDirty = true
@@ -161,28 +209,40 @@ export class SketchEngine {
 
   undo(): void {
     this.cancelGesture()
+    this.selection.clear()
+    this.lastNudge = null
     if (this.history.undo()) this.changed(true)
+    else this.changed(false)
   }
 
   redo(): void {
     this.cancelGesture()
+    this.selection.clear()
+    this.lastNudge = null
     if (this.history.redo()) this.changed(true)
+    else this.changed(false)
   }
 
   clear(): void {
     this.cancelGesture()
+    this.selection.clear()
+    this.lastNudge = null
     if (this.history.clear()) this.changed(true)
+    else this.changed(false)
   }
 
   /** Troca a cena inteira (usado por "Substituir por novo desenho"). */
   resetWith(strokes: Stroke[]): void {
     this.cancelGesture()
+    this.selection.clear()
+    this.lastNudge = null
     this.history = new SketchHistory(strokes)
     this.baseVersion = this.history.version
     this.changed(true)
   }
 
   setTool(tool: SketchTool): void {
+    if (tool !== 'select') this.clearSelection()
     this.tool = tool
     this.applyCursor()
   }
@@ -255,12 +315,145 @@ export class SketchEngine {
     this.applyCursor()
   }
 
+  // ── seleção ─────────────────────────────────────────────────────────────
+
+  get selectionCount(): number {
+    return this.selection.size
+  }
+
+  clearSelection(): void {
+    if (this.selection.size === 0 && !this.marquee && !this.moving) return
+    this.cancelSelectGesture()
+    this.selection.clear()
+    this.afterSelectionChange()
+  }
+
+  /** Seleciona todos os traços e passa para a ferramenta Selecionar. */
+  selectAll(): void {
+    this.cancelGesture()
+    this.tool = 'select'
+    this.applyCursor()
+    this.selection = new Set(this.history.strokes.map((s) => s.id))
+    this.afterSelectionChange()
+  }
+
+  deleteSelection(): void {
+    const sel = this.selected()
+    if (sel.length === 0) return
+    this.cancelGesture()
+    this.selection.clear()
+    this.lastNudge = null
+    this.history.erase(sel)
+    this.liveDirty = true
+    this.changed(true)
+  }
+
+  /** Cópias deslocadas (+16, +16) com ids novos, que passam a ser a seleção; um desfazer remove todas. */
+  duplicateSelection(): void {
+    const sel = this.selected()
+    if (sel.length === 0) return
+    this.cancelGesture()
+    const copies = duplicateStrokes(sel, DUPLICATE_OFFSET, DUPLICATE_OFFSET, newStrokeId)
+    this.history.addMany(copies)
+    this.selection = new Set(copies.map((c) => c.id))
+    this.lastNudge = null
+    this.liveDirty = true
+    this.changed(true)
+  }
+
+  /** Troca a cor (canônica) dos selecionados; uma operação de desfazer. */
+  applyColorToSelection(color: string): void {
+    this.replaceSelected((s) => recolorStrokes(s, color))
+  }
+
+  applySizeToSelection(size: number): void {
+    this.replaceSelected((s) => resizeStrokes(s, size))
+  }
+
+  /**
+   * Move a seleção em px de TELA (setas). Setas seguidas na mesma direção em menos de
+   * 400 ms viram uma única operação: desfaz a anterior e refaz acumulada.
+   */
+  nudgeSelection(dxPx: number, dyPx: number): void {
+    const sel = this.selected()
+    if (sel.length === 0) return
+    this.cancelGesture()
+    let dx = dxPx / this.vp.scale
+    let dy = dyPx / this.vp.scale
+    let before = sel
+    const key = `${Math.sign(dxPx)},${Math.sign(dyPx)}`
+    const now = performance.now()
+    const n = this.lastNudge
+    if (n && n.key === key && now - n.time < NUDGE_MERGE_MS && n.version === this.history.version) {
+      this.history.undo()
+      before = n.before
+      dx += n.dx
+      dy += n.dy
+    }
+    if (!this.history.replace(before, translateStrokes(before, dx, dy))) return
+    this.lastNudge = { key, time: now, version: this.history.version, before, dx, dy }
+    this.liveDirty = true
+    this.changed(true)
+  }
+
+  private replaceSelected(fn: (s: Stroke[]) => Stroke[]): void {
+    const before = this.selected()
+    if (before.length === 0) return
+    this.cancelGesture()
+    this.lastNudge = null
+    if (this.history.replace(before, fn(before))) {
+      this.liveDirty = true
+      this.changed(true)
+    }
+  }
+
+  private selected(): Stroke[] {
+    return this.history.strokes.filter((s) => this.selection.has(s.id))
+  }
+
+  /** Bounding box dos selecionados (em unidades do mundo), com o cache por traço. */
+  private selectedBounds(): Bounds | null {
+    let out: Bounds | null = null
+    for (const s of this.history.strokes) {
+      if (!this.selection.has(s.id)) continue
+      const b = cachedBounds(s)
+      out = out
+        ? {
+            minX: Math.min(out.minX, b.minX),
+            minY: Math.min(out.minY, b.minY),
+            maxX: Math.max(out.maxX, b.maxX),
+            maxY: Math.max(out.maxY, b.maxY),
+          }
+        : b
+    }
+    return out
+  }
+
+  private afterSelectionChange(): void {
+    this.lastNudge = null
+    this.liveDirty = true
+    this.schedule()
+    this.emit()
+  }
+
+  /** Traços atingidos pelo retângulo; o bounding box em cache evita o custo O(pontos) por traço. */
+  private strokesHitByRect(rect: Bounds): string[] {
+    const ids: string[] = []
+    for (const s of this.history.strokes) {
+      const b = cachedBounds(s)
+      if (b.maxX < rect.minX || b.minX > rect.maxX || b.maxY < rect.minY || b.minY > rect.maxY) continue
+      if (strokeIntersectsRect(s, rect)) ids.push(s.id)
+    }
+    return ids
+  }
+
   state(): SketchEngineState {
     return {
       canUndo: this.history.canUndo,
       canRedo: this.history.canRedo,
       empty: this.history.strokes.length === 0,
       dirty: this.history.version !== this.baseVersion,
+      selectionCount: this.selection.size,
     }
   }
 
@@ -323,7 +516,13 @@ export class SketchEngine {
 
   private applyCursor(): void {
     this.container.style.cursor =
-      this.spaceDown || this.tool === 'hand' ? 'grab' : this.tool === 'eraser' ? 'cell' : 'crosshair'
+      this.spaceDown || this.tool === 'hand'
+        ? 'grab'
+        : this.tool === 'eraser'
+          ? 'cell'
+          : this.tool === 'select'
+            ? 'default'
+            : 'crosshair'
   }
 
   private local(e: { clientX: number; clientY: number }): Point2 {
@@ -343,7 +542,12 @@ export class SketchEngine {
 
   private frame = (): void => {
     this.raf = 0
-    if (this.staticDirty) this.drawStatic()
+    if (this.staticDirty) {
+      this.drawStatic()
+      // Pan/zoom/resize mudam a conta mundo→tela: a caixa e o retângulo de seleção (que vivem
+      // na camada viva) têm de ser reposicionados junto.
+      if (this.selection.size > 0 || this.marquee) this.liveDirty = true
+    }
     if (this.liveDirty) this.drawLive()
   }
 
@@ -375,12 +579,65 @@ export class SketchEngine {
     const ctx = this.lctx
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, this.liveCanvas.width, this.liveCanvas.height)
-    if (!this.drawing) return
-    this.applyTransform(ctx)
-    // A ponta prevista só existe aqui, na camada viva: nunca entra no traço gravado.
-    const points = this.predicted.length ? [...this.drawing.points, ...this.predicted] : this.drawing.points
-    ctx.fillStyle = themeColor(this.color, this.theme)
-    ctx.fill(livePath2D({ points, size: this.size }))
+
+    if (this.drawing) {
+      this.applyTransform(ctx)
+      // A ponta prevista só existe aqui, na camada viva: nunca entra no traço gravado.
+      const points = this.predicted.length ? [...this.drawing.points, ...this.predicted] : this.drawing.points
+      ctx.fillStyle = themeColor(this.color, this.theme)
+      ctx.fill(livePath2D({ points, size: this.size }))
+    }
+
+    // Mover: os selecionados saem da estática e são pintados aqui com um translate sobre
+    // o Path2D em cache — nenhum outline é recalculado a cada pointermove.
+    const shift = this.moving?.started ? this.moving : null
+    if (shift) {
+      this.applyTransform(ctx)
+      ctx.translate(shift.dx, shift.dy)
+      for (const s of this.history.strokes) {
+        if (!this.selection.has(s.id)) continue
+        ctx.fillStyle = themeColor(s.color, this.theme)
+        ctx.fill(strokePath2D(s))
+      }
+    }
+
+    if (this.selection.size > 0 || this.marquee) this.drawSelectionOverlay(ctx, shift)
+  }
+
+  /** Caixa tracejada da seleção e retângulo de seleção, em px de tela (espessura constante em qualquer zoom). */
+  private drawSelectionOverlay(ctx: CanvasRenderingContext2D, shift: { dx: number; dy: number } | null): void {
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+    const { scale, tx, ty } = this.vp
+    const [r, g, b] = this.brand
+
+    const box = this.selectedBounds()
+    if (box) {
+      const dx = shift?.dx ?? 0
+      const dy = shift?.dy ?? 0
+      const x0 = (box.minX + dx) * scale + tx - SELECT_PAD_PX
+      const y0 = (box.minY + dy) * scale + ty - SELECT_PAD_PX
+      const x1 = (box.maxX + dx) * scale + tx + SELECT_PAD_PX
+      const y1 = (box.maxY + dy) * scale + ty + SELECT_PAD_PX
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([6, 4])
+      ctx.strokeStyle = `rgb(${r} ${g} ${b})`
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0)
+      ctx.setLineDash([])
+    }
+
+    if (this.marquee) {
+      const a = this.marquee.start
+      const c = this.marquee.cur
+      const x = Math.min(a.x, c.x) * scale + tx
+      const y = Math.min(a.y, c.y) * scale + ty
+      const w = Math.abs(a.x - c.x) * scale
+      const h = Math.abs(a.y - c.y) * scale
+      ctx.fillStyle = `rgb(${r} ${g} ${b} / 0.08)`
+      ctx.fillRect(x, y, w, h)
+      ctx.lineWidth = 1
+      ctx.strokeStyle = `rgb(${r} ${g} ${b} / 0.9)`
+      ctx.strokeRect(x, y, w, h)
+    }
   }
 
   // ── entrada ─────────────────────────────────────────────────────────────
@@ -429,6 +686,11 @@ export class SketchEngine {
       return
     }
 
+    if (this.tool === 'select') {
+      this.beginSelect(e)
+      return
+    }
+
     const real = e.pointerType === 'pen'
     const w = this.world(e)
     this.drawing = {
@@ -464,6 +726,16 @@ export class SketchEngine {
       return
     }
 
+    if (this.moving && this.moving.pointerId === e.pointerId) {
+      this.moveSelection(e)
+      return
+    }
+
+    if (this.marquee && this.marquee.pointerId === e.pointerId) {
+      this.updateMarquee(e)
+      return
+    }
+
     if (this.drawing && this.drawing.pointerId === e.pointerId) {
       this.extendStroke(e)
       return
@@ -472,7 +744,106 @@ export class SketchEngine {
     if (this.erasing && this.erasing.pointerId === e.pointerId) {
       const events = e.getCoalescedEvents?.() ?? []
       for (const ev of events.length ? events : [e]) this.eraseAt(this.world(ev))
+      return
     }
+
+    // Sem gesto em andamento: o cursor indica se dá para mover (sobre a seleção).
+    if (this.tool === 'select' && !this.spaceDown && e.buttons === 0) this.updateSelectCursor(e)
+  }
+
+  // ── gestos da ferramenta Selecionar ─────────────────────────────────────
+
+  private beginSelect(e: PointerEvent): void {
+    const w = this.world(e)
+    const radius = ERASER_RADIUS_PX / this.vp.scale
+    const hit = strokeAtPoint(this.history.strokes, w, radius)
+    const inside = this.pointInSelection(w)
+    const startMove = () => {
+      this.moving = {
+        pointerId: e.pointerId,
+        startWorld: w,
+        startScreen: this.local(e),
+        dx: 0,
+        dy: 0,
+        started: false,
+      }
+    }
+
+    if (e.shiftKey) {
+      // Shift soma/alterna; no vazio, o retângulo soma à seleção atual.
+      if (hit) {
+        if (this.selection.has(hit.id)) {
+          this.selection.delete(hit.id)
+        } else {
+          this.selection.add(hit.id)
+          startMove()
+        }
+        this.afterSelectionChange()
+      } else {
+        this.marquee = { pointerId: e.pointerId, start: w, cur: w, base: new Set(this.selection) }
+      }
+      return
+    }
+
+    if (hit && this.selection.has(hit.id)) {
+      startMove()
+      return
+    }
+    if (!hit && inside) {
+      startMove()
+      return
+    }
+    if (hit) {
+      // Arrastar um traço que não estava selecionado o seleciona e o move.
+      this.selection = new Set([hit.id])
+      startMove()
+      this.afterSelectionChange()
+      return
+    }
+
+    if (this.selection.size > 0) {
+      this.selection.clear()
+      this.afterSelectionChange()
+    }
+    this.marquee = { pointerId: e.pointerId, start: w, cur: w, base: new Set() }
+  }
+
+  private pointInSelection(w: Point2): boolean {
+    const box = this.selectedBounds()
+    if (!box) return false
+    const pad = SELECT_PAD_PX / this.vp.scale
+    return w.x >= box.minX - pad && w.x <= box.maxX + pad && w.y >= box.minY - pad && w.y <= box.maxY + pad
+  }
+
+  private updateSelectCursor(e: PointerEvent): void {
+    this.container.style.cursor = this.pointInSelection(this.world(e)) ? 'move' : 'default'
+  }
+
+  private moveSelection(e: PointerEvent): void {
+    const m = this.moving!
+    if (!m.started) {
+      const l = this.local(e)
+      if (Math.hypot(l.x - m.startScreen.x, l.y - m.startScreen.y) < MOVE_START_PX) return
+      m.started = true
+      // Os selecionados saem da estática (redesenhada uma vez) e passam a viver na viva.
+      for (const id of this.selection) this.hidden.add(id)
+      this.staticDirty = true
+      this.container.style.cursor = 'grabbing'
+    }
+    const w = this.world(e)
+    m.dx = w.x - m.startWorld.x
+    m.dy = w.y - m.startWorld.y
+    this.liveDirty = true
+    this.schedule()
+  }
+
+  private updateMarquee(e: PointerEvent): void {
+    const mq = this.marquee!
+    mq.cur = this.world(e)
+    const hits = this.strokesHitByRect(normalizeRect(mq.start, mq.cur))
+    this.selection = new Set([...mq.base, ...hits])
+    this.liveDirty = true
+    this.schedule()
   }
 
   private extendStroke(e: PointerEvent): void {
@@ -545,6 +916,32 @@ export class SketchEngine {
       if (!cancelled && points.length > 0) this.commitStroke(points)
     }
 
+    if (this.moving && this.moving.pointerId === e.pointerId) {
+      const m = this.moving
+      this.moving = null
+      if (m.started) {
+        this.hidden.clear()
+        // O gesto inteiro vira UMA operação; sem deslocamento real, nenhuma.
+        if (!cancelled && (Math.abs(m.dx) >= 0.05 || Math.abs(m.dy) >= 0.05)) {
+          const before = this.selected()
+          this.history.replace(before, translateStrokes(before, m.dx, m.dy))
+        }
+        this.lastNudge = null
+        this.staticDirty = true
+        this.liveDirty = true
+        this.schedule()
+        this.applyCursor()
+        this.emit()
+      }
+    }
+
+    if (this.marquee && this.marquee.pointerId === e.pointerId) {
+      this.marquee = null
+      this.liveDirty = true
+      this.schedule()
+      this.emit()
+    }
+
     if (this.erasing && this.erasing.pointerId === e.pointerId) {
       const hit = [...this.erasing.hit.values()]
       this.erasing = null
@@ -583,9 +980,23 @@ export class SketchEngine {
   }
 
   private discardInProgress(): void {
+    this.cancelSelectGesture()
     if (!this.drawing) return
     this.drawing = null
     this.predicted = []
+    this.liveDirty = true
+    this.schedule()
+  }
+
+  /** Descarta um arraste de seleção/movimento sem gravar nada (a seleção em si fica). */
+  private cancelSelectGesture(): void {
+    this.marquee = null
+    if (this.moving) {
+      this.moving = null
+      this.hidden.clear()
+      this.staticDirty = true
+      this.applyCursor()
+    }
     this.liveDirty = true
     this.schedule()
   }

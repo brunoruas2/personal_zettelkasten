@@ -27,6 +27,17 @@ export interface SketchCanvasHandle {
   fitToContent(): void
   /** Tema de exibição (fundo e cores); não altera a cena nem o histórico. */
   setTheme(theme: SketchTheme): void
+  // Seleção (ferramenta Selecionar)
+  /** Seleciona tudo e passa para a ferramenta Selecionar. */
+  selectAll(): void
+  clearSelection(): void
+  deleteSelection(): void
+  duplicateSelection(): void
+  /** Troca cor/espessura (canônicas) dos selecionados; uma operação de desfazer. */
+  applyColorToSelection(color: string): void
+  applySizeToSelection(size: number): void
+  /** Move a seleção em px de tela (setas). */
+  nudgeSelection(dxPx: number, dyPx: number): void
 }
 
 interface Props {
@@ -95,6 +106,13 @@ export const SketchCanvas = forwardRef<SketchCanvasHandle, Props>(function Sketc
       resetZoom: () => engineRef.current?.resetZoom(),
       fitToContent: () => engineRef.current?.fitToContent(),
       setTheme: (t) => engineRef.current?.setTheme(t),
+      selectAll: () => engineRef.current?.selectAll(),
+      clearSelection: () => engineRef.current?.clearSelection(),
+      deleteSelection: () => engineRef.current?.deleteSelection(),
+      duplicateSelection: () => engineRef.current?.duplicateSelection(),
+      applyColorToSelection: (c) => engineRef.current?.applyColorToSelection(c),
+      applySizeToSelection: (n) => engineRef.current?.applySizeToSelection(n),
+      nudgeSelection: (dx, dy) => engineRef.current?.nudgeSelection(dx, dy),
     }),
     [],
   )

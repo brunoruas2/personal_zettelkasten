@@ -103,7 +103,13 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   const usedFullscreenApiRef = React.useRef(false)
 
   const [phase, setPhase] = React.useState<Phase>({ kind: 'loading' })
-  const [eng, setEng] = React.useState<SketchEngineState>({ canUndo: false, canRedo: false, empty: true, dirty: false })
+  const [eng, setEng] = React.useState<SketchEngineState>({
+    canUndo: false,
+    canRedo: false,
+    empty: true,
+    dirty: false,
+    selectionCount: 0,
+  })
   const [saving, setSaving] = React.useState(false)
   const [notice, setNotice] = React.useState<{ text: string; tone: 'error' | 'warn' } | null>(null)
   const [savedLocally, setSavedLocally] = React.useState(false)
@@ -119,6 +125,8 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   // Refs espelham o estado lido pelos listeners nativos, que não re-registram a cada render.
   const dirtyRef = React.useRef(false)
   dirtyRef.current = eng.dirty
+  const engRef = React.useRef(eng)
+  engRef.current = eng
   const savingRef = React.useRef(false)
   savingRef.current = saving
   const fullscreenRef = React.useRef(false)
@@ -235,21 +243,60 @@ export function DrawingEditorModal({ id, onClose }: Props) {
     if (!root) return
     const onKeyDown = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
-      // Q/W/E: caneta, borracha, mão. Sem modificadores (não colide com Ctrl+E, Alt+E…) e
-      // só com canvas na tela (o desenho legado não tem ferramentas).
-      if (!mod && !e.altKey && !e.shiftKey && !e.repeat && canvasRef.current) {
-        const next: SketchTool | null =
-          e.code === 'KeyQ' ? 'pen' : e.code === 'KeyW' ? 'eraser' : e.code === 'KeyE' ? 'hand' : null
-        if (next) {
+      // Atalhos de tecla simples: sem Ctrl/⌘/Alt (não colidem com Ctrl+E, Alt+E…) e só com
+      // canvas na tela (o desenho legado não tem ferramentas).
+      if (!mod && !e.altKey && canvasRef.current) {
+        // R caneta, E mão, T selecionar, Q borracha (sem Shift, ignorando tecla segurada).
+        if (!e.shiftKey && !e.repeat) {
+          const next: SketchTool | null =
+            e.code === 'KeyR' ? 'pen' : e.code === 'KeyE' ? 'hand' : e.code === 'KeyT' ? 'select' : e.code === 'KeyQ' ? 'eraser' : null
+          if (next) {
+            e.preventDefault()
+            pickToolRef.current(next)
+            e.stopPropagation()
+            return
+          }
+        }
+        // W desfaz, Shift+W refaz (segurar a tecla não desfaz tudo).
+        if (e.code === 'KeyW' && !e.repeat) {
           e.preventDefault()
-          pickToolRef.current(next)
+          if (e.shiftKey) canvasRef.current.redo()
+          else canvasRef.current.undo()
           e.stopPropagation()
           return
+        }
+        // Com seleção: Delete/Backspace apagam, as setas movem (1 px de tela, 10 com Shift).
+        if (engRef.current.selectionCount > 0) {
+          if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault()
+            canvasRef.current.deleteSelection()
+            e.stopPropagation()
+            return
+          }
+          const step = e.shiftKey ? 10 : 1
+          const arrow: [number, number] | null =
+            e.key === 'ArrowLeft' ? [-step, 0] : e.key === 'ArrowRight' ? [step, 0] : e.key === 'ArrowUp' ? [0, -step] : e.key === 'ArrowDown' ? [0, step] : null
+          if (arrow) {
+            e.preventDefault()
+            canvasRef.current.nudgeSelection(arrow[0], arrow[1])
+            e.stopPropagation()
+            return
+          }
         }
       }
       if (e.altKey && e.code === 'Enter') {
         e.preventDefault()
         toggleFullscreenRef.current()
+      } else if (mod && e.code === 'KeyD') {
+        // Duplicar a seleção; sem preventDefault o navegador abriria "favoritar".
+        e.preventDefault()
+        canvasRef.current?.duplicateSelection()
+      } else if (mod && e.code === 'KeyA') {
+        e.preventDefault()
+        if (canvasRef.current) {
+          pickToolRef.current('select')
+          canvasRef.current.selectAll()
+        }
       } else if (mod && e.code === 'KeyZ') {
         e.preventDefault()
         if (e.shiftKey) canvasRef.current?.redo()
@@ -273,7 +320,9 @@ export function DrawingEditorModal({ id, onClose }: Props) {
         canvasRef.current?.setSpaceDown(true)
       } else if (e.key === 'Escape' && !e.defaultPrevented) {
         // Com fullscreen do navegador o Escape nem chega aqui: o navegador o consome.
-        if (!document.fullscreenElement && !savingRef.current) requestCloseRef.current('cancelled')
+        // Com seleção, o primeiro Esc só a limpa; o modal fecha no seguinte.
+        if (engRef.current.selectionCount > 0) canvasRef.current?.clearSelection()
+        else if (!document.fullscreenElement && !savingRef.current) requestCloseRef.current('cancelled')
       }
       e.stopPropagation()
     }
@@ -343,13 +392,19 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   pickToolRef.current = pickTool
   const pickColor = (c: string) => {
     setColor(c)
-    setTool('pen')
     canvasRef.current?.setColor(c)
+    if (eng.selectionCount > 0) {
+      // Há seleção: a cor vai para ela (e também para as próximas canetas), sem sair da seleção.
+      canvasRef.current?.applyColorToSelection(c)
+      return
+    }
+    setTool('pen')
     canvasRef.current?.setTool('pen')
   }
   const pickSize = (n: number) => {
     setSize(n)
     canvasRef.current?.setSize(n)
+    if (eng.selectionCount > 0) canvasRef.current?.applySizeToSelection(n)
   }
   const togglePen = () => {
     const next = !penMode
@@ -409,16 +464,33 @@ export function DrawingEditorModal({ id, onClose }: Props) {
           {ready && (
             <>
               <div className="flex items-center gap-1" role="group" aria-label="Ferramenta">
-                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('pen')} aria-pressed={tool === 'pen'} title="Caneta (Q)" className={`${btn} ${tool === 'pen' ? btnOn : ''}`}>
+                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('pen')} aria-pressed={tool === 'pen'} title="Caneta (R)" className={`${btn} ${tool === 'pen' ? btnOn : ''}`}>
                   ✏️<span className="hidden sm:inline">Caneta</span>
                 </button>
-                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('eraser')} aria-pressed={tool === 'eraser'} title="Borracha (W): apaga o traço inteiro" className={`${btn} ${tool === 'eraser' ? btnOn : ''}`}>
+                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('eraser')} aria-pressed={tool === 'eraser'} title="Borracha (Q): apaga o traço inteiro" className={`${btn} ${tool === 'eraser' ? btnOn : ''}`}>
                   🧽<span className="hidden sm:inline">Borracha</span>
                 </button>
                 <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('hand')} aria-pressed={tool === 'hand'} title="Mão (E): arrastar para mover a vista" className={`${btn} ${tool === 'hand' ? btnOn : ''}`}>
                   ✋<span className="hidden sm:inline">Mão</span>
                 </button>
+                <button type="button" onMouseDown={keepFocus} onClick={() => pickTool('select')} aria-pressed={tool === 'select'} title="Selecionar (T): arraste uma área ou clique num traço" className={`${btn} ${tool === 'select' ? btnOn : ''}`}>
+                  ⬚<span className="hidden sm:inline">Selecionar</span>
+                </button>
               </div>
+
+              {eng.selectionCount > 0 && (
+                <div className="flex items-center gap-1" role="group" aria-label="Seleção">
+                  <span className="px-1 text-xs text-zinc-500 dark:text-zinc-400" aria-live="polite">
+                    {eng.selectionCount} {eng.selectionCount === 1 ? 'selecionado' : 'selecionados'}
+                  </span>
+                  <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.duplicateSelection()} title="Duplicar a seleção (Ctrl+D)" aria-label="Duplicar a seleção" className={btn}>
+                    ⧉<span className="hidden sm:inline">Duplicar</span>
+                  </button>
+                  <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.deleteSelection()} title="Excluir a seleção (Delete)" aria-label="Excluir a seleção" className={btn}>
+                    🗑<span className="hidden sm:inline">Excluir</span>
+                  </button>
+                </div>
+              )}
 
               <div className="flex items-center gap-1" role="group" aria-label="Cor">
                 {SKETCH_COLORS.map((c) => (
@@ -454,8 +526,8 @@ export function DrawingEditorModal({ id, onClose }: Props) {
               </div>
 
               <div className="flex items-center gap-1" role="group" aria-label="Histórico">
-                <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.undo()} disabled={!eng.canUndo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" className={btn}>↶</button>
-                <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.redo()} disabled={!eng.canRedo} title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer" className={btn}>↷</button>
+                <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.undo()} disabled={!eng.canUndo} title="Desfazer (W ou Ctrl+Z)" aria-label="Desfazer" className={btn}>↶</button>
+                <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.redo()} disabled={!eng.canRedo} title="Refazer (Shift+W ou Ctrl+Shift+Z)" aria-label="Refazer" className={btn}>↷</button>
                 <button type="button" onMouseDown={keepFocus} onClick={clearAll} disabled={eng.empty} title="Limpar tudo" aria-label="Limpar" className={btn}>🗑</button>
               </div>
 

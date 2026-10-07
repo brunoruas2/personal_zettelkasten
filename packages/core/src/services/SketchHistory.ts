@@ -6,7 +6,16 @@ type Op =
   | { type: 'add'; stroke: Stroke }
   // `index` é a posição original (na ordem de pintura) para desfazer restaurar no mesmo lugar.
   | { type: 'erase'; removed: { stroke: Stroke; index: number }[] }
-  | { type: 'clear'; removed: Stroke[] };
+  | { type: 'clear'; removed: Stroke[] }
+  // Troca por id (mover, recolorir, espessura): `list.map` mantém a posição de cada
+  // traço na ordem de pintura mesmo que outras operações tenham mexido nos índices.
+  | { type: 'replace'; before: Stroke[]; after: Stroke[] }
+  | { type: 'addMany'; strokes: Stroke[] };
+
+function swapById(list: Stroke[], to: readonly Stroke[]): Stroke[] {
+  const byId = new Map(to.map((s) => [s.id, s]));
+  return list.map((s) => byId.get(s.id) ?? s);
+}
 
 /**
  * Traços da cena + pilhas de desfazer/refazer. Puro: o editor chama `add`,
@@ -61,6 +70,30 @@ export class SketchHistory {
     return true;
   }
 
+  /**
+   * Troca traços por versões novas com o MESMO id (mover, recolorir, espessura). Não
+   * cria operação se as listas têm tamanhos diferentes, os ids não batem entre
+   * `before` e `after`, ou algum não existe na cena.
+   */
+  replace(before: readonly Stroke[], after: readonly Stroke[]): boolean {
+    if (before.length === 0 || before.length !== after.length) return false;
+    const present = new Set(this.list.map((s) => s.id));
+    for (let i = 0; i < before.length; i++) {
+      if (before[i].id !== after[i].id || !present.has(before[i].id)) return false;
+    }
+    this.list = swapById(this.list, after);
+    this.push({ type: 'replace', before: [...before], after: [...after] });
+    return true;
+  }
+
+  /** Acrescenta vários traços de uma vez (duplicar); um desfazer remove todos. */
+  addMany(strokes: readonly Stroke[]): boolean {
+    if (strokes.length === 0) return false;
+    this.list.push(...strokes);
+    this.push({ type: 'addMany', strokes: [...strokes] });
+    return true;
+  }
+
   clear(): boolean {
     if (this.list.length === 0) return false;
     const removed = this.list;
@@ -77,6 +110,11 @@ export class SketchHistory {
     } else if (op.type === 'erase') {
       // Em ordem crescente de índice: cada splice devolve o traço à posição original.
       for (const { stroke, index } of op.removed) this.list.splice(index, 0, stroke);
+    } else if (op.type === 'replace') {
+      this.list = swapById(this.list, op.before);
+    } else if (op.type === 'addMany') {
+      const ids = new Set(op.strokes.map((s) => s.id));
+      this.list = this.list.filter((s) => !ids.has(s.id));
     } else {
       this.list = [...op.removed];
     }
@@ -93,6 +131,10 @@ export class SketchHistory {
     } else if (op.type === 'erase') {
       const ids = new Set(op.removed.map((r) => r.stroke.id));
       this.list = this.list.filter((s) => !ids.has(s.id));
+    } else if (op.type === 'replace') {
+      this.list = swapById(this.list, op.after);
+    } else if (op.type === 'addMany') {
+      this.list.push(...op.strokes);
     } else {
       this.list = [];
     }
