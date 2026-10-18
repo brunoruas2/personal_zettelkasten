@@ -22,21 +22,19 @@ function usesRealPressure(points: readonly SketchPoint[]): boolean {
 }
 
 /**
- * Polígono do outline de um traço. `live` = traço ainda em andamento (a ponta
- * não é finalizada); confirmado usa `last: true`. Os mesmos outlines alimentam o
- * canvas e o preview SVG, então o que se vê no editor é o que fica salvo.
+ * Polígono do outline de um traço. Os mesmos outlines alimentam o canvas e o
+ * preview SVG, então o que se vê no editor é o que fica salvo. `last: true`
+ * também no traço em andamento: sem ele o `streamline` deixa a ponta ~metade do
+ * caminho atrás do cursor, e a tinta não acompanha a caneta.
  */
-export function strokeOutline(
-  stroke: Pick<Stroke, 'points' | 'size'>,
-  live = false,
-): number[][] {
+export function strokeOutline(stroke: Pick<Stroke, 'points' | 'size'>): number[][] {
   return getStroke(stroke.points as unknown as number[][], {
     size: stroke.size,
     thinning: 0.5,
     smoothing: 0.5,
     streamline: 0.5,
     simulatePressure: !usesRealPressure(stroke.points),
-    last: !live,
+    last: true,
   })
 }
 
@@ -55,7 +53,7 @@ export function strokePath2D(stroke: Stroke): Path2D {
 
 /** Path2D do traço em andamento; recalculado a cada frame. */
 export function livePath2D(stroke: Pick<Stroke, 'points' | 'size'>): Path2D {
-  return new Path2D(outlineToSvgPath(strokeOutline(stroke, true)))
+  return new Path2D(outlineToSvgPath(strokeOutline(stroke)))
 }
 
 export interface SketchSvg {

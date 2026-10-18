@@ -72,6 +72,19 @@ function brandRgb(): [number, number, number] {
   return [124, 58, 237]
 }
 
+/** Acima disto os traços pendentes são consolidados sem esperar o ocioso, para o `drawLive` não crescer. */
+const PENDING_MAX = 20
+/** Prazo máximo do `requestIdleCallback` (ms) antes de consolidar mesmo ocupado. */
+const IDLE_TIMEOUT_MS = 1000
+
+function readPerfFlag(): boolean {
+  try {
+    return localStorage.getItem('zettel_sketch_perf') === '1'
+  } catch {
+    return false
+  }
+}
+
 type TouchPoint = { x: number; y: number; type: string }
 
 const boundsCache = new WeakMap<Stroke, Bounds>()
@@ -143,6 +156,14 @@ export class SketchEngine {
   } | null = null
   private lastNudge: { key: string; time: number; version: number; before: Stroke[]; dx: number; dy: number } | null = null
   private brand = brandRgb()
+
+  // Traços já no histórico mas ainda não pintados na estática: ficam na camada viva até a
+  // consolidação ociosa, para que o commit não custe uma escrita no bitmap grande entre dois traços.
+  private pending: Stroke[] = []
+  private cancelIdle: (() => void) | null = null
+  // Medição opcional (flag `zettel_sketch_perf`): pointerdown → fim do primeiro drawLive.
+  private perf = readPerfFlag()
+  private perfDownAt: number | null = null
 
   private raf = 0
   private staticDirty = true
@@ -459,6 +480,8 @@ export class SketchEngine {
 
   destroy(): void {
     cancelAnimationFrame(this.raf)
+    this.cancelIdle?.()
+    this.cancelIdle = null
     this.resizeObserver.disconnect()
     window.removeEventListener('resize', this.resize)
     const c = this.container
@@ -544,6 +567,11 @@ export class SketchEngine {
     this.raf = 0
     if (this.staticDirty) {
       this.drawStatic()
+      // O redesenho completo parte do histórico, que já contém os pendentes.
+      if (this.pending.length > 0) {
+        this.pending = []
+        this.liveDirty = true
+      }
       // Pan/zoom/resize mudam a conta mundo→tela: a caixa e o retângulo de seleção (que vivem
       // na camada viva) têm de ser reposicionados junto.
       if (this.selection.size > 0 || this.marquee) this.liveDirty = true
@@ -580,6 +608,15 @@ export class SketchEngine {
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, this.liveCanvas.width, this.liveCanvas.height)
 
+    if (this.pending.length > 0) {
+      this.applyTransform(ctx)
+      for (const s of this.pending) {
+        if (this.hidden.has(s.id)) continue
+        ctx.fillStyle = themeColor(s.color, this.theme)
+        ctx.fill(strokePath2D(s))
+      }
+    }
+
     if (this.drawing) {
       this.applyTransform(ctx)
       // A ponta prevista só existe aqui, na camada viva: nunca entra no traço gravado.
@@ -602,6 +639,11 @@ export class SketchEngine {
     }
 
     if (this.selection.size > 0 || this.marquee) this.drawSelectionOverlay(ctx, shift)
+
+    if (this.perfDownAt !== null) {
+      console.debug(`[sketch-perf] pointerdown → drawLive: ${(performance.now() - this.perfDownAt).toFixed(1)} ms`)
+      this.perfDownAt = null
+    }
   }
 
   /** Caixa tracejada da seleção e retângulo de seleção, em px de tela (espessura constante em qualquer zoom). */
@@ -700,6 +742,7 @@ export class SketchEngine {
     }
     this.predicted = []
     this.liveDirty = true
+    if (this.perf) this.perfDownAt = performance.now()
     this.schedule()
   }
 
@@ -882,11 +925,50 @@ export class SketchEngine {
   private commitStroke(points: SketchPoint[]): void {
     const stroke: Stroke = { id: newStrokeId(), tool: 'pen', color: this.color, size: this.size, points: [...points] }
     this.history.add(stroke)
-    // O traço novo é o último da ordem de pintura: basta acrescentá-lo à estática.
-    this.applyTransform(this.sctx)
-    this.sctx.fillStyle = themeColor(stroke.color, this.theme)
-    this.sctx.fill(strokePath2D(stroke))
+    // O traço novo é o último da ordem de pintura. Não vai à estática agora: fica na viva
+    // até a consolidação, para não custar uma escrita no bitmap grande antes do próximo traço.
+    this.pending.push(stroke)
+    this.liveDirty = true
+    this.schedule()
+    if (this.pending.length >= PENDING_MAX) this.consolidate()
+    else this.scheduleConsolidate()
     this.emit()
+  }
+
+  private scheduleConsolidate(): void {
+    if (this.cancelIdle) return
+    const run = () => {
+      this.cancelIdle = null
+      this.consolidate()
+    }
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(run, { timeout: IDLE_TIMEOUT_MS })
+      this.cancelIdle = () => cancelIdleCallback(id)
+    } else {
+      const id = window.setTimeout(run, 250)
+      this.cancelIdle = () => window.clearTimeout(id)
+    }
+  }
+
+  /** Pinta os pendentes na estática de uma vez. Nunca durante um traço: reagenda para depois. */
+  private consolidate(): void {
+    if (this.drawing) {
+      this.scheduleConsolidate()
+      return
+    }
+    if (this.pending.length === 0) return
+    const t0 = this.perf ? performance.now() : 0
+    const ctx = this.sctx
+    this.applyTransform(ctx)
+    for (const s of this.pending) {
+      if (this.hidden.has(s.id)) continue
+      ctx.fillStyle = themeColor(s.color, this.theme)
+      ctx.fill(strokePath2D(s))
+    }
+    this.pending = []
+    this.liveDirty = true
+    this.schedule()
+    if (this.perf) console.debug(`[sketch-perf] consolidate: ${(performance.now() - t0).toFixed(1)} ms`)
   }
 
   private onPointerUp = (e: PointerEvent): void => {
