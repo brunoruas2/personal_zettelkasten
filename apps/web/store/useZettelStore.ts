@@ -6,7 +6,6 @@ import type { ZettelController } from '@zettelkasten/core';
 import { syncService } from '../lib/sync'
 import { searchZettels } from '../lib/searchZettels';
 import { getNodeColorRules, saveNodeColorRules, type NodeColorRule } from '../lib/graphColors';
-import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
 import { placeMissingAndQueue, positionStore, setManualPosition } from '../lib/positionSync';
 import { downloadBodies } from '../lib/bodySync';
 import { clearBodyCache, invalidateBody, setCachedBody } from '../lib/bodyCache';
@@ -91,7 +90,6 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     // não mexe nela.
     if (opts?.position) await setManualPosition(zettel.id, opts.position.x, opts.position.y);
     await loadAll();
-    triggerGraphLayoutWorker();
     // Vaga na galáxia perto dos vizinhos de link — vale offline (fica pendente).
     void placeMissingAndQueue(controller);
     // Push to server in background — enqueued if offline
@@ -131,7 +129,6 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     await positionStore.delete(id);
     invalidateBody(id);
     await loadAll();
-    triggerGraphLayoutWorker();
     syncService.push({ op: 'delete', payload: { id } }).catch(() => {});
   },
 

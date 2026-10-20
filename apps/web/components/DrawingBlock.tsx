@@ -16,10 +16,9 @@ export function zkDrawingId(src: string): string {
 }
 
 /**
- * Quem sabe abrir o editor de desenho fornece isto por context (como
- * `WikiLinkActionContext`), sem atravessar os call sites de `renderInline`.
- * Sem provider — `SearchPalette`, preview de filhos — o desenho é só leitura e
- * clicar nele não abre nada.
+ * Quem sabe abrir o editor de desenho fornece isto por context, sem atravessar
+ * os call sites de `renderInline`. Sem provider — card em leitura, prévia da
+ * busca, export PDF — o desenho é só leitura e clicar nele não abre nada.
  */
 export const DrawingEditContext = React.createContext<((id: string) => void) | null>(null)
 

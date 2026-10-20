@@ -7,16 +7,15 @@
  *
  * What is being tested:
  *  1. The service worker activates and takes control of the page.
- *  2. Navigation requests are cached in ROUTES_CACHE on first online visit.
- *  3. When offline, navigating to a cached page does NOT throw a network error
- *     (the SW must serve HTML from cache, not Response.error() or a broken redirect).
- *  4. When offline, the app shell loads for uncached routes (no native iOS error).
- *  5. After a full online session with real data, the zettel detail page renders
- *     its content from IndexedDB when offline.
+ *  2. Offline, the galaxy (`/`, the only app route) loads from the shell cache.
+ *  3. Offline, an old link (`/zettel/:id`) falls back to the shell instead of
+ *     a native network error, and the legacy per-route cache is gone.
+ *  4. After an online session, the galaxy renders the zettel's card from
+ *     IndexedDB when offline (`/?z=<id>` flies to it).
  *
  * The e2e/mock-api.mjs server handles Go API calls (port 3001) so that:
  *  - AuthProvider can authenticate (POST /api/auth/refresh)
- *  - SyncService can pull the test zettel (GET /api/zettels)
+ *  - SyncService can pull the test zettel (GET /api/zettels, /bodies, /positions)
  *  - Service worker Workbox routes for /api/* get real 200 responses
  */
 
@@ -82,22 +81,20 @@ test.describe('Service Worker', () => {
 });
 
 test.describe('Offline navigation', () => {
-  test('home page loads from SW cache when offline', async ({ page, context }) => {
+  test('galaxy loads from the shell cache when offline', async ({ page, context }) => {
     await bypassMiddleware(context);
     await page.goto('/');
     await waitForSwController(page);
 
-    // Go offline and hard-reload
     await context.setOffline(true);
     await page.reload();
 
-    // Page should load from SW cache — no network error
     await expect(page.locator('body')).toBeVisible({ timeout: 15_000 });
     const title = await page.title();
     expect(title).not.toMatch(/ERR_|not available|no internet/i);
   });
 
-  test('cached zettel page loads without network error when offline', async ({
+  test('old zettel link falls back to the shell (not a native error) when offline', async ({
     page,
     context,
   }) => {
@@ -105,79 +102,34 @@ test.describe('Offline navigation', () => {
     await page.goto('/');
     await waitForSwController(page);
 
-    const zettelUrl = `/zettel/${TEST_ZETTEL_ID}`;
-
-    // Manually put the zettel HTML into ROUTES_CACHE from the page context.
-    // This simulates what cacheZettelRoutes() does via the SW message handler,
-    // without relying on async timing.
-    const cached = await page.evaluate(async (url) => {
-      try {
-        const response = await fetch(url);
-        if (!response.ok) return false;
-        const cache = await caches.open('zettelkasten-routes-v1');
-        await cache.put(url, response.clone());
-        return true;
-      } catch {
-        return false;
-      }
-    }, zettelUrl);
-
-    expect(cached, 'Should be able to cache the zettel route while online').toBe(true);
+    // The per-route cache of the old pages must not exist anymore.
+    const hasLegacyCache = await page.evaluate(() => caches.has('zettelkasten-routes-v1'));
+    expect(hasLegacyCache).toBe(false);
 
     await context.setOffline(true);
 
-    // Hard navigation — same as window.location.href = zettelUrl
     let navError: Error | null = null;
     try {
-      await page.goto(zettelUrl);
+      await page.goto(`/zettel/${TEST_ZETTEL_ID}`);
     } catch (e) {
       navError = e as Error;
     }
 
-    // SW must serve from ROUTES_CACHE — no network error allowed
-    expect(navError, 'Navigation should NOT throw a network error offline').toBeNull();
+    expect(navError, 'Navigation to an old route should NOT throw').toBeNull();
     await expect(page.locator('body')).toBeVisible();
-
     const bodyText = await page.locator('body').textContent();
     expect(bodyText).not.toMatch(/ERR_INTERNET_DISCONNECTED|net::ERR/i);
-  });
-
-  test('uncached zettel page falls back to app shell (not native error) when offline', async ({
-    page,
-    context,
-  }) => {
-    await bypassMiddleware(context);
-    await page.goto('/');
-    await waitForSwController(page);
-
-    // Navigate to a route that was NEVER cached
-    const unknownUrl = `/zettel/nevercached99999`;
-
-    await context.setOffline(true);
-
-    let navError: Error | null = null;
-    try {
-      await page.goto(unknownUrl);
-    } catch (e) {
-      navError = e as Error;
-    }
-
-    // SW must serve the app shell (not Response.error() and not a broken redirect)
-    expect(navError, 'Navigation to uncached route should NOT throw').toBeNull();
-    await expect(page.locator('body')).toBeVisible();
   });
 });
 
 test.describe('Full offline flow', () => {
-  test('zettel content renders from IndexedDB when offline', async ({ page, context }) => {
-    // --- Online phase: authenticate, sync, cache ---
+  test('zettel card renders from IndexedDB when offline', async ({ page, context }) => {
+    // --- Online phase: authenticate, sync index, positions and bodies ---
     await bypassMiddleware(context);
     await page.goto('/');
     await waitForSwController(page);
     await waitForAppReady(page);
 
-    // Wait until pullAll() has completed: it sets zettel_last_sync_at to a
-    // non-zero timestamp after successfully writing server data to IndexedDB.
     await page.waitForFunction(
       () => {
         const v = localStorage.getItem('zettel_last_sync_at');
@@ -186,54 +138,57 @@ test.describe('Full offline flow', () => {
       { timeout: 30_000 },
     );
 
-    // Verify the zettel is in IndexedDB.
-    // Open without specifying a version number — Dexie uses internal versioning
-    // (v10+), so `open('zettelkasten', 1)` would error on a version mismatch.
-    const inDb = await page.evaluate(async (id) => {
-      return new Promise<boolean>((resolve) => {
+    // Index, body and position in IndexedDB. Open without a version number —
+    // Dexie uses internal versioning.
+    const stored = await page.evaluate(async (id) => {
+      const db = await new Promise<IDBDatabase | null>((resolve) => {
         const req = indexedDB.open('zettelkasten');
-        req.onsuccess = (e) => {
-          const db = (e.target as IDBOpenDBRequest).result;
-          if (!db.objectStoreNames.contains('zettels')) { resolve(false); return; }
-          const tx = db.transaction('zettels', 'readonly');
-          const getReq = tx.objectStore('zettels').get(id);
-          getReq.onsuccess = () => resolve(!!getReq.result);
-          getReq.onerror = () => resolve(false);
-        };
-        req.onerror = () => resolve(false);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
       });
+      if (!db) return { meta: false, body: false, position: false };
+      const has = (store: string) =>
+        new Promise<boolean>((resolve) => {
+          if (!db.objectStoreNames.contains(store)) return resolve(false);
+          const get = db.transaction(store, 'readonly').objectStore(store).get(id);
+          get.onsuccess = () => resolve(!!get.result);
+          get.onerror = () => resolve(false);
+        });
+      return { meta: await has('zettels'), body: await has('bodies'), position: await has('positions') };
     }, TEST_ZETTEL_ID);
 
-    expect(inDb, `Zettel ${TEST_ZETTEL_ID} should be in IndexedDB after pull`).toBe(true);
-
-    const zettelUrl = `/zettel/${TEST_ZETTEL_ID}`;
-
-    // Wait until cacheZettelRoutes() has put the route in the cache.
-    // This verifies the auto-caching after login without visiting the page.
-    await page.waitForFunction(
-      async (url) => {
-        const hit = await caches.match(url, { cacheName: 'zettelkasten-routes-v1' });
-        return !!hit;
-      },
-      zettelUrl,
-      { timeout: 30_000 },
-    );
+    expect(stored.meta, 'meta should be in IndexedDB').toBe(true);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(async (id) => {
+            const db = await new Promise<IDBDatabase>((resolve) => {
+              const req = indexedDB.open('zettelkasten');
+              req.onsuccess = () => resolve(req.result);
+            });
+            return new Promise<boolean>((resolve) => {
+              const get = db.transaction('bodies', 'readonly').objectStore('bodies').get(id);
+              get.onsuccess = () => resolve(!!get.result);
+              get.onerror = () => resolve(false);
+            });
+          }, TEST_ZETTEL_ID),
+        { timeout: 30_000 },
+      )
+      .toBe(true);
 
     // --- Offline phase ---
     await context.setOffline(true);
 
     let navError: Error | null = null;
     try {
-      await page.goto(zettelUrl);
+      await page.goto(`/?z=${TEST_ZETTEL_ID}`);
     } catch (e) {
       navError = e as Error;
     }
-
     expect(navError, 'Offline navigation should not throw').toBeNull();
-    await expect(page.locator('body')).toBeVisible();
 
-    // Zettel title must render from IndexedDB
-    await expect(page.locator('h1', { hasText: 'Zettel Offline Test' }))
+    // `?z=` lands at card zoom: the card title renders from IndexedDB.
+    await expect(page.locator('[data-galaxy-card] h3', { hasText: 'Zettel Offline Test' }))
       .toBeVisible({ timeout: 15_000 });
   });
 });

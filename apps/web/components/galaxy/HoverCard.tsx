@@ -32,7 +32,7 @@ export function HoverCard({
   x,
   y,
   onApproach,
-  onOpen,
+  onEdit,
   onFocus,
   onPointerEnter,
   onPointerLeave,
@@ -42,7 +42,7 @@ export function HoverCard({
   x: number;
   y: number;
   onApproach: () => void;
-  onOpen: () => void;
+  onEdit: () => void;
   onFocus: () => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
@@ -85,10 +85,10 @@ export function HoverCard({
         </button>
         <button
           type="button"
-          onClick={onOpen}
+          onClick={onEdit}
           className="flex-1 rounded-lg bg-brand px-2 py-1.5 text-xs font-medium text-white hover:opacity-90"
         >
-          Abrir
+          Editar
         </button>
       </div>
     </div>

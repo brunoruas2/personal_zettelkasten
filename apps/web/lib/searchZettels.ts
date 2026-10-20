@@ -11,8 +11,8 @@ import { serverZettelToMeta } from './sync';
  * lista global não guarda corpos.
  *
  * Não escreve em estado nenhum — recebe o controller, devolve os zettels. É o
- * que permite a `SearchPalette` buscar sem tocar em `useZettelStore.zettels`,
- * enquanto a busca da Sidebar/home continua escrevendo na lista global.
+ * que permite a busca da galáxia buscar sem tocar em `useZettelStore.zettels`
+ * (o índice que a galáxia desenha).
  */
 export async function searchZettels(
   controller: ZettelController,

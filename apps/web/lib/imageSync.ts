@@ -181,7 +181,7 @@ export function setPrefetchEnabled(enabled: boolean): void {
 /**
  * Baixa em background as imagens que faltam localmente, para que um zettel
  * nunca visitado neste device abra offline com imagem.
- * Mesmo padrão fire-and-forget do cacheZettelRoutes: falha é silenciosa.
+ * Fire-and-forget: falha é silenciosa.
  */
 export async function prefetchImages(): Promise<void> {
   if (!isPrefetchEnabled()) return

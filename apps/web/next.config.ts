@@ -14,6 +14,20 @@ const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
   // Proxy /api/* to the Go backend — same pattern used by Nginx in production.
   // The browser always talks to the same origin, so no CORS needed.
+  // Rotas antigas (antes da galáxia virar a tela única): links salvos levam
+  // à galáxia. Não permanentes — não ficam gravados no cache do navegador.
+  async redirects() {
+    return [
+      { source: '/zettel/new', destination: '/', permanent: false },
+      { source: '/zettel/:id/edit', destination: '/?z=:id', permanent: false },
+      { source: '/zettel/:id', destination: '/?z=:id', permanent: false },
+      { source: '/graph', destination: '/', permanent: false },
+      { source: '/settings', destination: '/', permanent: false },
+      { source: '/tags', destination: '/', permanent: false },
+      { source: '/passkeys', destination: '/', permanent: false },
+      { source: '/dev/:path*', destination: '/', permanent: false },
+    ];
+  },
   async rewrites() {
     return [
       {

@@ -11,7 +11,8 @@ const HEADER_RESERVE = 96;
 
 export interface CardActions {
   onLink: (title: string) => void;
-  onOpen: (id: string) => void;
+  /** Exportar PDF (só o zettel ou com a subárvore). */
+  onExport: (id: string) => void;
   onHover: (idx: number) => void;
   /** Clique no corpo (fora de links): entrar em edição. */
   onRequestEdit: (id: string) => void;
@@ -186,7 +187,7 @@ export const GalaxyCard = memo(function GalaxyCard({
                   onMouseLeave={() => setMenuOpen(false)}
                 >
                   <MenuItem label="Focar" onClick={() => { setMenuOpen(false); actions.onFocus(meta.id); }} />
-                  <MenuItem label="Abrir na página" onClick={() => { setMenuOpen(false); actions.onOpen(meta.id); }} />
+                  <MenuItem label="Exportar PDF" onClick={() => { setMenuOpen(false); actions.onExport(meta.id); }} />
                   <MenuItem label="Apagar" danger onClick={() => { setMenuOpen(false); actions.onDelete(meta.id); }} />
                 </div>
               )}

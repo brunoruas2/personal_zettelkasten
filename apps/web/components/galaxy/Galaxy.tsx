@@ -14,7 +14,9 @@ import { HoverCard } from './HoverCard';
 import { CardLayer } from './CardLayer';
 import type { CardActions } from './GalaxyCard';
 import type { InplaceEditorHandle, SaveStatus } from './InplaceEditor';
-import { MobileEditorOverlay } from './MobileEditorOverlay';
+import { FullscreenEditor } from './FullscreenEditor';
+import { ExportScopeModal } from '../ExportScopeModal';
+import { pushRecent } from '../../lib/recentZettels';
 import { DeleteZettelModal } from './DeleteZettelModal';
 import { FocusPanel, type FocusItem } from './FocusPanel';
 import { GalaxyTopBar, ZoomControls, type MenuAction } from './GalaxyTopBar';
@@ -23,7 +25,6 @@ import { GalaxySearch, type SearchFilters } from './GalaxySearch';
 import { SettingsPanel } from '../panels/SettingsPanel';
 import { TagsPanel } from '../panels/TagsPanel';
 import { PasskeysPanel } from '../panels/PasskeysPanel';
-import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 
 type Modal = 'settings' | 'tags' | 'passkeys' | null;
 
@@ -73,7 +74,6 @@ export function Galaxy() {
   const links = useZettelStore((s) => s.links);
   const createZettel = useZettelStore((s) => s.createZettel);
   const deleteZettel = useZettelStore((s) => s.deleteZettel);
-  const offlineRouter = useOfflineRouter();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GalaxyEngine | null>(null);
@@ -99,7 +99,9 @@ export function Galaxy() {
   // Edição
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingZettel, setEditingZettel] = useState<Zettel | null>(null);
-  const [mobileEdit, setMobileEdit] = useState<Zettel | null>(null);
+  /** Editor em tela cheia: celular, ou zettel sem lugar em qualquer dispositivo. */
+  const [fullscreen, setFullscreen] = useState<{ zettel: Zettel; variant: 'card' | 'mobile' } | null>(null);
+  const [exportId, setExportId] = useState<string | null>(null);
   const [autoFocusTitle, setAutoFocusTitle] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const editorRef = useRef<InplaceEditorHandle>(null);
@@ -126,19 +128,12 @@ export function Galaxy() {
     if (s === 'saved') savedTimer.current = setTimeout(() => setSaveStatus('idle'), SAVED_LINGER_MS);
   }, []);
 
-  const open = useCallback(
-    (id: string) => {
-      setZParam(id);
-      offlineRouter.push(`/zettel/${id}`);
-    },
-    [offlineRouter],
-  );
-
   const flyTo = useCallback((id: string, minScale = FLY_MIN_SCALE) => {
     const idx = dataRef.current.indexById.get(id);
     if (idx === undefined) return;
     engineRef.current?.flyTo(idx, true, minScale);
     setZParam(id);
+    pushRecent(id);
     // No nível de cards o destaque do voo é o contorno do próprio card.
     setHighlightId(id);
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
@@ -157,9 +152,10 @@ export function Galaxy() {
 
   const startEdit = useCallback(
     async (zettel: Zettel, opts: { titleFocus?: boolean; mobile?: boolean } = {}) => {
+      pushRecent(zettel.id);
       if (opts.mobile) {
         setAutoFocusTitle(!!opts.titleFocus);
-        setMobileEdit(zettel);
+        setFullscreen({ zettel, variant: 'mobile' });
         return;
       }
       flyTo(zettel.id, EDIT_SCALE);
@@ -183,6 +179,22 @@ export function Galaxy() {
       await startEdit(zettel, { mobile: isMobileDevice() });
     },
     [exitEdit, showToast, startEdit],
+  );
+
+  /** Zettel sem lugar (ou oculto): não há card — abre o editor em tela cheia. */
+  const openFullscreen = useCallback(
+    async (id: string) => {
+      await exitEdit();
+      const { zettel, stale } = await loadZettel(id);
+      if (!zettel) return;
+      if (stale) {
+        showToast('A versão mais recente deste zettel ainda não foi baixada. Conecte-se para editar.');
+        return;
+      }
+      pushRecent(id);
+      setFullscreen({ zettel, variant: isMobileDevice() ? 'mobile' : 'card' });
+    },
+    [exitEdit, showToast],
   );
 
   // --- foco ---
@@ -257,14 +269,14 @@ export function Galaxy() {
   /** `[[novo]]` no editor: cria ao lado do card em edição, sem mudar a edição. */
   const createLink = useCallback(
     async (title: string) => {
-      const sourceId = editingIdRef.current ?? mobileEdit?.id ?? null;
+      const sourceId = editingIdRef.current ?? fullscreen?.zettel.id ?? null;
       const idx = sourceId ? dataRef.current.indexById.get(sourceId) : undefined;
       const cam = engineRef.current?.getCamera();
       const anchor = idx !== undefined ? { x: dataRef.current.xs[idx], y: dataRef.current.ys[idx] } : cam ? { x: cam.x, y: cam.y } : { x: 0, y: 0 };
       const position = await snapPosition(anchor);
       await createZettel({ title, body: '', tags: [] }, { position });
     },
-    [createZettel, mobileEdit],
+    [createZettel, fullscreen],
   );
 
   // --- apagar ---
@@ -299,7 +311,7 @@ export function Galaxy() {
       const id = idByTitleRef.current.get(title.trim().toLowerCase());
       if (id) flyTo(id);
     },
-    onOpen: open,
+    onExport: (id) => setExportId(id),
     onHover: (idx) => engineRef.current?.setHoverFromCard(idx),
     onRequestEdit: (id) => void requestEdit(id),
     onFocus: enterFocus,
@@ -315,7 +327,7 @@ export function Galaxy() {
   const actions = useMemo<CardActions>(
     () => ({
       onLink: (t) => actionsRef.current!.onLink(t),
-      onOpen: (id) => actionsRef.current!.onOpen(id),
+      onExport: (id) => actionsRef.current!.onExport(id),
       onHover: (i) => actionsRef.current!.onHover(i),
       onRequestEdit: (id) => actionsRef.current!.onRequestEdit(id),
       onFocus: (id) => actionsRef.current!.onFocus(id),
@@ -352,10 +364,6 @@ export function Galaxy() {
       onSelect: (idx) => {
         setPinnedIdx(idx);
         engine.setPinned(idx);
-      },
-      onOpen: (idx) => {
-        const id = dataRef.current.ids[idx];
-        if (id) open(id);
       },
       onBackgroundTap: () => {
         setPinnedIdx(-1);
@@ -428,7 +436,7 @@ export function Galaxy() {
   }, [data, showToast]);
 
   // Overlays desligam pan por teclado/atalhos do canvas.
-  const overlayOpen = modal !== null || search !== null || deleteMeta !== null || mobileEdit !== null;
+  const overlayOpen = modal !== null || search !== null || deleteMeta !== null || fullscreen !== null || exportId !== null;
   useEffect(() => {
     engineRef.current?.setInputEnabled(!overlayOpen);
   }, [overlayOpen]);
@@ -527,7 +535,11 @@ export function Galaxy() {
             if (pinnedIdx < 0) setHoverIdx(-1);
           }}
           onApproach={() => flyTo(cardMeta.id)}
-          onOpen={() => open(cardMeta.id)}
+          onEdit={() => {
+            setHoverIdx(-1);
+            setPinnedIdx(-1);
+            void requestEdit(cardMeta.id);
+          }}
           onFocus={() => {
             setHoverIdx(-1);
             setPinnedIdx(-1);
@@ -595,7 +607,7 @@ export function Galaxy() {
             }}
             onOpen={(id) => {
               setSearch(null);
-              open(id);
+              void openFullscreen(id);
             }}
             onFocus={(id) => {
               setSearch(null);
@@ -609,15 +621,22 @@ export function Galaxy() {
         <DeleteZettelModal meta={deleteMeta} onCancel={() => setDeleteMeta(null)} onConfirm={() => void confirmDelete()} />
       )}
 
-      {mobileEdit && (
-        <MobileEditorOverlay
-          zettel={mobileEdit}
+      {exportId && (
+        <div className="dark">
+          <ExportScopeModal open zettelId={exportId} onClose={() => setExportId(null)} />
+        </div>
+      )}
+
+      {fullscreen && (
+        <FullscreenEditor
+          zettel={fullscreen.zettel}
+          variant={fullscreen.variant}
           status={saveStatus}
           autoFocusTitle={autoFocusTitle}
           onStatus={onStatus}
           onCreateLink={createLink}
           onClose={() => {
-            setMobileEdit(null);
+            setFullscreen(null);
             setAutoFocusTitle(false);
           }}
         />

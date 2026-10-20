@@ -4,8 +4,6 @@ import './globals.css';
 import { AuthProvider } from '../providers/AuthProvider';
 import { DatabaseProvider } from '../providers/DatabaseProvider';
 import { ThemeProvider } from '../providers/ThemeProvider';
-import { Sidebar } from '../components/Sidebar';
-import { SearchPalette } from '../components/SearchPalette';
 import { THEME_SCRIPT } from '../lib/theme';
 import { FONT_SCRIPT } from '../lib/font';
 
@@ -44,13 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <AuthProvider>
             <DatabaseProvider>
-              <div className="lg:flex lg:h-screen">
-                <Sidebar />
-                <main className="flex-1 lg:overflow-y-auto lg:h-screen">
-                  {children}
-                </main>
-              </div>
-              <SearchPalette />
+              <main>{children}</main>
             </DatabaseProvider>
           </AuthProvider>
         </ThemeProvider>

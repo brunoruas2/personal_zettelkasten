@@ -1,7 +1,7 @@
 'use client';
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import type { Editor } from '@tiptap/react';
+import { type Editor, useEditorState } from '@tiptap/react';
 import type { Zettel } from '@zettelkasten/core';
 import { useZettelStore } from '../../store/useZettelStore';
 import { TipTapEditor, type TipTapEditorHandle } from '../TipTapEditor';
@@ -9,6 +9,7 @@ import { TagInput } from '../TagInput';
 import { DrawingEditHost } from '../../hooks/useDrawingEditHost';
 import { MobileFormattingToolbar, TOOLBAR_HEIGHT } from '../MobileFormattingToolbar';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
+import { ChordKeypad, KEYPAD_HEIGHT } from '../ChordKeypad';
 import { LinkPickerModal } from '../LinkPickerModal';
 import { MarkdownCheatsheet } from '../MarkdownCheatsheet';
 
@@ -49,6 +50,7 @@ export const InplaceEditor = forwardRef<
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   const [fontSize, setFontSize] = useState(16);
+  const [chordKeypadOpen, setChordKeypadOpen] = useState(false);
 
   const editorRef = useRef<TipTapEditorHandle>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -60,7 +62,15 @@ export const InplaceEditor = forwardRef<
   const savingRef = useRef<Promise<void> | null>(null);
   const pendingImagesRef = useRef(0);
   pendingImagesRef.current = pendingImages;
-  const { toolbarRef } = useKeyboardOffset();
+  const { toolbarRef, offset: keyboardOffset, recompute: recomputeKeyboardOffset } = useKeyboardOffset();
+  // Teclado de cifras: só dentro de um bloco ```chords, como nas antigas
+  // páginas de edição.
+  const editorState = useEditorState({
+    editor,
+    selector: (ctx) => ({
+      inChordsBlock: ctx.editor ? ctx.editor.isActive('codeBlock', { language: 'chords' }) : false,
+    }),
+  });
 
   const report = useCallback(
     (ok: boolean) => onStatus(!ok ? 'error' : navigator.onLine ? 'saved' : 'offline'),
@@ -140,6 +150,7 @@ export const InplaceEditor = forwardRef<
   };
 
   const isMobile = variant === 'mobile';
+  const showChordKeypad = isMobile && chordKeypadOpen && (editorState?.inChordsBlock ?? false);
   const btn = 'rounded-md px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5';
 
   return (
@@ -194,7 +205,7 @@ export const InplaceEditor = forwardRef<
             />
           </DrawingEditHost>
         </div>
-        {isMobile && <div style={{ height: `calc(${TOOLBAR_HEIGHT}px + env(safe-area-inset-bottom))` }} />}
+        {isMobile && <div style={{ height: `calc(${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom))` }} />}
       </div>
 
       {!isMobile && (
@@ -219,7 +230,16 @@ export const InplaceEditor = forwardRef<
         </div>
       )}
 
-      {isMobile && (
+      {isMobile && showChordKeypad && (
+        <ChordKeypad
+          editor={editor}
+          active={showChordKeypad}
+          onRequestClose={() => setChordKeypadOpen(false)}
+          keyboardOffset={keyboardOffset}
+          onRecomputeOffset={recomputeKeyboardOffset}
+        />
+      )}
+      {isMobile && !showChordKeypad && (
         <MobileFormattingToolbar
           editor={editor}
           previewOpen={false}
@@ -231,8 +251,8 @@ export const InplaceEditor = forwardRef<
           fontSize={fontSize}
           onFontSizeChange={setFontSize}
           toolbarRef={toolbarRef}
-          chordKeypadOpen={false}
-          onToggleChordKeypad={() => {}}
+          chordKeypadOpen={chordKeypadOpen}
+          onToggleChordKeypad={() => setChordKeypadOpen((v) => !v)}
           hasHeadings={false}
           tocOpen={false}
           onToggleToc={() => {}}

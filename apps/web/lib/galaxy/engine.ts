@@ -28,8 +28,6 @@ export interface GalaxyCallbacks {
   onHover(idx: number): void;
   /** Toque num ponto (sem hover no toque: o toque seleciona). */
   onSelect(idx: number): void;
-  /** Clique de mouse num ponto. */
-  onOpen(idx: number): void;
   /** Clique/toque no vazio. */
   onBackgroundTap(): void;
   onCameraChange(cam: Camera): void;
@@ -559,7 +557,8 @@ export class GalaxyEngine {
       this.flyTo(idx);
       return;
     }
-    if (down.type === 'mouse') this.cb.onOpen(idx);
+    // Mouse: aproxima até o card. Toque: seleciona (mini card), sem hover.
+    if (down.type === 'mouse') this.flyTo(idx);
     else this.cb.onSelect(idx);
   };
 

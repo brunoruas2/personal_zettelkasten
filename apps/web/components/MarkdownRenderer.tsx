@@ -25,7 +25,6 @@ import langCpp from 'highlight.js/lib/languages/cpp';
 import langC from 'highlight.js/lib/languages/c';
 import langCsharp from 'highlight.js/lib/languages/csharp';
 import langLua from 'highlight.js/lib/languages/lua';
-import { extractPlainWikiTitles } from '@zettelkasten/core';
 import { INLINE_RE, decodeText } from '../lib/markdownInline';
 import { headingIdsByLine } from '../lib/toc';
 
@@ -77,32 +76,13 @@ interface Props {
   onBodyChange?: (rawStart: number, rawEnd: number, newContent: string) => void;
   /**
    * Faz `plantuml`, `mermaid`, `abc` e `chords` caírem no `CodeBlock` comum em vez de
-   * montar seus renderizadores. Existe para o preview da `SearchPalette`, onde
-   * descer a lista com ↓ montaria um renderer por item — e o engine do PlantUML
-   * é global, serializa os renders numa fila e carrega WASM no primeiro uso.
+   * montar seus renderizadores. Usado pela prévia da busca da galáxia (descer a
+   * lista com ↓ montaria um renderer por item — o engine do PlantUML é global,
+   * serializa os renders numa fila e carrega WASM no primeiro uso) e pelos cards
+   * enquanto a câmera se move.
    */
   disableHeavyBlocks?: boolean;
-  /**
-   * Ação que aparece ao passar o mouse (ou focar) num wiki link comum. Recebe o
-   * título do alvo e devolve o botão, ou `null` para não mostrar nada. Nunca é
-   * chamada para `[[^pai]]`. Chega aos links por context, não por parâmetro, para
-   * não atravessar todos os call sites de `renderInline`.
-   */
-  wikiLinkAction?: (title: string) => React.ReactNode;
-  /**
-   * Chamada uma vez por bloco (parágrafo, item de lista, título, citação, tabela)
-   * com os títulos dos `[[links]]` comuns daquele bloco que ainda não tinham
-   * aparecido antes; o que devolver é renderizado imediatamente DEPOIS do bloco.
-   * É como o zettel filho embutido entra na linha da referência sem partir o
-   * parágrafo. Sem a prop, o render é idêntico ao de antes.
-   */
-  embedSlot?: (titles: string[]) => React.ReactNode;
 }
-
-/** Devolve o slot de um bloco de texto, ou `null` quando não há nada a ancorar. */
-type SlotAfter = (text: string, key: string) => React.ReactNode;
-
-const WikiLinkActionContext = React.createContext<((title: string) => React.ReactNode) | null>(null);
 
 function WikiLinkButton({
   target,
@@ -115,26 +95,13 @@ function WikiLinkButton({
   isParentRef: boolean;
   onLinkPress: (title: string) => void;
 }) {
-  const actionFor = React.useContext(WikiLinkActionContext);
-  const action = actionFor && !isParentRef ? actionFor(target) : null;
-  const button = (
+  return (
     <button
       onClick={() => onLinkPress(target)}
       className="text-brand-light underline hover:opacity-80 transition-opacity"
     >
       {label}
     </button>
-  );
-  if (!action) return button;
-  // A ação é absoluta: aparecer não muda a largura da linha. Fica dentro do
-  // mesmo `group`, então mover o mouse do link para ela não a esconde.
-  return (
-    <span className="group relative inline-block">
-      {button}
-      <span className="absolute left-full top-1/2 z-10 ml-0.5 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:hidden">
-        {action}
-      </span>
-    </span>
   );
 }
 
@@ -176,7 +143,6 @@ function renderListNodes(
   onLinkPress: (title: string) => void,
   depth = 0,
   disableWikiLinks = false,
-  slotAfter?: SlotAfter,
 ): React.ReactNode {
   if (nodes.length === 0) return null;
   return (
@@ -203,10 +169,9 @@ function renderListNodes(
               {renderInline(node.text, onLinkPress, `${keyPrefix}-${idx}`, disableWikiLinks)}
             </span>
           </div>
-          {slotAfter?.(node.text, `${keyPrefix}-sl${idx}`)}
           {node.children.length > 0 && (
             <div className="pl-5">
-              {renderListNodes(node.children, `${keyPrefix}-c${idx}`, onLinkPress, depth + 1, disableWikiLinks, slotAfter)}
+              {renderListNodes(node.children, `${keyPrefix}-c${idx}`, onLinkPress, depth + 1, disableWikiLinks)}
             </div>
           )}
         </li>
@@ -425,9 +390,9 @@ function renderInline(
   return parts;
 }
 
-export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, onBodyChange, disableHeavyBlocks = false, wikiLinkAction, embedSlot }: Props) {
-  // Âncoras da Table of Contents. O mapa vem de `lib/toc.ts`, a mesma fonte que
-  // alimenta o TocDrawer, para que id da lista e id do DOM nunca divirjam.
+export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, onBodyChange, disableHeavyBlocks = false }: Props) {
+  // Âncoras (`id`) dos headings, de `lib/toc.ts` — ids estáveis e únicos por
+  // corpo, mesmo com o sumário (TocDrawer) removido.
   const headingIds = React.useMemo(() => headingIdsByLine(body), [body]);
   const lines = body.split('\n');
   const lineStartOffsets: number[] = [];
@@ -439,27 +404,6 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
     }
   }
   const blocks: React.ReactNode[] = [];
-  // Só a primeira referência de cada título ancora o slot. O conjunto é local ao
-  // render (nada vaza entre renders) e os blocos são percorridos em ordem de
-  // documento, então "primeira" é a do topo do texto.
-  const seenTitles = new Set<string>();
-  const slotAfter: SlotAfter | undefined = embedSlot
-    ? (text, key) => {
-        const fresh = extractPlainWikiTitles(text).filter((t) => {
-          const k = t.trim().toLowerCase();
-          if (seenTitles.has(k)) return false;
-          seenTitles.add(k);
-          return true;
-        });
-        if (fresh.length === 0) return null;
-        const node = embedSlot(fresh);
-        return node ? <React.Fragment key={key}>{node}</React.Fragment> : null;
-      }
-    : undefined;
-  const pushSlot = (text: string, key: string) => {
-    const slot = slotAfter?.(text, key);
-    if (slot) blocks.push(slot);
-  };
   let codeBlockLines: string[] = [];
   let codeBlockLang = '';
   let codeBlockContentStartLine = 0;
@@ -530,7 +474,6 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
       const className = HEADING_CLASSES[level - 1];
       const HeadingTag = `h${level}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
       blocks.push(<HeadingTag key={`h${i}`} id={id} className={className}>{decodeText(text)}</HeadingTag>);
-      pushSlot(text, `sl-h${i}`);
       i++; continue;
     }
 
@@ -551,7 +494,6 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
           ))}
         </blockquote>,
       );
-      pushSlot(bqLines.join('\n'), `sl-bq${bqStart}`);
       continue;
     }
 
@@ -581,7 +523,7 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
       const tree = buildNestedList(flatItems);
       blocks.push(
         <div key={`list${listStart}`} className="pl-1">
-          {renderListNodes(tree, `list${listStart}`, onLinkPress, 0, disableWikiLinks, slotAfter)}
+          {renderListNodes(tree, `list${listStart}`, onLinkPress, 0, disableWikiLinks)}
         </div>,
       );
       continue;
@@ -644,7 +586,6 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
           </table>
         </div>,
       );
-      pushSlot([...headerCells, ...rows.flat()].join(' '), `sl-tbl${tableStart}`);
       continue;
     }
 
@@ -677,7 +618,6 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
         {renderInline(line, onLinkPress, `p${i}`, disableWikiLinks)}
       </p>,
     );
-    pushSlot(line, `sl-p${i}`);
     i++;
   }
 
@@ -707,7 +647,5 @@ export function MarkdownRenderer({ body, onLinkPress, disableWikiLinks = false, 
     }
   }
 
-  const content = <div className="space-y-0.5">{blocks}</div>;
-  if (!wikiLinkAction) return content;
-  return <WikiLinkActionContext.Provider value={wikiLinkAction}>{content}</WikiLinkActionContext.Provider>;
+  return <div className="space-y-0.5">{blocks}</div>;
 }

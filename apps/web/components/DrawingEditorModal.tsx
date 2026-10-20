@@ -28,7 +28,8 @@ import {
   DrawingTooLargeError,
   type SaveDrawingResult,
 } from '../lib/drawingSync'
-import { DRAWING_MODAL_ATTR } from '../lib/embeddedFocus'
+/** Marca a raiz do modal de desenho (portal no body), para identificá-lo no DOM. */
+const DRAWING_MODAL_ATTR = 'data-drawing-modal'
 
 export interface DrawingEditorResult {
   /** `saved`: gravado no Dexie (mesmo que o servidor tenha recusado); `cancelled`: nada mudou. */

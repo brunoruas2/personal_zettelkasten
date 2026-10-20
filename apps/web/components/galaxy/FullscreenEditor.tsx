@@ -13,12 +13,14 @@ const STATUS_LABEL: Record<SaveStatus, string> = {
 };
 
 /**
- * Editor em tela cheia sobre a galáxia (celular). A galáxia continua montada
- * atrás, intacta. O voltar do sistema fecha o editor: uma entrada de histórico
+ * Editor em tela cheia sobre a galáxia: o do celular e, em qualquer
+ * dispositivo, o de um zettel sem lugar na galáxia (não há card para editar).
+ * A galáxia continua montada atrás, intacta. O voltar do sistema fecha o editor: uma entrada de histórico
  * é empilhada ao abrir e o `popstate` a consome.
  */
-export function MobileEditorOverlay({
+export function FullscreenEditor({
   zettel,
+  variant,
   status,
   autoFocusTitle,
   onStatus,
@@ -26,6 +28,7 @@ export function MobileEditorOverlay({
   onClose,
 }: {
   zettel: Zettel;
+  variant: 'card' | 'mobile';
   status: SaveStatus;
   autoFocusTitle: boolean;
   onStatus: (s: SaveStatus) => void;
@@ -62,11 +65,11 @@ export function MobileEditorOverlay({
         </button>
         <span className="text-xs text-[#8b93a3]">{STATUS_LABEL[status]}</span>
       </div>
-      <div className="min-h-0 flex-1">
+      <div className={`min-h-0 flex-1 ${variant === 'card' ? 'mx-auto w-full max-w-3xl' : ''}`}>
         <InplaceEditor
           ref={editorRef}
           zettel={zettel}
-          variant="mobile"
+          variant={variant}
           autoFocusTitle={autoFocusTitle}
           onStatus={onStatus}
           onCreateLink={onCreateLink}

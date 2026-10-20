@@ -74,6 +74,22 @@ const server = createServer((req, res) => {
     return json(res, {});
   }
 
+  // Posições da galáxia: o zettel de teste já tem lugar (a galáxia só desenha
+  // zettels posicionados).
+  if (path === '/api/positions' && method === 'GET') {
+    return json(res, {
+      positions: [{ id: MOCK_ZETTEL.id, x: 0, y: 0, updated_at: MOCK_ZETTEL.updated_at }],
+      epoch: 0,
+      server_time: Date.now(),
+    });
+  }
+  if (path === '/api/positions' && method === 'PUT') {
+    return json(res, { kept: [], skipped: [] });
+  }
+  if (path.startsWith('/api/positions') && (method === 'POST' || method === 'DELETE')) {
+    return json(res, { status: 'ok', epoch: 0 });
+  }
+
   // Links
   if (path === '/api/links' && method === 'GET') {
     return json(res, []);

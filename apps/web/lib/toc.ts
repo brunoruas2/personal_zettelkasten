@@ -1,9 +1,8 @@
-// Extração dos headings de um corpo markdown para a Table of Contents.
+// Extração dos headings de um corpo markdown.
 //
-// Esta é a ÚNICA fonte dos ids de heading: `MarkdownRenderer` monta o mapa
-// `line -> id` a partir daqui e o `TocDrawer` consome a mesma lista. Slugificar
-// dos dois lados exigiria dois algoritmos de dedupe concordando, e o primeiro
-// heading repetido quebraria o salto em silêncio.
+// Fonte dos ids de heading: `MarkdownRenderer` monta o mapa `line -> id` a
+// partir daqui. (O sumário que consumia a mesma lista, `TocDrawer`, foi
+// removido com as páginas antigas; os ids ficam como âncoras estáveis.)
 
 export interface TocItem {
   /** id aplicado ao elemento no DOM (prefixado com `zk-h-`). */

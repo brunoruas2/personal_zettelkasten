@@ -36,8 +36,6 @@ import { PlantUmlBlock } from './PlantUmlBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { useDiagramLayout } from '../lib/diagramLayout';
 import { isImageFile, ImageCompressError } from '../lib/imageCompress';
-import { createEmbedHoverExtension, type EmbedHoverBridge } from '../lib/embedHoverExtension';
-import { createEmbedSlotExtension } from '../lib/embedSlotExtension';
 import { importImage, ImageUploadError } from '../lib/imageSync';
 import { ZK_IMG_PREFIX } from './ZettelImage';
 import { DrawingEditContext, ZK_DRAW_PREFIX } from './DrawingBlock';
@@ -133,14 +131,8 @@ interface Props {
   fontSize?: number;
   zettels?: Zettel[];
   onEditorReady?: (editor: Editor) => void;
-  onExtract?: (selectedText: string, range: { from: number; to: number }) => void;
   /** Quantas imagens estão comprimindo ou com upload em voo. Usado para travar o Salvar. */
   onPendingImagesChange?: (count: number) => void;
-  /**
-   * Liga a ação de hover sobre `[[links]]` que renderiza o zettel filho dentro da
-   * página. Sem ela o editor não instala o plugin de hover.
-   */
-  embedBridge?: EmbedHoverBridge;
   /**
    * Galáxia: oferece "Criar «X» ao lado deste zettel" no autocomplete de `[[`
    * quando o título não existe. Sem a prop (páginas antigas), nada muda.
@@ -498,42 +490,6 @@ function TableBubbleMenu({ editor }: { editor: Editor }) {
   );
 }
 
-// ── SelectionExtractBubbleMenu ────────────────────────────────────────────────
-
-function SelectionExtractBubbleMenu({
-  editor,
-  onExtract,
-}: {
-  editor: Editor;
-  onExtract: (selectedText: string, range: { from: number; to: number }) => void;
-}) {
-  return (
-    <BubbleMenu
-      editor={editor}
-      shouldShow={({ editor: e, state }) => {
-        const { selection } = state;
-        if (selection.empty) return false;
-        if (e.isActive('codeBlock') || e.isActive('table')) return false;
-        const text = state.doc.textBetween(selection.from, selection.to, ' ');
-        return text.trim().length >= 3;
-      }}
-      className="flex items-center rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg px-1 py-1"
-    >
-      <button
-        type="button"
-        className="px-2 py-1 text-xs font-medium rounded hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors whitespace-nowrap text-brand"
-        onClick={() => {
-          const { from, to } = editor.state.selection;
-          const text = editor.state.doc.textBetween(from, to, ' ');
-          onExtract(text, { from, to });
-        }}
-      >
-        + Extrair para novo zettel
-      </button>
-    </BubbleMenu>
-  );
-}
-
 // ── CodeBlockNodeView ─────────────────────────────────────────────────────────
 
 function CodeBlockNodeView({ node, updateAttributes }: {
@@ -803,7 +759,7 @@ function normalizeSentinelParagraphs(editor: Editor): void {
 // ── TipTapEditor ──────────────────────────────────────────────────────────────
 
 export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
-  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onExtract, onPendingImagesChange, embedBridge, onCreateLink }, ref) {
+  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onPendingImagesChange, onCreateLink }, ref) {
     const isExternalUpdate = useRef(false);
 
     // Keep current zettels accessible inside extensions without recreating them
@@ -812,8 +768,6 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
     const onCreateLinkRef = useRef(onCreateLink);
     onCreateLinkRef.current = onCreateLink;
 
-    const embedBridgeRef = useRef<EmbedHoverBridge | null>(null);
-    embedBridgeRef.current = embedBridge ?? null;
 
     // Popup state
     const [wikiPopup, setWikiPopup] = useState<WikiPopupState | null>(null);
@@ -1133,8 +1087,6 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         Placeholder.configure({ placeholder: placeholder ?? '' }),
         WikiLinkExtension,
         SlashCommandExtension,
-        createEmbedHoverExtension(() => embedBridgeRef.current),
-        createEmbedSlotExtension(() => embedBridgeRef.current),
       ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -1215,14 +1167,6 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
       },
     });
 
-    // Abrir/fechar um zettel embutido muda o `embedBridge`, não o texto. As
-    // decorations só se recalculam numa transação, então força uma vazia (sem
-    // `docChanged`: não dispara `onUpdate` nem suja o documento).
-    useEffect(() => {
-      if (!editor || editor.isDestroyed) return;
-      editor.view.dispatch(editor.state.tr.setMeta('embedRefresh', true));
-    }, [editor, embedBridge]);
-
     // Sync external value changes without resetting caret mid-typing
     useEffect(() => {
       if (!editor) return;
@@ -1288,7 +1232,6 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
           />
         )}
         {editor && <TableBubbleMenu editor={editor} />}
-        {editor && onExtract && <SelectionExtractBubbleMenu editor={editor} onExtract={onExtract} />}
         <input
           ref={fileInputRef}
           type="file"

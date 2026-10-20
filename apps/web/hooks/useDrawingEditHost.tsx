@@ -31,8 +31,9 @@ export function useDrawingEditHost(onClosed?: (id: string, result: DrawingEditor
 }
 
 /**
- * Torna editáveis os desenhos dos filhos: clicar no preview abre o editor.
- * Sem este wrapper (SearchPalette, export PDF) o `DrawingBlock` é só leitura.
+ * Torna editáveis os desenhos: clicar no preview abre o editor de desenho.
+ * Envolve o editor da galáxia; sem este wrapper (card em leitura, prévia da
+ * busca, export PDF) o `DrawingBlock` é só leitura.
  */
 export function DrawingEditHost({ children }: { children: React.ReactNode }) {
   const { open, modal } = useDrawingEditHost()

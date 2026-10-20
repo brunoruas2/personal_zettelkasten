@@ -7,7 +7,6 @@ import { useAuth } from './AuthProvider';
 import { syncService } from '../lib/sync';
 import { api } from '../lib/api';
 import { useSyncStore } from '../store/useSyncStore';
-import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
 import { uploadPending, prefetchImages } from '../lib/imageSync';
 import { uploadPendingDrawings, pullDrawings } from '../lib/drawingSync';
 import {
@@ -20,43 +19,6 @@ import {
 import { repo, controller } from '../lib/repo';
 import { downloadBodies } from '../lib/bodySync';
 import { invalidateBody } from '../lib/bodyCache';
-
-// The cache name must match the constant in worker/index.ts.
-const ROUTES_CACHE = 'zettelkasten-routes-v1';
-
-// Pre-cache every zettel route so the full knowledge base is available offline.
-// Uses the Cache API directly from the page context (no SW round-trip needed),
-// which makes it simpler and lets callers await completion if desired.
-//
-// Runs fire-and-forget after every sync so the user doesn't wait for it.
-// Skips routes already in cache; ignores network errors (offline, etc.).
-function cacheZettelRoutes() {
-  if (!('caches' in window)) return;
-  const routes = useZettelStore.getState().zettels.map((z) => `/zettel/${z.id}`);
-  if (routes.length === 0) return;
-
-  void (async () => {
-    try {
-      const cache = await caches.open(ROUTES_CACHE);
-      const BATCH = 5;
-      for (let i = 0; i < routes.length; i += BATCH) {
-        await Promise.all(
-          routes.slice(i, i + BATCH).map(async (route) => {
-            if (await cache.match(route)) return; // already cached
-            try {
-              const res = await fetch(route);
-              if (res.ok) await cache.put(route, res);
-            } catch {
-              // offline or fetch error — ignore
-            }
-          }),
-        );
-      }
-    } catch {
-      // caches.open() failed (private browsing, quota exceeded) — ignore
-    }
-  })();
-}
 
 // Pull zettels from server + sync links table from server. Devolve se o pull
 // de posições falou com o servidor — o congelamento do layout depende disso.
@@ -174,9 +136,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
         // 5. Refresh in-memory state with merged data
         await loadAll();
-        cacheZettelRoutes();
         void prefetchImages();
-        triggerGraphLayoutWorker();
         void syncGalaxy(positionsPulled).catch(() => {});
         void downloadBodies().catch(() => {});
 
@@ -185,9 +145,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           try {
             const pulled = await pullAll();
             await loadAll();
-            cacheZettelRoutes();
             void prefetchImages();
-            triggerGraphLayoutWorker();
             void syncGalaxy(pulled).catch(() => {});
             void downloadBodies().catch(() => {});
           } catch {
@@ -218,9 +176,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         pullAll()
           .then(async (pulled) => {
             await loadAll();
-            cacheZettelRoutes();
             void prefetchImages();
-            triggerGraphLayoutWorker();
             void syncGalaxy(pulled).catch(() => {});
             void downloadBodies().catch(() => {});
           })
@@ -229,19 +185,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     };
     document.addEventListener('visibilitychange', onVisible);
 
-    // SW update handler: when a new SW activates after a deploy it clears
-    // ROUTES_CACHE (to prevent serving stale HTML with old JS bundle hashes).
-    // Re-cache routes immediately so offline navigation keeps working without
-    // requiring the user to manually reload.
-    const onControllerChange = () => {
-      if (isAuthenticated) cacheZettelRoutes();
-    };
-    navigator.serviceWorker?.addEventListener('controllerchange', onControllerChange);
-
     return () => {
       window.removeEventListener('online', onOnline);
       document.removeEventListener('visibilitychange', onVisible);
-      navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isAuthenticated]);
