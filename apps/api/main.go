@@ -14,6 +14,7 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/portability"
+	"github.com/brunofullstack/zettelkasten/api/internal/positions"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -53,12 +54,15 @@ func main() {
 
 	drawingRepo := drawings.NewRepository(database)
 	drawingHandler := drawings.NewHandler(drawingRepo, drawingQuota)
+	positionRepo := positions.NewRepository(database)
+	positionHandler := positions.NewHandler(positionRepo)
 
 	zettelRepo := zettel.NewRepository(database)
 	zettelHandler := zettel.NewHandler(zettelRepo, imageRepo).WithDrawings(drawingRepo)
 
 	portabilityHandler := portability.NewHandler(zettelRepo, authRepo, imageRepo).
-		WithDrawings(drawingRepo, drawingQuota)
+		WithDrawings(drawingRepo, drawingQuota).
+		WithPositions(positionRepo)
 
 	startOrphanPurge(imageRepo, drawingRepo)
 
@@ -104,6 +108,12 @@ func main() {
 		r.Put("/api/drawings/{id}", drawingHandler.Put)
 		r.Get("/api/drawings/{id}", drawingHandler.Get)
 		r.Delete("/api/drawings/{id}", drawingHandler.Delete)
+
+		// Posições na galáxia: inline pelo mesmo motivo, só JWT.
+		r.Get("/api/positions", positionHandler.List)
+		r.Put("/api/positions", positionHandler.Put)
+		r.Post("/api/positions/init", positionHandler.Init)
+		r.Delete("/api/positions", positionHandler.Reset)
 
 		r.Get("/api/links", func(w http.ResponseWriter, req *http.Request) {
 			links, err := zettelRepo.GetAllLinks(auth.GetUserID(req))

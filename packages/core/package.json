@@ -10,8 +10,11 @@
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/d3-force": "^3.0.10",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "d3-force": "^3.0.0"
+  }
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/models"
+	"github.com/brunofullstack/zettelkasten/api/internal/positions"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 )
@@ -39,6 +40,8 @@ type Handler struct {
 	// Desenhos: opcionais (ver WithDrawings em drawings.go).
 	drawings     *drawings.Repository
 	drawingQuota int64
+	// Posições na galáxia: opcionais (ver WithPositions em positions.go).
+	positions *positions.Repository
 }
 
 func NewHandler(repo *zettel.Repository, userLookup UserLookup, imageRepo *images.Repository) *Handler {
@@ -72,6 +75,9 @@ type exportPayload struct {
 	// no JSON. O ZIP leva `drawings/<id>.zksketch` e `.svg`. `omitempty` mantém
 	// o gate de version==1 válido para backups antigos.
 	Drawings []drawings.ManifestEntry `json:"drawings,omitempty"`
+	// Posições na galáxia (centro do card, coordenadas inteiras). `omitempty`
+	// pelo mesmo motivo; backup sem o campo importa e o cliente posiciona.
+	Positions []positions.Entry `json:"positions,omitempty"`
 }
 
 // GET /api/backup/export?key=<64-hex-char-key>
@@ -128,6 +134,7 @@ func (h *Handler) exportJSONForUser(w http.ResponseWriter, userID string) {
 		Links:      links,
 		Images:     h.imageManifest(userID),
 		Drawings:   h.drawingManifest(userID),
+		Positions:  h.positionsForExport(userID),
 	}
 
 	date := time.Now().Format("2006-01-02")
@@ -225,6 +232,7 @@ func (h *Handler) importJSON(w http.ResponseWriter, r *http.Request) {
 		h.syncImageRefs(userID, z.ID, z.Body)
 		h.syncDrawingRefs(userID, z.ID, z.Body)
 	}
+	errs = append(errs, h.importPositions(userID, payload.Positions)...)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{

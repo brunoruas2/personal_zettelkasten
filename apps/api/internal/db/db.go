@@ -246,6 +246,23 @@ func migrate(db *sql.DB) error {
 		-- ainda os tem. Idempotente, roda em todo boot.
 		DROP INDEX IF EXISTS idx_reviews_due;
 		DROP TABLE IF EXISTS reviews;
+
+		-- Posição de cada zettel na galáxia (centro do card, coordenadas de
+		-- mundo inteiras). Tabela própria: colunas em zettels disparariam os
+		-- triggers do FTS5 e avançariam o updated_at do zettel a cada arraste.
+		CREATE TABLE IF NOT EXISTS positions (
+			user_id    TEXT NOT NULL,
+			zettel_id  TEXT NOT NULL,
+			x          INTEGER NOT NULL,
+			y          INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			synced_at  INTEGER NOT NULL,
+			PRIMARY KEY (user_id, zettel_id)
+		);
+		-- O delta usa synced_at (relógio do servidor), não updated_at (relógio
+		-- do cliente, que decide o LWW): um aparelho com relógio atrasado
+		-- gravaria abaixo do cursor dos outros e sumiria do pull.
+		CREATE INDEX IF NOT EXISTS idx_positions_synced ON positions(user_id, synced_at);
 	`)
 	return err
 }

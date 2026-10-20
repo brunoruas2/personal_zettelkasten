@@ -4,6 +4,7 @@ import type {
   ZettelRow,
   Link,
   DrawingRecord,
+  PositionRecord,
   ZettelRepository as IZettelRepository,
   DrawingRepository as IDrawingRepository,
 } from '@zettelkasten/core';
@@ -34,6 +35,7 @@ class ZettelDb extends Dexie {
   links!: Table<Link, [string, string]>;
   images!: Table<ImageRecord, string>;
   drawings!: Table<DrawingRecord, string>;
+  positions!: Table<PositionRecord, string>;
 
   constructor() {
     super('zettelkasten');
@@ -78,6 +80,14 @@ class ZettelDb extends Dexie {
       images: 'id, syncState',
       reviews: null,
       drawings: 'id, syncState, updatedAt',
+    });
+    // Posições da galáxia: tabela nova, nada a converter — sem `.upgrade()`.
+    this.version(17).stores({
+      zettels: 'id, title, updated_at',
+      links: '[sourceId+targetId], sourceId, targetId',
+      images: 'id, syncState',
+      drawings: 'id, syncState, updatedAt',
+      positions: 'id, syncState, updatedAt',
     });
   }
 }
@@ -166,13 +176,14 @@ export class ZettelRepository implements IZettelRepository {
   }
 
   async clearAll(): Promise<void> {
-    // As imagens e os desenhos entram aqui também: sem isso, o logout deixaria
-    // blobs e rabiscos de uma sessão visíveis na seguinte.
-    await db.transaction('rw', [db.zettels, db.links, db.images, db.drawings], async () => {
+    // Imagens, desenhos e posições entram aqui também: sem isso, o logout
+    // deixaria blobs, rabiscos e o mapa de uma sessão visíveis na seguinte.
+    await db.transaction('rw', [db.zettels, db.links, db.images, db.drawings, db.positions], async () => {
       await db.zettels.clear();
       await db.links.clear();
       await db.images.clear();
       await db.drawings.clear();
+      await db.positions.clear();
     });
   }
 }
@@ -286,5 +297,66 @@ export class DrawingStore implements IDrawingRepository {
 
   async clearAll(): Promise<void> {
     await db.drawings.clear();
+  }
+}
+
+/**
+ * Posições da galáxia. `syncState` é a própria fila de envio, como nos
+ * desenhos; `mode` diz como o servidor deve tratar o registro pendente.
+ */
+export class PositionStore {
+  async getAll(): Promise<PositionRecord[]> {
+    return db.positions.toArray();
+  }
+
+  async get(id: string): Promise<PositionRecord | undefined> {
+    return db.positions.get(id);
+  }
+
+  async putMany(records: PositionRecord[]): Promise<void> {
+    if (records.length === 0) return;
+    await db.positions.bulkPut(records);
+  }
+
+  async listPending(): Promise<PositionRecord[]> {
+    return db.positions.where('syncState').equals('pending').toArray();
+  }
+
+  /**
+   * Só vira `synced` se o registro ainda é o que foi enviado: uma gravação
+   * feita durante o envio avança `updatedAt` e precisa continuar `pending`.
+   */
+  async markSynced(id: string, updatedAt: number): Promise<void> {
+    await db.transaction('rw', db.positions, async () => {
+      const row = await db.positions.get(id);
+      if (row && row.updatedAt === updatedAt && row.syncState === 'pending') {
+        await db.positions.update(id, { syncState: 'synced' });
+      }
+    });
+  }
+
+  /**
+   * Troca o registro pelo `next` só se o local ainda é o enviado (mesmo
+   * `updatedAt`). Usado para adotar a posição que o servidor manteve.
+   */
+  async replaceIfUnchanged(sentUpdatedAt: number, next: PositionRecord): Promise<void> {
+    await db.transaction('rw', db.positions, async () => {
+      const row = await db.positions.get(next.id);
+      if (row && row.updatedAt === sentUpdatedAt && row.syncState === 'pending') {
+        await db.positions.put(next);
+      }
+    });
+  }
+
+  async delete(id: string): Promise<void> {
+    await db.positions.delete(id);
+  }
+
+  async count(): Promise<number> {
+    return db.positions.count();
+  }
+
+  async clear(): Promise<void> {
+    await db.positions.clear();
   }
 }

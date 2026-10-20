@@ -16,6 +16,7 @@ import { COMPRESSION_LEVELS, getSavedCompressionLevel, saveCompressionLevel, typ
 import { COMPRESSION_PROFILES } from '../../lib/imageCompress';
 import { isPrefetchEnabled, setPrefetchEnabled, prefetchImages, imageStore, countRejectedImages } from '../../lib/imageSync';
 import { countRejectedDrawings } from '../../lib/drawingSync';
+import { positionStore, resetGalaxyLayout, subscribePositions } from '../../lib/positionSync';
 
 const CHUNK = 50
 
@@ -100,6 +101,10 @@ export default function SettingsPage() {
   const [imageUsage, setImageUsage] = useState<ImageUsage>({ status: 'loading' })
   const [rejectedImages, setRejectedImages] = useState(0)
   const [rejectedDrawings, setRejectedDrawings] = useState(0)
+  const controller = useZettelStore((s) => s.controller)
+  const [positionedCount, setPositionedCount] = useState<number | null>(null)
+  const [relayout, setRelayout] = useState<'idle' | 'running' | 'error'>('idle')
+  const [online, setOnline] = useState(true)
 
   // Node color rules — synced to server
   const graphNodeColors = useZettelStore((s) => s.graphNodeColors)
@@ -153,6 +158,46 @@ export default function SettingsPage() {
     }
     return { count: zettels.length, bytes }
   }, [zettels])
+
+  // Zettels com lugar na galáxia (dados locais). Recontado quando a lista muda
+  // e quando o positionSync avisa (congelamento, posicionamento, pull).
+  useEffect(() => {
+    let cancelled = false
+    const recount = () => {
+      void positionStore.count().then((n) => { if (!cancelled) setPositionedCount(n) }).catch(() => {})
+    }
+    recount()
+    const unsubscribe = subscribePositions(recount)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [zettels])
+
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine)
+    update()
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
+
+  const handleRelayout = async () => {
+    if (!controller) return
+    if (!window.confirm(
+      'Recalcular o layout da galáxia descarta a posição de todos os zettels — inclusive as que você ajustou à mão — e calcula tudo de novo, em todos os aparelhos. Continuar?',
+    )) return
+    setRelayout('running')
+    try {
+      await resetGalaxyLayout(controller)
+      setRelayout('idle')
+    } catch {
+      setRelayout('error')
+    }
+  }
 
   // As imagens vêm do servidor: este aparelho pode ter só parte delas (prefetch
   // desligado, aparelho novo), então o total local reportaria menos que a conta.
@@ -723,6 +768,18 @@ export default function SettingsPage() {
                 </span>
               </div>
 
+              {/* Galáxia */}
+              <div className="flex items-baseline justify-between gap-3 py-1.5">
+                <span className="text-sm text-zinc-700 dark:text-zinc-300">Galáxia</span>
+                {positionedCount === null ? (
+                  <span className="h-4 w-28 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+                ) : (
+                  <span className="text-sm text-zinc-400 tabular-nums">
+                    {positionedCount} de {zettelUsage.count} zettels posicionados
+                  </span>
+                )}
+              </div>
+
               {/* Imagens */}
               <div className="flex items-baseline justify-between gap-3 py-1.5">
                 <span className="text-sm text-zinc-700 dark:text-zinc-300">Imagens</span>
@@ -782,6 +839,21 @@ export default function SettingsPage() {
                 <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Total</span>
                 <span className="text-sm font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{formatBytes(totalBytes)}</span>
               </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleRelayout}
+                disabled={!online || relayout === 'running' || !controller}
+                className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {relayout === 'running' ? 'Recalculando…' : 'Recalcular layout da galáxia'}
+              </button>
+              {!online && <span className="text-xs text-zinc-400">Disponível só com conexão.</span>}
+              {relayout === 'error' && (
+                <span className="text-xs text-red-500">Não foi possível recalcular. Tente de novo.</span>
+              )}
             </div>
           </section>
 

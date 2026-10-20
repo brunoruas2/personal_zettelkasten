@@ -473,6 +473,9 @@ type UserSettings struct {
 	ZettelTemplate    string          `json:"zettel_template"`
 	GraphExcludedTags []string        `json:"graph_excluded_tags,omitempty"`
 	GraphNodeColors   []NodeColorRule `json:"graph_node_colors,omitempty"`
+	// Só o DELETE /api/positions avança a época (positions.Repository.Reset);
+	// o PUT de settings nunca a altera — ver UpdateUserSettings.
+	GalaxyLayoutEpoch int `json:"galaxy_layout_epoch"`
 }
 
 func (r *Repository) GetUserSettings(userID string) (*UserSettings, error) {
@@ -494,7 +497,12 @@ func (r *Repository) UpdateUserSettings(userID string, s UserSettings) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(`UPDATE users SET settings = ? WHERE id = ?`, string(data), userID)
+	// A época de layout é preservada a partir da linha atual, no mesmo UPDATE:
+	// um PUT de settings lido antes de um reset concorrente não a faz regredir.
+	_, err = r.db.Exec(`
+		UPDATE users SET settings = json_set(?, '$.galaxy_layout_epoch',
+			COALESCE(CASE WHEN json_valid(settings) THEN json_extract(settings, '$.galaxy_layout_epoch') END, 0))
+		WHERE id = ?`, string(data), userID)
 	return err
 }
 

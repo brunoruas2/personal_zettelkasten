@@ -7,6 +7,7 @@ import { syncService } from '../lib/sync'
 import { searchZettels } from '../lib/searchZettels';
 import { getNodeColorRules, saveNodeColorRules, type NodeColorRule } from '../lib/graphColors';
 import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
+import { placeMissingAndQueue, positionStore } from '../lib/positionSync';
 
 interface ZettelStore {
   zettels: Zettel[];
@@ -80,6 +81,8 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     const zettel = await controller.create(data);
     await loadAll();
     triggerGraphLayoutWorker();
+    // Vaga na galáxia perto dos vizinhos de link — vale offline (fica pendente).
+    void placeMissingAndQueue(controller);
     // Push to server in background — enqueued if offline
     syncService.push({ op: 'create', payload: zettel }).catch(() => {});
     return zettel;
@@ -105,6 +108,7 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     const { controller, loadAll } = get();
     if (!controller) throw new Error('Controller not initialized');
     await controller.delete(id);
+    await positionStore.delete(id);
     await loadAll();
     triggerGraphLayoutWorker();
     syncService.push({ op: 'delete', payload: { id } }).catch(() => {});

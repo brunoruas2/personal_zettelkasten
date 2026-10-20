@@ -12,6 +12,13 @@ import { useSyncStore } from '../store/useSyncStore';
 import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
 import { uploadPending, prefetchImages } from '../lib/imageSync';
 import { uploadPendingDrawings, pullDrawings } from '../lib/drawingSync';
+import {
+  freezeIfNeeded,
+  placeMissingAndQueue,
+  positionStore,
+  pullPositions,
+  pushPendingPositions,
+} from '../lib/positionSync';
 const repo = new ZettelRepository();
 const controller = new ZettelController(repo);
 
@@ -52,12 +59,16 @@ function cacheZettelRoutes() {
   })();
 }
 
-// Pull zettels from server + sync links table from server
-async function pullAll() {
+// Pull zettels from server + sync links table from server. Devolve se o pull
+// de posições falou com o servidor — o congelamento do layout depende disso.
+async function pullAll(): Promise<boolean> {
   await syncService.pull(
     (id) => repo.findById(id),
     (z) => repo.update(z),
-    (id) => repo.delete(id),
+    async (id) => {
+      await repo.delete(id);
+      await positionStore.delete(id);
+    },
   );
 
   // Sync links — pull bypasses _syncLinks(), so we replace the whole table
@@ -74,6 +85,19 @@ async function pullAll() {
 
   // Desenhos: pull por manifesto (silencioso; nunca interrompe a sincronização).
   await pullDrawings();
+
+  // Posições da galáxia: depois dos zettels, para o delete de zettel já ter
+  // levado a posição junto.
+  return pullPositions();
+}
+
+// Depois do pull e do loadAll: congela o layout se a conta ainda não tem
+// nenhuma posição (só com o pull de posições bem-sucedido, ou seja, online),
+// posiciona quem chegou sem posição e envia os pendentes.
+async function syncGalaxy(positionsPulled: boolean) {
+  if (positionsPulled) await freezeIfNeeded(controller);
+  await placeMissingAndQueue(controller);
+  await pushPendingPositions();
 }
 
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
@@ -131,6 +155,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         await syncService.drainQueue();
         void uploadPending();
         void uploadPendingDrawings();
+        void pushPendingPositions();
 
         // 2. Push local IndexedDB data to server if this is the first sync ever
         //    (handles V1 → V2 migration for existing users)
@@ -145,22 +170,24 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         }
 
         // 4. Pull server changes + links
-        await pullAll();
+        const positionsPulled = await pullAll();
 
         // 5. Refresh in-memory state with merged data
         await loadAll();
         cacheZettelRoutes();
         void prefetchImages();
         triggerGraphLayoutWorker();
+        void syncGalaxy(positionsPulled).catch(() => {});
 
         // Register manual sync trigger for UI button
         setSyncNow(async () => {
           try {
-            await pullAll();
+            const pulled = await pullAll();
             await loadAll();
             cacheZettelRoutes();
             void prefetchImages();
             triggerGraphLayoutWorker();
+            void syncGalaxy(pulled).catch(() => {});
           } catch {
             // Network/auth errors are non-fatal — AuthError already redirects to /login
           }
@@ -177,6 +204,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         syncService.drainQueue().then(() => loadAll()).catch(() => {});
         void uploadPending();
         void uploadPendingDrawings();
+        void pushPendingPositions().catch(() => {});
       }
     };
     window.addEventListener('online', onOnline);
@@ -185,8 +213,13 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     const onVisible = () => {
       if (isAuthenticated && document.visibilityState === 'visible') {
         pullAll()
-          .then(() => loadAll())
-          .then(() => { cacheZettelRoutes(); void prefetchImages(); triggerGraphLayoutWorker(); })
+          .then(async (pulled) => {
+            await loadAll();
+            cacheZettelRoutes();
+            void prefetchImages();
+            triggerGraphLayoutWorker();
+            void syncGalaxy(pulled).catch(() => {});
+          })
           .catch(() => {});
       }
     };

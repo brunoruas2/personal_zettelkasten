@@ -24,6 +24,7 @@ O mesmo formato é produzido por `GET /api/export/json` e por
 | `exported_at` | string RFC 3339 | não | Informativo; o servidor ignora na importação. |
 | `zettels` | array | sim | As notas. Ver abaixo. |
 | `links` | array | não | **Ignorado na importação.** Ver [Links](#links). |
+| `positions` | array | não | Posição de cada zettel na galáxia. Ver [Posições](#posições). |
 
 Limite de corpo da requisição: **50 MB**. Para cofres maiores, divida em vários arquivos —
 a importação é idempotente e pode ser repetida.
@@ -253,6 +254,16 @@ só os SVGs.
 Tanto o export quanto o import do ZIP trabalham com memória constante: o export escreve
 direto na resposta lendo um blob por vez, e o import grava o upload num arquivo temporário
 antes de ler.
+
+### Posições
+
+`positions: [{ "id", "x", "y", "updated_at" }]` — o centro do card de cada zettel na galáxia, em
+coordenadas de mundo inteiras (px com zoom 1). Vai no JSON e no `zettels.json` do ZIP; o export
+Markdown não leva. Na importação, cada posição é gravada depois dos zettels, com
+last-write-wins por `updated_at`, e ids que não existem como zettel são ignorados.
+
+**Campo opcional — ao converter de outra ferramenta, omita.** Zettels sem posição são
+posicionados automaticamente pelo app, perto dos zettels com que têm link.
 
 ### Ciclo de vida
 

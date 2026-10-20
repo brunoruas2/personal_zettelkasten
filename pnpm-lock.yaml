@@ -132,7 +132,14 @@ importers:
         version: 5.9.3
 
   packages/core:
+    dependencies:
+      d3-force:
+        specifier: ^3.0.0
+        version: 3.0.0
     devDependencies:
+      '@types/d3-force':
+        specifier: ^3.0.10
+        version: 3.0.10
       typescript:
         specifier: ^5.4.5
         version: 5.9.3

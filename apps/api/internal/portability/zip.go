@@ -60,6 +60,7 @@ func (h *Handler) exportZipForUser(w http.ResponseWriter, userID string) {
 		Links:      links,
 		Images:     h.imageManifest(userID),
 		Drawings:   h.drawingManifest(userID),
+		Positions:  h.positionsForExport(userID),
 	}
 	if f, err := zw.Create("zettels.json"); err == nil {
 		json.NewEncoder(f).Encode(payload)
@@ -152,6 +153,7 @@ func (h *Handler) importZip(w http.ResponseWriter, r *http.Request) {
 		h.syncImageRefs(userID, z.ID, z.Body)
 		h.syncDrawingRefs(userID, z.ID, z.Body)
 	}
+	errs = append(errs, h.importPositions(userID, payload.Positions)...)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{

@@ -93,7 +93,12 @@ func (r *Repository) Update(z *models.Zettel) error {
 }
 
 func (r *Repository) Delete(userID, id string, now int64) error {
-	res, err := r.db.Exec(`
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	res, err := tx.Exec(`
 		UPDATE zettels SET deleted_at=?, updated_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL
 	`, now, now, id, userID)
 	if err != nil {
@@ -102,7 +107,12 @@ func (r *Repository) Delete(userID, id string, now int64) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("not found")
 	}
-	return nil
+	// A vaga na galáxia é liberada junto; o cliente apaga a sua ao receber o
+	// zettel deletado pelo pull.
+	if _, err := tx.Exec(`DELETE FROM positions WHERE user_id=? AND zettel_id=?`, userID, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) UpsertLinks(sourceID string, links []models.Link) error {

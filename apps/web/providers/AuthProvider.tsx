@@ -17,6 +17,7 @@ import {
 } from '../lib/api';
 import { base64urlToBuffer, bufferToBase64url } from '../lib/webauthn';
 import { useZettelStore } from '../store/useZettelStore';
+import { POSITION_STORAGE_KEYS } from '../lib/positionSync';
 
 interface User {
   id: string;
@@ -200,6 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await useZettelStore.getState().clearAll();
     localStorage.removeItem('zettel_sync_queue');
     localStorage.removeItem('zettel_last_sync_at');
+    for (const key of POSITION_STORAGE_KEYS) localStorage.removeItem(key);
     localStorage.removeItem(USER_CACHE_KEY);
     setAccessToken(null);
     setUser(null);
