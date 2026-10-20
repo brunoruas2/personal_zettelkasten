@@ -141,6 +141,18 @@ interface Props {
    * página. Sem ela o editor não instala o plugin de hover.
    */
   embedBridge?: EmbedHoverBridge;
+  /**
+   * Galáxia: oferece "Criar «X» ao lado deste zettel" no autocomplete de `[[`
+   * quando o título não existe. Sem a prop (páginas antigas), nada muda.
+   */
+  onCreateLink?: (title: string) => void | Promise<void>;
+}
+
+/** Item sintético do autocomplete de `[[` que cria o zettel citado. */
+const CREATE_LINK_ID = '__create_link__';
+
+function createLinkItem(title: string): Zettel {
+  return { id: CREATE_LINK_ID, title, tags: [], createdAt: 0, updatedAt: 0, bodyLen: 0, bodyAt: null };
 }
 
 interface WikiPopupState {
@@ -226,7 +238,13 @@ const WikiLinkPopup = forwardRef<WikiPopupHandle, WikiPopupState>(
                 : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800'
             }`}
           >
-            {zettel.title}
+            {zettel.id === CREATE_LINK_ID ? (
+              <span>
+                Criar «<span className="font-medium">{zettel.title}</span>» ao lado deste zettel
+              </span>
+            ) : (
+              zettel.title
+            )}
           </button>
         ))}
       </div>,
@@ -785,12 +803,14 @@ function normalizeSentinelParagraphs(editor: Editor): void {
 // ── TipTapEditor ──────────────────────────────────────────────────────────────
 
 export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
-  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onExtract, onPendingImagesChange, embedBridge }, ref) {
+  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onExtract, onPendingImagesChange, embedBridge, onCreateLink }, ref) {
     const isExternalUpdate = useRef(false);
 
     // Keep current zettels accessible inside extensions without recreating them
     const zettelsSuggestionRef = useRef<Zettel[]>([]);
     zettelsSuggestionRef.current = zettels ?? [];
+    const onCreateLinkRef = useRef(onCreateLink);
+    onCreateLinkRef.current = onCreateLink;
 
     const embedBridgeRef = useRef<EmbedHoverBridge | null>(null);
     embedBridgeRef.current = embedBridge ?? null;
@@ -899,14 +919,20 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
               allowSpaces: true,
               allowedPrefixes: null,
               items: ({ query }) => {
-                const q = (query.startsWith('^') ? query.slice(1) : query).toLowerCase();
-                return zettelsSuggestionRef.current
+                const raw = (query.startsWith('^') ? query.slice(1) : query).trim();
+                const q = raw.toLowerCase();
+                const found = zettelsSuggestionRef.current
                   .filter((z) => !q || z.title.toLowerCase().includes(q))
                   .slice(0, 8);
+                if (onCreateLinkRef.current && raw && !zettelsSuggestionRef.current.some((z) => z.title.toLowerCase() === q)) {
+                  found.push(createLinkItem(raw));
+                }
+                return found;
               },
               command: ({ editor, range, props: zettel }) => {
                 const typed = editor.state.doc.textBetween(range.from + 2, range.to);
                 const prefix = typed.startsWith('^') ? '^' : '';
+                if (zettel.id === CREATE_LINK_ID) void onCreateLinkRef.current?.(zettel.title);
                 editor
                   .chain()
                   .focus()

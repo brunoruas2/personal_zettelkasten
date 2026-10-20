@@ -1,19 +1,36 @@
 'use client';
 
-import { memo, useEffect, useState } from 'react';
-import { CARD_MAX_HEIGHT, CARD_WIDTH, type ZettelMeta } from '@zettelkasten/core';
+import { memo, useEffect, useRef, useState, type RefObject } from 'react';
+import { CARD_MAX_HEIGHT, CARD_WIDTH, type Zettel, type ZettelMeta } from '@zettelkasten/core';
 import { useZettelBody } from '../../hooks/useZettelBody';
 import { MarkdownRenderer } from '../MarkdownRenderer';
+import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from './InplaceEditor';
 
 /** Altura do cabeçalho (título + tags) que sai da altura máxima do corpo. */
 const HEADER_RESERVE = 96;
 
+export interface CardActions {
+  onLink: (title: string) => void;
+  onOpen: (id: string) => void;
+  onHover: (idx: number) => void;
+  /** Clique no corpo (fora de links): entrar em edição. */
+  onRequestEdit: (id: string) => void;
+  onFocus: (id: string) => void;
+  onDelete: (id: string) => void;
+  onStatus: (s: SaveStatus) => void;
+  onCreateLink: (title: string) => void | Promise<void>;
+  /** Fim do arraste pela alça: deslocamento em unidades de mundo. */
+  onMoved: (id: string, dx: number, dy: number) => void;
+  /** Escala atual da câmera (para converter o arraste de tela em mundo). */
+  getScale: () => number;
+}
+
 /**
- * Card de leitura da galáxia, em coordenadas de mundo dentro da `CardLayer`
- * (o transform da câmera fica no contêiner — este componente não re-renderiza
- * em pan/zoom). `data-*` dizem ao motor o que é do card: o corpo
- * (`data-card-body`) é seleção de texto com mouse; `data-card-scroll` rola com
- * a roda quando tem overflow.
+ * Card da galáxia, em coordenadas de mundo dentro da `CardLayer` (o transform
+ * da câmera fica no contêiner — este componente não re-renderiza em pan/zoom).
+ * Leitura por padrão; com `editing`, vira o `InplaceEditor`. `data-*` dizem ao
+ * motor o que é do card: `data-card-body` é seleção de texto com mouse,
+ * `data-card-scroll` rola com a roda, `data-no-pan` não inicia pan.
  */
 export const GalaxyCard = memo(function GalaxyCard({
   meta,
@@ -22,9 +39,11 @@ export const GalaxyCard = memo(function GalaxyCard({
   y,
   heavy,
   highlighted,
-  onLink,
-  onOpen,
-  onHover,
+  editing,
+  editingZettel,
+  autoFocusTitle,
+  editorRef,
+  actions,
 }: {
   meta: ZettelMeta;
   idx: number;
@@ -33,81 +52,185 @@ export const GalaxyCard = memo(function GalaxyCard({
   /** Câmera parada com zoom ≥ 60%: pode renderizar diagramas. */
   heavy: boolean;
   highlighted: boolean;
-  onLink: (title: string) => void;
-  onOpen: (id: string) => void;
-  onHover: (idx: number) => void;
+  editing: boolean;
+  /** Zettel completo carregado para a edição (null fora dela). */
+  editingZettel: Zettel | null;
+  autoFocusTitle: boolean;
+  editorRef: RefObject<InplaceEditorHandle | null>;
+  actions: CardActions;
 }) {
-  const { body, status } = useZettelBody(meta.id);
+  const { body, status } = useZettelBody(editing ? null : meta.id);
   // Depois de renderizar os diagramas uma vez, não volta a código: desmontar
   // e remontar um diagrama a cada pan custaria mais que mantê-lo.
   const [heavyOnce, setHeavyOnce] = useState(heavy);
   useEffect(() => {
     if (heavy) setHeavyOnce(true);
   }, [heavy]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const cardRef = useRef<HTMLElement>(null);
+  const drag = useRef<{ sx: number; sy: number; scale: number; dx: number; dy: number } | null>(null);
+
+  const onBodyClick = (e: React.MouseEvent) => {
+    if (editing) return;
+    const target = e.target as Element;
+    if (target.closest('a, button, input')) return;
+    // Arraste de seleção de texto não é pedido de edição.
+    if (window.getSelection()?.toString()) return;
+    actions.onRequestEdit(meta.id);
+  };
+
+  // Mover pela alça: transform imperativo em unidades de mundo (o card está
+  // dentro da camada escalada), sem React por frame.
+  const onHandleDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    drag.current = { sx: e.clientX, sy: e.clientY, scale: actions.getScale(), dx: 0, dy: 0 };
+    setDragging(true);
+  };
+  const onHandleMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || !cardRef.current) return;
+    d.dx = (e.clientX - d.sx) / d.scale;
+    d.dy = (e.clientY - d.sy) / d.scale;
+    cardRef.current.style.transform = `translate(${d.dx}px, ${d.dy}px)`;
+  };
+  const onHandleUp = () => {
+    const d = drag.current;
+    drag.current = null;
+    setDragging(false);
+    if (cardRef.current) cardRef.current.style.transform = '';
+    if (d && Math.hypot(d.dx, d.dy) * d.scale > 4) actions.onMoved(meta.id, d.dx, d.dy);
+  };
+
+  const border = editing || dragging ? 'border-brand/70' : highlighted ? 'border-[#f5f3ff]/70' : 'border-white/[0.08]';
 
   return (
     <article
+      ref={cardRef}
       data-galaxy-card
-      onPointerEnter={() => onHover(idx)}
-      onPointerLeave={() => onHover(-1)}
-      className={`absolute flex flex-col overflow-hidden rounded-xl border bg-[#0e121a] font-geist text-[#c9cfdb] shadow-2xl ${
-        highlighted ? 'border-[#f5f3ff]/70' : 'border-white/[0.08]'
-      }`}
+      onPointerEnter={() => actions.onHover(idx)}
+      onPointerLeave={() => actions.onHover(-1)}
+      className={`dark absolute flex flex-col overflow-hidden rounded-xl border bg-[#0e121a] font-geist text-[#c9cfdb] shadow-2xl ${border}`}
       style={{
         left: x - CARD_WIDTH / 2,
         top: y - CARD_MAX_HEIGHT / 2,
         width: CARD_WIDTH,
         maxHeight: CARD_MAX_HEIGHT,
         contain: 'layout paint style',
+        zIndex: editing || dragging ? 10 : undefined,
       }}
     >
-      <header className="flex shrink-0 items-start gap-3 px-6 pb-2 pt-5">
-        <div className="min-w-0 flex-1">
-          <h3 className="font-newsreader text-[22px] font-medium leading-snug text-[#f5f3ff]">
-            {meta.title || 'Sem título'}
-          </h3>
-          {meta.tags.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {meta.tags.map((t) => (
-                <span key={t} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]">
-                  {t}
-                </span>
-              ))}
+      {editing && editingZettel ? (
+        <>
+          <div className="flex shrink-0 justify-end gap-2 px-4 pt-3" data-no-pan>
+            <span className="mr-auto text-[11px] text-[#6f7787]">Editando · Esc para sair</span>
+          </div>
+          <InplaceEditor
+            ref={editorRef}
+            zettel={editingZettel}
+            variant="card"
+            autoFocusTitle={autoFocusTitle}
+            onStatus={actions.onStatus}
+            onCreateLink={actions.onCreateLink}
+          />
+        </>
+      ) : (
+        <>
+          <header className="flex shrink-0 items-start gap-2 px-6 pb-2 pt-5">
+            <button
+              type="button"
+              data-no-pan
+              title="Arrastar para mover"
+              onPointerDown={onHandleDown}
+              onPointerMove={onHandleMove}
+              onPointerUp={onHandleUp}
+              onPointerCancel={onHandleUp}
+              className="-ml-3 mt-1 shrink-0 cursor-grab touch-none rounded px-1 text-[#6f7787] hover:text-[#c9cfdb] active:cursor-grabbing"
+            >
+              ⋮⋮
+            </button>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-newsreader text-[22px] font-medium leading-snug text-[#f5f3ff]">
+                {meta.title || 'Sem título'}
+              </h3>
+              {meta.tags.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {meta.tags.map((t) => (
+                    <span key={t} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => onOpen(meta.id)}
-          className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
-        >
-          Abrir
-        </button>
-      </header>
-      <div
-        data-card-scroll
-        className="min-h-0 overflow-y-auto overscroll-contain px-6 pb-5 text-[14px] leading-relaxed"
-        style={{ maxHeight: CARD_MAX_HEIGHT - HEADER_RESERVE }}
-      >
-        <div data-card-body>
-          {status === 'loading' ? (
-            <p className="text-[#6f7787]">Carregando…</p>
-          ) : status === 'missing' ? (
-            <p className="text-[#6f7787]">Conteúdo ainda não disponível neste aparelho.</p>
-          ) : (
-            <>
-              {status === 'stale' && (
-                <p className="mb-2 text-[11px] text-amber-200/80">versão anterior — a mais recente ainda não foi baixada</p>
+            <button
+              type="button"
+              onClick={() => actions.onFocus(meta.id)}
+              className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
+            >
+              Focar
+            </button>
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                title="Mais ações"
+                onClick={() => setMenuOpen((v) => !v)}
+                className="rounded-lg border border-white/10 px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
+              >
+                ⋯
+              </button>
+              {menuOpen && (
+                <div
+                  className="absolute right-0 top-full z-20 mt-1 w-44 rounded-lg border border-white/10 bg-[#0e121a] p-1 text-sm shadow-2xl"
+                  onMouseLeave={() => setMenuOpen(false)}
+                >
+                  <MenuItem label="Focar" onClick={() => { setMenuOpen(false); actions.onFocus(meta.id); }} />
+                  <MenuItem label="Abrir na página" onClick={() => { setMenuOpen(false); actions.onOpen(meta.id); }} />
+                  <MenuItem label="Apagar" danger onClick={() => { setMenuOpen(false); actions.onDelete(meta.id); }} />
+                </div>
               )}
-              {body.trim() ? (
-                <MarkdownRenderer body={body} onLinkPress={onLink} disableHeavyBlocks={!heavyOnce} />
+            </div>
+          </header>
+          <div
+            data-card-scroll
+            className="min-h-0 cursor-text overflow-y-auto overscroll-contain px-6 pb-5 text-[14px] leading-relaxed"
+            style={{ maxHeight: CARD_MAX_HEIGHT - HEADER_RESERVE }}
+            onClick={onBodyClick}
+          >
+            <div data-card-body>
+              {status === 'loading' ? (
+                <p className="text-[#6f7787]">Carregando…</p>
+              ) : status === 'missing' ? (
+                <p className="text-[#6f7787]">Conteúdo ainda não disponível neste aparelho.</p>
               ) : (
-                <p className="italic text-[#6f7787]">Sem conteúdo.</p>
+                <>
+                  {status === 'stale' && (
+                    <p className="mb-2 text-[11px] text-amber-200/80">versão anterior — a mais recente ainda não foi baixada</p>
+                  )}
+                  {body.trim() ? (
+                    <MarkdownRenderer body={body} onLinkPress={actions.onLink} disableHeavyBlocks={!heavyOnce} />
+                  ) : (
+                    <p className="italic text-[#6f7787]">Sem conteúdo — clique para escrever.</p>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
-      </div>
+            </div>
+          </div>
+        </>
+      )}
     </article>
   );
 });
+
+function MenuItem({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`block w-full rounded px-2.5 py-1.5 text-left hover:bg-white/5 ${danger ? 'text-red-300' : 'text-[#c9cfdb]'}`}
+    >
+      {label}
+    </button>
+  );
+}

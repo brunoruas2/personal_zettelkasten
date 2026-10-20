@@ -37,6 +37,8 @@ export interface GalaxyCallbacks {
   onVisibleCards(ids: string[]): void;
   /** Câmera parada há ~300 ms (true) ou voltou a se mover (false). */
   onCameraSettled(settled: boolean): void;
+  /** Duplo clique de mouse no vazio (sem ponto, silhueta ou card): criar ali. */
+  onDoubleClickEmpty(wx: number, wy: number): void;
 }
 
 export type Lod = 'points' | 'silhouettes' | 'cards';
@@ -66,6 +68,7 @@ const FLY_MS = 450;
 /** O voo termina com o card legível (nível de cards). */
 export const FLY_MIN_SCALE = 0.75;
 const SETTLE_MS = 300;
+const DOUBLE_CLICK_MS = 300;
 const HIGHLIGHT_MS = 1500;
 /** Raio da nebulosa em unidades de mundo (~2,5 pegadas de card). */
 const NEBULA_RADIUS = 1400;
@@ -123,6 +126,10 @@ export class GalaxyEngine {
   private visibleKey = '';
   private settled = false;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Modo foco: só estes índices são desenhados/clicáveis (null = todos). */
+  private focusSet: Set<number> | null = null;
+  private cameraBeforeFocus: Camera | null = null;
+  private lastEmptyClick: { t: number; x: number; y: number } | null = null;
   private dwellTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingMove: { x: number; y: number } | null = null;
 
@@ -234,6 +241,50 @@ export class GalaxyEngine {
     if (!enabled) this.keys.clear();
   }
 
+  /**
+   * Modo foco: desenha só `idxSet` e enquadra o conjunto; `null` sai e volta
+   * à câmera de antes do foco.
+   */
+  setFocus(idxSet: Set<number> | null, fit = true): void {
+    if (idxSet) {
+      if (!this.focusSet) this.cameraBeforeFocus = { ...this.cam };
+      this.focusSet = idxSet;
+      this.hoverIdx = -1;
+      this.pinnedIdx = -1;
+      // `fit = false`: só troca o conjunto (os índices mudam a cada
+      // reconstrução dos dados) sem mexer na câmera.
+      if (fit) this.fitIds(idxSet);
+    } else if (this.focusSet) {
+      this.focusSet = null;
+      const back = this.cameraBeforeFocus;
+      this.cameraBeforeFocus = null;
+      if (back) this.animateTo(back, true);
+    }
+    this.markScene();
+  }
+
+  /** Enquadra um conjunto de índices (pegada inteira de cada card), até 100%. */
+  fitIds(idxSet: Set<number>, animate = true): void {
+    const d = this.data;
+    if (!d || idxSet.size === 0) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const i of idxSet) {
+      minX = Math.min(minX, d.xs[i] - CARD_WIDTH / 2);
+      maxX = Math.max(maxX, d.xs[i] + CARD_WIDTH / 2);
+      minY = Math.min(minY, d.ys[i] - CARD_MAX_HEIGHT / 2);
+      maxY = Math.max(maxY, d.ys[i] + CARD_MAX_HEIGHT / 2);
+    }
+    const to = fitBox({ minX, minY, maxX, maxY }, this.w, this.h);
+    this.animateTo({ ...to, scale: Math.min(1, to.scale) }, animate);
+  }
+
+  private inFocus(i: number): boolean {
+    return !this.focusSet || this.focusSet.has(i);
+  }
+
   getLod(): Lod {
     return lodFor(this.cam.scale);
   }
@@ -271,9 +322,9 @@ export class GalaxyEngine {
     this.animateTo(zoomAt(this.cam, this.w, this.h, this.w / 2, this.h / 2, factor, this.minScale), true);
   }
 
-  flyTo(idx: number, animate = true): void {
+  flyTo(idx: number, animate = true, minScale = FLY_MIN_SCALE): void {
     if (!this.data || idx < 0) return;
-    const to = { x: this.data.xs[idx], y: this.data.ys[idx], scale: clampScale(Math.max(this.cam.scale, FLY_MIN_SCALE), this.minScale) };
+    const to = { x: this.data.xs[idx], y: this.data.ys[idx], scale: clampScale(Math.max(this.cam.scale, minScale), this.minScale) };
     this.animateTo(to, animate);
     this.highlight = { idx, until: performance.now() + (animate ? FLY_MS : 0) + HIGHLIGHT_MS };
   }
@@ -356,7 +407,22 @@ export class GalaxyEngine {
     const d = this.data;
     const [wx, wy] = screenToWorld(this.cam, this.w, this.h, sx, sy);
     if (lodFor(this.cam.scale) === 'points') {
-      return d.grid.nearest(wx, wy, (HIT_RADIUS_PX + 4) / this.cam.scale);
+      const radius = (HIT_RADIUS_PX + 4) / this.cam.scale;
+      if (!this.focusSet) return d.grid.nearest(wx, wy, radius);
+      // Em foco, o ponto oculto mais próximo não pode roubar o clique.
+      let best = -1;
+      let bestD = radius * radius;
+      d.grid.forEachCell(wx - radius, wy - radius, wx + radius, wy + radius, (indices) => {
+        for (const i of indices) {
+          if (!this.focusSet!.has(i)) continue;
+          const dd = (d.xs[i] - wx) ** 2 + (d.ys[i] - wy) ** 2;
+          if (dd <= bestD) {
+            bestD = dd;
+            best = i;
+          }
+        }
+      });
+      return best;
     }
     // Silhuetas/cards: o alvo é o retângulo do card, não o ponto.
     let hit = -1;
@@ -364,6 +430,7 @@ export class GalaxyEngine {
       for (const i of indices) {
         const top = d.ys[i] - CARD_MAX_HEIGHT / 2;
         if (
+          this.inFocus(i) &&
           Math.abs(wx - d.xs[i]) <= CARD_WIDTH / 2 &&
           wy >= top &&
           wy <= top + silhouetteHeight(d.metas[i].bodyLen)
@@ -472,8 +539,21 @@ export class GalaxyEngine {
     const idx = this.hitTest(x, y);
     if (idx < 0) {
       this.cb.onBackgroundTap();
+      // Duplo clique de mouse no vazio: criar ali.
+      if (down.type === 'mouse') {
+        const now = performance.now();
+        const last = this.lastEmptyClick;
+        if (last && now - last.t <= DOUBLE_CLICK_MS && Math.hypot(x - last.x, y - last.y) <= DRAG_THRESHOLD_PX) {
+          this.lastEmptyClick = null;
+          const [wx, wy] = screenToWorld(this.cam, this.w, this.h, x, y);
+          this.cb.onDoubleClickEmpty(wx, wy);
+        } else {
+          this.lastEmptyClick = { t: now, x, y };
+        }
+      }
       return;
     }
+    this.lastEmptyClick = null;
     // Silhueta (ou card além do teto): aproxima até virar card legível.
     if (lodFor(this.cam.scale) !== 'points') {
       this.flyTo(idx);
@@ -653,7 +733,7 @@ export class GalaxyEngine {
 
     const lod = lodFor(scale);
     const focus = this.hoverIdx >= 0 ? this.hoverIdx : this.cardHoverIdx >= 0 ? this.cardHoverIdx : this.pinnedIdx;
-    const neighbors = focus >= 0 ? new Set(d.adjacency[focus]) : null;
+    const neighbors = focus >= 0 ? new Set(d.adjacency[focus].filter((n) => this.inFocus(n))) : null;
 
     // Arestas: só do ponto em foco.
     if (focus >= 0) {
@@ -663,7 +743,7 @@ export class GalaxyEngine {
       ctx.beginPath();
       const fx = toSx(d.xs[focus]);
       const fy = toSy(d.ys[focus]);
-      for (const n of d.adjacency[focus]) {
+      for (const n of neighbors!) {
         ctx.moveTo(fx, fy);
         ctx.lineTo(toSx(d.xs[n]), toSy(d.ys[n]));
       }
@@ -682,7 +762,7 @@ export class GalaxyEngine {
     // Pontos agrupados por cor: um fill por cor.
     const paths = new Map<string, Path2D>();
     for (const i of visible) {
-      if (i === focus || (neighbors && neighbors.has(i))) continue;
+      if (!this.inFocus(i) || i === focus || (neighbors && neighbors.has(i))) continue;
       const r = pointRadius(d.degree[i], scale);
       const sx = toSx(d.xs[i]);
       const sy = toSy(d.ys[i]);
@@ -766,7 +846,7 @@ export class GalaxyEngine {
       // Margem de meia tela: o card já está montado quando entra na tela.
       const mx = (maxX - minX) / 2 + CARD_WIDTH;
       const my = (maxY - minY) / 2 + CARD_MAX_HEIGHT;
-      const candidates = d.grid.query(minX - mx, minY - my, maxX + mx, maxY + my, []);
+      const candidates = d.grid.query(minX - mx, minY - my, maxX + mx, maxY + my, []).filter((i) => this.inFocus(i));
       candidates.sort(
         (a, b) =>
           (d.xs[a] - this.cam.x) ** 2 + (d.ys[a] - this.cam.y) ** 2 -
@@ -787,7 +867,7 @@ export class GalaxyEngine {
     );
     const titleSize = 24 * scale;
     for (const i of visible) {
-      if (cards.has(i)) continue;
+      if (cards.has(i) || !this.inFocus(i)) continue;
       const left = toSx(d.xs[i] - CARD_WIDTH / 2);
       const top = toSy(d.ys[i] - CARD_MAX_HEIGHT / 2);
       const w = CARD_WIDTH * scale;
@@ -855,7 +935,8 @@ export class GalaxyEngine {
   ): void {
     const { scale } = this.cam;
     ctx.globalAlpha = 0.9;
-    if (scale < NEBULA_AGG_SCALE) {
+    // Em foco o conjunto é pequeno e as agregadas misturariam nós ocultos.
+    if (scale < NEBULA_AGG_SCALE && !this.focusSet) {
       for (const n of d.cellNebulas) {
         const R = NEBULA_RADIUS * (1 + Math.sqrt(Math.min(n.count, 25)) * 0.35);
         if (n.x + R < minX || n.x - R > maxX || n.y + R < minY || n.y - R > maxY) continue;
@@ -870,7 +951,7 @@ export class GalaxyEngine {
       d.grid.forEachCell(minX - R, minY - R, maxX + R, maxY + R, (indices) => {
         for (const i of indices) {
           const c = d.nebula[i];
-          if (!c) continue;
+          if (!c || !this.inFocus(i)) continue;
           const sprite = getNebulaSprite(c);
           if (sprite) ctx.drawImage(sprite, toSx(d.xs[i]) - sr, toSy(d.ys[i]) - sr, sr * 2, sr * 2);
         }
@@ -948,7 +1029,7 @@ export class GalaxyEngine {
     let shown = 0;
     for (const i of d.labelOrder) {
       if (shown >= cap) break;
-      if (i === focus || (neighbors && neighbors.has(i))) continue;
+      if (!this.inFocus(i) || i === focus || (neighbors && neighbors.has(i))) continue;
       const x = d.xs[i];
       const y = d.ys[i];
       if (x < minX || x > maxX || y < minY || y > maxY) continue;

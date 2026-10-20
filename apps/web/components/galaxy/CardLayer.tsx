@@ -1,14 +1,17 @@
 'use client';
 
-import { forwardRef, memo } from 'react';
+import { forwardRef, memo, type RefObject } from 'react';
+import type { Zettel } from '@zettelkasten/core';
 import type { GalaxyData } from './useGalaxyData';
-import { GalaxyCard } from './GalaxyCard';
+import { GalaxyCard, type CardActions } from './GalaxyCard';
+import type { InplaceEditorHandle } from './InplaceEditor';
 
 /**
  * Contêiner dos cards em coordenadas de mundo. O motor escreve nele o
  * transform da câmera (`setCardLayer`); os cards dentro têm `left/top` fixos.
- * Re-renderiza só quando o conjunto de cards visíveis (ou `heavy`/destaque)
- * muda — `memo`, já que a `Galaxy` re-renderiza a cada mudança de câmera.
+ * Re-renderiza só quando o conjunto de cards visíveis (ou `heavy`/destaque/
+ * edição) muda — `memo`, já que a `Galaxy` re-renderiza a cada mudança de
+ * câmera. O card em edição fica montado mesmo fora do conjunto visível.
  */
 export const CardLayer = memo(forwardRef<
   HTMLDivElement,
@@ -17,16 +20,23 @@ export const CardLayer = memo(forwardRef<
     ids: string[];
     heavy: boolean;
     highlightId: string | null;
-    onLink: (title: string) => void;
-    onOpen: (id: string) => void;
-    onHover: (idx: number) => void;
+    editingId: string | null;
+    editingZettel: Zettel | null;
+    autoFocusTitle: boolean;
+    editorRef: RefObject<InplaceEditorHandle | null>;
+    actions: CardActions;
   }
->(function CardLayer({ data, ids, heavy, highlightId, onLink, onOpen, onHover }, ref) {
+>(function CardLayer(
+  { data, ids, heavy, highlightId, editingId, editingZettel, autoFocusTitle, editorRef, actions },
+  ref,
+) {
+  const all = editingId && !ids.includes(editingId) ? [...ids, editingId] : ids;
   return (
     <div ref={ref} className="pointer-events-none absolute left-0 top-0 origin-top-left" style={{ width: 0, height: 0 }}>
-      {ids.map((id) => {
+      {all.map((id) => {
         const idx = data.indexById.get(id);
         if (idx === undefined) return null;
+        const editing = id === editingId;
         return (
           <div key={id} className="pointer-events-auto">
             <GalaxyCard
@@ -36,9 +46,11 @@ export const CardLayer = memo(forwardRef<
               y={data.ys[idx]}
               heavy={heavy}
               highlighted={highlightId === id}
-              onLink={onLink}
-              onOpen={onOpen}
-              onHover={onHover}
+              editing={editing}
+              editingZettel={editing ? editingZettel : null}
+              autoFocusTitle={editing && autoFocusTitle}
+              editorRef={editorRef}
+              actions={actions}
             />
           </div>
         );

@@ -7,7 +7,7 @@ import { syncService } from '../lib/sync'
 import { searchZettels } from '../lib/searchZettels';
 import { getNodeColorRules, saveNodeColorRules, type NodeColorRule } from '../lib/graphColors';
 import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
-import { placeMissingAndQueue, positionStore } from '../lib/positionSync';
+import { placeMissingAndQueue, positionStore, setManualPosition } from '../lib/positionSync';
 import { downloadBodies } from '../lib/bodySync';
 import { clearBodyCache, invalidateBody, setCachedBody } from '../lib/bodyCache';
 
@@ -27,7 +27,11 @@ interface ZettelStore {
   setGraphNodeColors: (rules: NodeColorRule[]) => void;
   loadAll: () => Promise<void>;
   search: (query: string) => Promise<void>;
-  createZettel: (data: Pick<Zettel, 'title' | 'body' | 'tags'>) => Promise<Zettel>;
+  /** `position`: lugar escolhido na galáxia (gravado como manual antes do posicionamento automático). */
+  createZettel: (
+    data: Pick<Zettel, 'title' | 'body' | 'tags'>,
+    opts?: { position?: { x: number; y: number } },
+  ) => Promise<Zettel>;
   updateZettel: (id: string, data: Partial<Pick<Zettel, 'title' | 'body' | 'tags'>>) => Promise<Zettel>;
   deleteZettel: (id: string) => Promise<void>;
   clearAll: () => Promise<void>;
@@ -78,11 +82,14 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     }
   },
 
-  createZettel: async (data) => {
+  createZettel: async (data, opts) => {
     const { controller, loadAll } = get();
     if (!controller) throw new Error('Controller not initialized');
     const zettel = await controller.create(data);
     setCachedBody(zettel.id, zettel.body, zettel.bodyLen);
+    // Antes do placeMissingAndQueue: com a posição já gravada, o automático
+    // não mexe nela.
+    if (opts?.position) await setManualPosition(zettel.id, opts.position.x, opts.position.y);
     await loadAll();
     triggerGraphLayoutWorker();
     // Vaga na galáxia perto dos vizinhos de link — vale offline (fica pendente).

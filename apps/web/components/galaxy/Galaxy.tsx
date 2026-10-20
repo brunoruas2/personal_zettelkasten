@@ -1,11 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { analyzeSubtree, subtreeDepths, type Zettel, type ZettelMeta } from '@zettelkasten/core';
 import { useGalaxyData } from './useGalaxyData';
-import { FLY_MIN_SCALE, GalaxyEngine, LOD_SILHOUETTE } from '../../lib/galaxy/engine';
+import { FLY_MIN_SCALE, GalaxyEngine, LOD_CARDS, LOD_SILHOUETTE } from '../../lib/galaxy/engine';
 import { loadCamera, type Camera } from '../../lib/galaxy/camera';
+import { snapPosition } from '../../lib/galaxy/snap';
+import { setManualPosition } from '../../lib/positionSync';
+import { loadZettel } from '../../lib/bodySync';
+import { api } from '../../lib/api';
+import { useZettelStore } from '../../store/useZettelStore';
 import { HoverCard } from './HoverCard';
 import { CardLayer } from './CardLayer';
+import type { CardActions } from './GalaxyCard';
+import type { InplaceEditorHandle, SaveStatus } from './InplaceEditor';
+import { MobileEditorOverlay } from './MobileEditorOverlay';
+import { DeleteZettelModal } from './DeleteZettelModal';
+import { FocusPanel, type FocusItem } from './FocusPanel';
 import { GalaxyTopBar, ZoomControls, type MenuAction } from './GalaxyTopBar';
 import { GalaxyModal } from './GalaxyModal';
 import { GalaxySearch, type SearchFilters } from './GalaxySearch';
@@ -20,6 +31,10 @@ const CARD_HIDE_DELAY_MS = 150;
 const HIGHLIGHT_MS = 2000;
 /** Zoom a partir do qual os cards podem renderizar diagramas (câmera parada). */
 const HEAVY_MIN_SCALE = 0.6;
+/** Zoom da edição no card: texto em tamanho real. */
+const EDIT_SCALE = 1;
+/** "Salvo" some da barra depois de um tempo sem edição. */
+const SAVED_LINGER_MS = 2500;
 
 /** Grava `?z=<id>` na URL de `/` sem empilhar histórico. */
 function setZParam(id: string | null): void {
@@ -27,15 +42,37 @@ function setZParam(id: string | null): void {
   window.history.replaceState(window.history.state, '', url);
 }
 
+function isMobileDevice(): boolean {
+  return window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 1024;
+}
+
+let templateCache: string | null = null;
+
+/** `zettel_template` do usuário (uma vez por sessão; offline = corpo vazio). */
+async function loadTemplate(): Promise<string> {
+  if (templateCache !== null) return templateCache;
+  try {
+    const res = await api.get('/api/auth/settings');
+    const data = res.ok ? await res.json() : null;
+    templateCache = typeof data?.zettel_template === 'string' ? data.zettel_template : '';
+  } catch {
+    return '';
+  }
+  return templateCache ?? '';
+}
+
 /**
- * Galáxia: a tela principal. Canvas (motor imperativo) + barra, mini card,
- * menu, modais e busca. Nada aqui tira o usuário da galáxia, exceto abrir um
- * zettel (página antiga, temporário até os cards no lugar).
+ * Galáxia: a tela principal. Canvas (motor imperativo) + cards, barra, mini
+ * card, menu, modais, busca, edição no lugar, criação, exclusão, foco e mover.
+ * Nada aqui tira o usuário da galáxia, exceto "Abrir na página".
  */
 export function Galaxy() {
   const data = useGalaxyData();
   const dataRef = useRef(data);
   dataRef.current = data;
+  const links = useZettelStore((s) => s.links);
+  const createZettel = useZettelStore((s) => s.createZettel);
+  const deleteZettel = useZettelStore((s) => s.deleteZettel);
   const offlineRouter = useOfflineRouter();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -57,10 +94,36 @@ export function Galaxy() {
   const [modal, setModal] = useState<Modal>(null);
   const [search, setSearch] = useState<SearchFilters | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [mobile, setMobile] = useState(false);
+
+  // Edição
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingZettel, setEditingZettel] = useState<Zettel | null>(null);
+  const [mobileEdit, setMobileEdit] = useState<Zettel | null>(null);
+  const [autoFocusTitle, setAutoFocusTitle] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const editorRef = useRef<InplaceEditorHandle>(null);
+  const editingIdRef = useRef<string | null>(null);
+  editingIdRef.current = editingId;
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Apagar e foco
+  const [deleteMeta, setDeleteMeta] = useState<ZettelMeta | null>(null);
+  const [focusRootId, setFocusRootId] = useState<string | null>(null);
+  const focusRootRef = useRef<string | null>(null);
+  focusRootRef.current = focusRootId;
+  /** Zettel recém-criado esperando entrar no índice para voar/editar. */
+  const pendingNewRef = useRef<{ zettel: Zettel; mobile: boolean } | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast((t) => (t === msg ? null : t)), 3500);
+  }, []);
+
+  const onStatus = useCallback((s: SaveStatus) => {
+    setSaveStatus(s);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    if (s === 'saved') savedTimer.current = setTimeout(() => setSaveStatus('idle'), SAVED_LINGER_MS);
   }, []);
 
   const open = useCallback(
@@ -71,16 +134,203 @@ export function Galaxy() {
     [offlineRouter],
   );
 
-  const flyTo = useCallback((id: string) => {
+  const flyTo = useCallback((id: string, minScale = FLY_MIN_SCALE) => {
     const idx = dataRef.current.indexById.get(id);
     if (idx === undefined) return;
-    engineRef.current?.flyTo(idx);
+    engineRef.current?.flyTo(idx, true, minScale);
     setZParam(id);
     // No nível de cards o destaque do voo é o contorno do próprio card.
     setHighlightId(id);
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => setHighlightId(null), HIGHLIGHT_MS);
   }, []);
+
+  // --- edição ---
+
+  const exitEdit = useCallback(async () => {
+    if (!editingIdRef.current) return;
+    await editorRef.current?.flush();
+    setEditingId(null);
+    setEditingZettel(null);
+    setAutoFocusTitle(false);
+  }, []);
+
+  const startEdit = useCallback(
+    async (zettel: Zettel, opts: { titleFocus?: boolean; mobile?: boolean } = {}) => {
+      if (opts.mobile) {
+        setAutoFocusTitle(!!opts.titleFocus);
+        setMobileEdit(zettel);
+        return;
+      }
+      flyTo(zettel.id, EDIT_SCALE);
+      setAutoFocusTitle(!!opts.titleFocus);
+      setEditingZettel(zettel);
+      setEditingId(zettel.id);
+    },
+    [flyTo],
+  );
+
+  const requestEdit = useCallback(
+    async (id: string) => {
+      if (editingIdRef.current === id) return;
+      await exitEdit();
+      const { zettel, stale } = await loadZettel(id);
+      if (!zettel) return;
+      if (stale) {
+        showToast('A versão mais recente deste zettel ainda não foi baixada. Conecte-se para editar.');
+        return;
+      }
+      await startEdit(zettel, { mobile: isMobileDevice() });
+    },
+    [exitEdit, showToast, startEdit],
+  );
+
+  // --- foco ---
+
+  const exitFocus = useCallback(() => {
+    setFocusRootId(null);
+    engineRef.current?.setFocus(null);
+  }, []);
+
+  const enterFocus = useCallback(
+    (id: string) => {
+      if (!dataRef.current.indexById.has(id)) {
+        showToast('Esse zettel ainda não tem lugar na galáxia.');
+        return;
+      }
+      setFocusRootId(id);
+    },
+    [showToast],
+  );
+
+  const focus = useMemo(() => {
+    if (!focusRootId) return null;
+    const depths = subtreeDepths(focusRootId, links);
+    const visibleIds = [...depths.keys()].filter((id) => data.indexById.has(id));
+    const idxSet = new Set(visibleIds.map((id) => data.indexById.get(id)!));
+    const order = analyzeSubtree(focusRootId, data.metas, links).ids.filter((id) => data.indexById.has(id));
+    const items: FocusItem[] = order.map((id) => ({ meta: data.metas[data.indexById.get(id)!], depth: depths.get(id) ?? 0 }));
+    return { idxSet, items };
+  }, [focusRootId, links, data]);
+
+  const focusFittedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (!focus || !focusRootId) {
+      focusFittedRef.current = null;
+      return;
+    }
+    // Enquadra só ao entrar no foco; reconstruções dos dados só trocam o conjunto.
+    const fit = focusFittedRef.current !== focusRootId;
+    focusFittedRef.current = focusRootId;
+    engine.setFocus(focus.idxSet, fit);
+  }, [focus, focusRootId]);
+
+  // --- criar ---
+
+  const createAt = useCallback(
+    async (world: { x: number; y: number }, title = '') => {
+      if (focusRootRef.current) exitFocus();
+      await exitEdit();
+      const position = await snapPosition(world);
+      const body = title ? '' : await loadTemplate();
+      const zettel = await createZettel({ title, body, tags: [] }, { position });
+      pendingNewRef.current = { zettel, mobile: isMobileDevice() };
+    },
+    [createZettel, exitEdit, exitFocus],
+  );
+
+  const createAtCenter = useCallback(() => {
+    const cam = engineRef.current?.getCamera();
+    if (cam) void createAt({ x: cam.x, y: cam.y });
+  }, [createAt]);
+
+  // O zettel novo entra no índice depois do loadAll + posição: aí voa e edita.
+  useEffect(() => {
+    const pending = pendingNewRef.current;
+    if (!pending || !data.indexById.has(pending.zettel.id)) return;
+    pendingNewRef.current = null;
+    void startEdit(pending.zettel, { titleFocus: true, mobile: pending.mobile });
+  }, [data, startEdit]);
+
+  /** `[[novo]]` no editor: cria ao lado do card em edição, sem mudar a edição. */
+  const createLink = useCallback(
+    async (title: string) => {
+      const sourceId = editingIdRef.current ?? mobileEdit?.id ?? null;
+      const idx = sourceId ? dataRef.current.indexById.get(sourceId) : undefined;
+      const cam = engineRef.current?.getCamera();
+      const anchor = idx !== undefined ? { x: dataRef.current.xs[idx], y: dataRef.current.ys[idx] } : cam ? { x: cam.x, y: cam.y } : { x: 0, y: 0 };
+      const position = await snapPosition(anchor);
+      await createZettel({ title, body: '', tags: [] }, { position });
+    },
+    [createZettel, mobileEdit],
+  );
+
+  // --- apagar ---
+
+  const confirmDelete = useCallback(async () => {
+    const meta = deleteMeta;
+    setDeleteMeta(null);
+    if (!meta) return;
+    if (editingIdRef.current === meta.id) {
+      setEditingId(null);
+      setEditingZettel(null);
+    }
+    if (focusRootRef.current === meta.id) exitFocus();
+    await deleteZettel(meta.id);
+  }, [deleteMeta, deleteZettel, exitFocus]);
+
+  // --- mover ---
+
+  const onMoved = useCallback(async (id: string, dx: number, dy: number) => {
+    const d = dataRef.current;
+    const idx = d.indexById.get(id);
+    if (idx === undefined) return;
+    const target = await snapPosition({ x: d.xs[idx] + dx, y: d.ys[idx] + dy }, id);
+    await setManualPosition(id, target.x, target.y);
+  }, []);
+
+  // Ações dos cards: objeto estável (o CardLayer é memo), as funções reais
+  // ficam numa ref atualizada a cada render.
+  const actionsRef = useRef<CardActions | null>(null);
+  actionsRef.current = {
+    onLink: (title) => {
+      const id = idByTitleRef.current.get(title.trim().toLowerCase());
+      if (id) flyTo(id);
+    },
+    onOpen: open,
+    onHover: (idx) => engineRef.current?.setHoverFromCard(idx),
+    onRequestEdit: (id) => void requestEdit(id),
+    onFocus: enterFocus,
+    onDelete: (id) => {
+      const idx = dataRef.current.indexById.get(id);
+      if (idx !== undefined) setDeleteMeta(dataRef.current.metas[idx]);
+    },
+    onStatus,
+    onCreateLink: createLink,
+    onMoved: (id, dx, dy) => void onMoved(id, dx, dy),
+    getScale: () => engineRef.current?.getCamera().scale ?? 1,
+  };
+  const actions = useMemo<CardActions>(
+    () => ({
+      onLink: (t) => actionsRef.current!.onLink(t),
+      onOpen: (id) => actionsRef.current!.onOpen(id),
+      onHover: (i) => actionsRef.current!.onHover(i),
+      onRequestEdit: (id) => actionsRef.current!.onRequestEdit(id),
+      onFocus: (id) => actionsRef.current!.onFocus(id),
+      onDelete: (id) => actionsRef.current!.onDelete(id),
+      onStatus: (s) => actionsRef.current!.onStatus(s),
+      onCreateLink: (t) => actionsRef.current!.onCreateLink(t),
+      onMoved: (id, dx, dy) => actionsRef.current!.onMoved(id, dx, dy),
+      getScale: () => actionsRef.current!.getScale(),
+    }),
+    [],
+  );
+
+  // Callbacks do motor que mudam com o estado, lidas por ref.
+  const engineHandlersRef = useRef({ exitEdit, createAt });
+  engineHandlersRef.current = { exitEdit, createAt };
 
   // Motor: criado uma vez; callbacks leem estado por ref.
   useEffect(() => {
@@ -110,6 +360,7 @@ export function Galaxy() {
       onBackgroundTap: () => {
         setPinnedIdx(-1);
         engine.setPinned(-1);
+        void engineHandlersRef.current.exitEdit();
       },
       onCameraChange: (cam: Camera) => {
         setScale(cam.scale);
@@ -119,9 +370,12 @@ export function Galaxy() {
           setPinnedIdx(-1);
           setHoverIdx(-1);
         }
+        // Afastar abaixo do nível de cards encerra a edição (salvando).
+        if (cam.scale < LOD_CARDS && editingIdRef.current) void engineHandlersRef.current.exitEdit();
       },
       onVisibleCards: (ids) => setVisibleIds(ids),
       onCameraSettled: (s) => setSettled(s),
+      onDoubleClickEmpty: (wx, wy) => void engineHandlersRef.current.createAt({ x: wx, y: wy }),
     });
     engine.setCardLayer(cardLayerRef.current);
     engineRef.current = engine;
@@ -137,6 +391,13 @@ export function Galaxy() {
     setPinnedIdx(-1);
     setHoverIdx(-1);
   }, [data]);
+
+  useEffect(() => {
+    const update = () => setMobile(isMobileDevice());
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   // Câmera inicial, uma vez, quando índice e posições chegaram: ?z= vence a
   // câmera lembrada; sem nenhuma, "Ver tudo".
@@ -166,10 +427,28 @@ export function Galaxy() {
     }
   }, [data, showToast]);
 
-  // Modais e busca desligam pan por teclado/atalhos do canvas.
+  // Overlays desligam pan por teclado/atalhos do canvas.
+  const overlayOpen = modal !== null || search !== null || deleteMeta !== null || mobileEdit !== null;
   useEffect(() => {
-    engineRef.current?.setInputEnabled(modal === null && search === null);
-  }, [modal, search]);
+    engineRef.current?.setInputEnabled(!overlayOpen);
+  }, [overlayOpen]);
+
+  // Esc (bolha, depois dos popups do editor — que marcam defaultPrevented):
+  // primeiro encerra a edição, depois o foco.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || overlayOpen) return;
+      if (editingIdRef.current) {
+        e.preventDefault();
+        void exitEdit();
+      } else if (focusRootRef.current) {
+        e.preventDefault();
+        exitFocus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [exitEdit, exitFocus, overlayOpen]);
 
   // Atalhos da galáxia. `e.code` pelo mesmo motivo do Alt+T/Alt+B: onde o Alt
   // compõe caractere (Option no macOS) a comparação por caractere falharia.
@@ -191,7 +470,7 @@ export function Galaxy() {
   }, []);
 
   const onMenu = (action: MenuAction) => {
-    if (action === 'new') offlineRouter.push('/zettel/new');
+    if (action === 'new') createAtCenter();
     else if (action === 'search') setSearch({});
     else setModal(action);
   };
@@ -208,20 +487,13 @@ export function Galaxy() {
     }
     return m;
   }, [data.metas]);
-
-  const onCardLink = useCallback(
-    (title: string) => {
-      const id = idByTitle.get(title.trim().toLowerCase());
-      if (id) flyTo(id);
-    },
-    [idByTitle, flyTo],
-  );
-
-  const onCardHover = useCallback((idx: number) => engineRef.current?.setHoverFromCard(idx), []);
+  const idByTitleRef = useRef(idByTitle);
+  idByTitleRef.current = idByTitle;
 
   const cardIdx = pinnedIdx >= 0 ? pinnedIdx : hoverIdx;
   const cardPos = cardIdx >= 0 ? engineRef.current?.screenOf(cardIdx) ?? null : null;
   const cardMeta = cardIdx >= 0 ? data.metas[cardIdx] : undefined;
+  const focusRootMeta = focusRootId ? data.metas[data.indexById.get(focusRootId) ?? -1] : undefined;
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#05070c]">
@@ -232,9 +504,11 @@ export function Galaxy() {
           ids={visibleIds}
           heavy={settled && scale >= HEAVY_MIN_SCALE}
           highlightId={highlightId}
-          onLink={onCardLink}
-          onOpen={open}
-          onHover={onCardHover}
+          editingId={editingId}
+          editingZettel={editingZettel}
+          autoFocusTitle={autoFocusTitle}
+          editorRef={editorRef}
+          actions={actions}
         />
       </div>
 
@@ -254,11 +528,17 @@ export function Galaxy() {
           }}
           onApproach={() => flyTo(cardMeta.id)}
           onOpen={() => open(cardMeta.id)}
+          onFocus={() => {
+            setHoverIdx(-1);
+            setPinnedIdx(-1);
+            enterFocus(cardMeta.id);
+          }}
         />
       )}
 
       <GalaxyTopBar
         unplaced={data.unplacedIds.length}
+        saveStatus={saveStatus}
         onSearch={() => setSearch({})}
         onUnplaced={() => setSearch({ unplacedOnly: true })}
         onMenu={onMenu}
@@ -271,12 +551,27 @@ export function Galaxy() {
         onFit={() => engineRef.current?.fit()}
       />
 
+      {mobile && (
+        <button
+          type="button"
+          onClick={createAtCenter}
+          title="Novo zettel"
+          className="absolute bottom-4 left-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brand text-2xl text-white shadow-2xl"
+        >
+          +
+        </button>
+      )}
+
+      {focus && focusRootMeta && (
+        <FocusPanel root={focusRootMeta} items={focus.items} onPick={(id) => flyTo(id)} onExit={exitFocus} />
+      )}
+
       {data.ready && data.count === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center font-geist">
           <p className="max-w-sm px-6 text-center text-sm text-[#8b93a3]">
             {data.unplacedIds.length > 0
               ? 'Os zettels ainda não têm lugar na galáxia. Com conexão, o layout é calculado na próxima sincronização.'
-              : 'A galáxia está vazia.'}
+              : 'A galáxia está vazia. Dê um duplo clique em qualquer lugar para criar o primeiro zettel.'}
           </p>
         </div>
       )}
@@ -302,8 +597,30 @@ export function Galaxy() {
               setSearch(null);
               open(id);
             }}
+            onFocus={(id) => {
+              setSearch(null);
+              enterFocus(id);
+            }}
           />
         </GalaxyModal>
+      )}
+
+      {deleteMeta && (
+        <DeleteZettelModal meta={deleteMeta} onCancel={() => setDeleteMeta(null)} onConfirm={() => void confirmDelete()} />
+      )}
+
+      {mobileEdit && (
+        <MobileEditorOverlay
+          zettel={mobileEdit}
+          status={saveStatus}
+          autoFocusTitle={autoFocusTitle}
+          onStatus={onStatus}
+          onCreateLink={createLink}
+          onClose={() => {
+            setMobileEdit(null);
+            setAutoFocusTitle(false);
+          }}
+        />
       )}
 
       {modal === 'settings' && (

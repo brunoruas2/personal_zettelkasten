@@ -4,6 +4,23 @@ import { useEffect, useRef, useState } from 'react';
 import { useSyncStore } from '../../store/useSyncStore';
 import { useAuth } from '../../providers/AuthProvider';
 import type { SyncStatus } from '../../lib/sync';
+import type { SaveStatus } from './InplaceEditor';
+
+const SAVE_LABEL: Record<SaveStatus, string> = {
+  idle: '',
+  saving: 'Salvando…',
+  saved: 'Salvo',
+  offline: 'Não salvo — offline',
+  error: 'Erro ao salvar',
+};
+
+const SAVE_DOT: Record<SaveStatus, string> = {
+  idle: 'bg-emerald-400',
+  saving: 'bg-amber-300 animate-pulse',
+  saved: 'bg-emerald-400',
+  offline: 'bg-zinc-500',
+  error: 'bg-red-400',
+};
 
 const SYNC_LABEL: Record<SyncStatus, string> = {
   idle: 'Sincronizado',
@@ -26,11 +43,14 @@ export type MenuAction = 'new' | 'search' | 'tags' | 'settings' | 'passkeys';
 /** Barra flutuante: menu + marca + sync à esquerda, busca no centro, "sem lugar". */
 export function GalaxyTopBar({
   unplaced,
+  saveStatus,
   onSearch,
   onUnplaced,
   onMenu,
 }: {
   unplaced: number;
+  /** Estado do autosave da edição; enquanto houver, substitui o do sync. */
+  saveStatus: SaveStatus;
   onSearch: () => void;
   onUnplaced: () => void;
   onMenu: (action: MenuAction) => void;
@@ -51,8 +71,8 @@ export function GalaxyTopBar({
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
           <span className="font-newsreader text-base font-medium">Galáxia</span>
           <span className="hidden items-center gap-1.5 text-xs text-[#8b93a3] sm:flex">
-            <span className={`h-1.5 w-1.5 rounded-full ${SYNC_DOT[status]}`} />
-            {SYNC_LABEL[status]}
+            <span className={`h-1.5 w-1.5 rounded-full ${saveStatus !== 'idle' ? SAVE_DOT[saveStatus] : SYNC_DOT[status]}`} />
+            {saveStatus !== 'idle' ? SAVE_LABEL[saveStatus] : SYNC_LABEL[status]}
           </span>
         </button>
         {menuOpen && (

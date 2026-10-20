@@ -277,3 +277,19 @@ export async function resetGalaxyLayout(source: GalaxySource): Promise<void> {
   removeKey(SINCE_KEY)
   await freezeAndInit(source)
 }
+
+/**
+ * Posição escolhida pelo usuário (mover um card, criar num lugar): grava como
+ * `lww` — vence o posicionamento automático (`if_absent`) e é a última escrita
+ * que vale entre aparelhos. `updatedAt` estritamente maior que o anterior,
+ * senão o servidor ignoraria a mudança.
+ */
+export async function setManualPosition(id: string, x: number, y: number): Promise<void> {
+  const prev = await positionStore.get(id)
+  const updatedAt = Math.max(Date.now(), (prev?.updatedAt ?? 0) + 1)
+  await positionStore.putMany([
+    { id, x: Math.round(x), y: Math.round(y), updatedAt, syncState: 'pending', mode: 'lww' },
+  ])
+  emitChanged()
+  void pushPendingPositions().catch(() => {})
+}

@@ -150,3 +150,24 @@ describe('ZettelController', () => {
     expect(await repo.getBody(b.id)).toBe('também [[Velho]]');
   });
 });
+
+describe('findCiting', () => {
+  it('lista quem cita o título (com ou sem ^), com o trecho em volta', async () => {
+    const { ctl } = setup();
+    const alvo = await ctl.create({ title: 'Segundo cérebro', body: 'eu mesmo [[Segundo cérebro]]', tags: [] });
+    await ctl.create({ title: 'b', body: 'Externalizar a memória — ver [[segundo cérebro]] e mais', tags: [] });
+    await ctl.create({ title: 'a', body: 'filho de [[^Segundo cérebro]]', tags: [] });
+    await ctl.create({ title: 'c', body: 'nada a ver', tags: [] });
+
+    const hits = await ctl.findCiting('Segundo cérebro', alvo.id);
+    expect(hits.map((h) => h.title)).toEqual(['a', 'b']);
+    expect(hits[1].before).toContain('ver ');
+    expect(hits[1].after).toBe(' e mais');
+  });
+
+  it('título vazio não cita nada', async () => {
+    const { ctl } = setup();
+    await ctl.create({ title: 'x', body: '[[]]', tags: [] });
+    expect(await ctl.findCiting('')).toEqual([]);
+  });
+});

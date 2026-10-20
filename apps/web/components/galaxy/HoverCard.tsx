@@ -33,6 +33,7 @@ export function HoverCard({
   y,
   onApproach,
   onOpen,
+  onFocus,
   onPointerEnter,
   onPointerLeave,
 }: {
@@ -42,6 +43,7 @@ export function HoverCard({
   y: number;
   onApproach: () => void;
   onOpen: () => void;
+  onFocus: () => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
 }) {
@@ -67,6 +69,13 @@ export function HoverCard({
         {degree === 0 ? 'avulso' : `${degree} ${degree === 1 ? 'conexão' : 'conexões'}`} · {editedAgo(meta.updatedAt)}
       </div>
       <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={onFocus}
+          className="flex-1 rounded-lg border border-white/10 px-2 py-1.5 text-xs text-[#c9cfdb] hover:bg-white/5"
+        >
+          Focar
+        </button>
         <button
           type="button"
           onClick={onApproach}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Link } from '../models/Link';
 import type { Zettel } from '../models/Zettel';
-import { analyzeSubtree, buildChildAdjacency, collectReachable } from './ZettelHierarchy';
+import { analyzeSubtree, buildChildAdjacency, collectReachable, subtreeDepths } from './ZettelHierarchy';
 
 const NOW = 1_757_000_000_000;
 
@@ -291,5 +291,20 @@ describe('pureza', () => {
     const links = [childLink('A', 'B'), childLink('A', 'C')];
 
     expect(analyzeSubtree('A', zettels, links)).toEqual(analyzeSubtree('A', zettels, links));
+  });
+});
+
+describe('subtreeDepths', () => {
+  it('menor profundidade por BFS, com ^pai invertido e ciclo', () => {
+    const links: Link[] = [
+      { sourceId: 'r', targetId: 'a' },
+      { sourceId: 'a', targetId: 'b' },
+      { sourceId: 'r', targetId: 'b' },
+      { sourceId: 'c', targetId: 'b', type: 'parent-ref' }, // c declara b como pai → b → c
+      { sourceId: 'c', targetId: 'r' }, // ciclo de volta à raiz
+      { sourceId: 'x', targetId: 'y' },
+    ];
+    const d = subtreeDepths('r', links);
+    expect(Object.fromEntries(d)).toEqual({ r: 0, a: 1, b: 1, c: 2 });
   });
 });

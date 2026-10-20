@@ -61,6 +61,17 @@ export class StaleBodyError extends Error {
   }
 }
 
+const CITE_CONTEXT = 40;
+
+export interface CitingZettel {
+  id: string;
+  title: string;
+  /** Texto antes da citação (até ~40 caracteres, quebras colapsadas). */
+  before: string;
+  /** Texto depois da citação. */
+  after: string;
+}
+
 export interface RewriteResult {
   rewritten: Zettel[];
   /** Zettels citando o título antigo cujo corpo local está desatualizado: não foram tocados. */
@@ -162,6 +173,38 @@ export class ZettelController {
 
   async clearAll(): Promise<void> {
     return this.repo.clearAll();
+  }
+
+  /**
+   * Zettels cujo corpo local cita `title` (`[[título` ou `[[^título`, sem
+   * caixa), com o trecho em volta da primeira citação. Lê por cursor — um
+   * corpo por vez. Usado pelo aviso de links quebrados ao apagar.
+   */
+  async findCiting(title: string, excludeId?: string): Promise<CitingZettel[]> {
+    const lower = title.toLowerCase();
+    if (!lower.trim()) return [];
+    const hits: { id: string; before: string; after: string }[] = [];
+    await this.repo.eachBody((id, body) => {
+      if (id === excludeId) return;
+      const lowerBody = body.toLowerCase();
+      let at = lowerBody.indexOf(`[[${lower}`);
+      if (at < 0) at = lowerBody.indexOf(`[[^${lower}`);
+      if (at < 0) return;
+      const end = body.indexOf(']]', at);
+      const close = end < 0 ? at + title.length + 2 : end + 2;
+      const flat = (s: string) => s.replace(/\s+/g, ' ');
+      hits.push({
+        id,
+        before: (at > CITE_CONTEXT ? '…' : '') + flat(body.slice(Math.max(0, at - CITE_CONTEXT), at)),
+        after: flat(body.slice(close, close + CITE_CONTEXT)) + (close + CITE_CONTEXT < body.length ? '…' : ''),
+      });
+    });
+    if (hits.length === 0) return [];
+    const metas = new Map((await this.repo.listMeta()).map((m) => [m.id, m]));
+    return hits
+      .filter((h) => metas.has(h.id))
+      .map((h) => ({ ...h, title: metas.get(h.id)!.title }))
+      .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'));
   }
 
   /**

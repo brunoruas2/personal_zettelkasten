@@ -32,6 +32,7 @@ export function GalaxySearch({
   onClose,
   onFly,
   onOpen,
+  onFocus,
 }: {
   initial: SearchFilters;
   canFly: (id: string) => boolean;
@@ -39,6 +40,8 @@ export function GalaxySearch({
   onClose: () => void;
   onFly: (id: string) => void;
   onOpen: (id: string) => void;
+  /** Ctrl+Enter: modo foco no resultado. */
+  onFocus: (id: string) => void;
 }) {
   const zettels = useZettelStore((s) => s.zettels);
   const links = useZettelStore((s) => s.links);
@@ -173,8 +176,10 @@ export function GalaxySearch({
       e.preventDefault();
       if (results.length === 0) return;
       setSelected((i) => Math.min(results.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1))));
-    } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
-      // Ctrl+Enter fica reservado para o modo foco (change galaxy-inplace-edit).
+    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (current) onFocus(current.id);
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       act(current);
     }
@@ -304,6 +309,7 @@ export function GalaxySearch({
       <div className="hidden shrink-0 items-center gap-4 border-t border-white/10 px-5 py-2 text-xs text-[#6f7787] lg:flex">
         <span>↑↓ navegar</span>
         <span>↵ voar até</span>
+        <span>Ctrl ↵ focar</span>
         <span>Esc voltar à galáxia</span>
         <button type="button" onClick={onClose} className="ml-auto hover:text-[#c9cfdb]">Fechar</button>
       </div>
