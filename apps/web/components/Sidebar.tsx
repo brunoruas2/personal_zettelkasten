@@ -102,7 +102,8 @@ export function Sidebar() {
   if (orphanOnly) displayed = displayed.filter((z) => !linkedIds.has(z.id));
   if (noTagOnly) displayed = displayed.filter((z) => z.tags.length === 0);
 
-  if (pathname === '/login' || pathname === '/agent-skill') return null;
+  // Na galáxia (`/`) não há barra lateral: a tela é o canvas inteiro.
+  if (pathname === '/' || pathname === '/login' || pathname === '/agent-skill') return null;
 
   // Strings completas, não concatenação: o Tailwind só enxerga classes literais.
   const asideClass = collapsed
@@ -132,7 +133,7 @@ export function Sidebar() {
             <Link
               href="/"
               className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 transition-colors"
-              title="Dashboard"
+              title="Galáxia"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>

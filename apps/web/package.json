@@ -29,8 +29,6 @@
     "@zettelkasten/db-web": "workspace:*",
     "abcjs": "^6.6.2",
     "d3-force": "^3.0.0",
-    "graphology": "^0.26.0",
-    "graphology-layout-forceatlas2": "^0.10.1",
     "highlight.js": "^11.11.1",
     "next": "^15.3.1",
     "perfect-freehand": "^1.2.3",

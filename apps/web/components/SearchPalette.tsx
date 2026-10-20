@@ -55,6 +55,8 @@ export function SearchPalette() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!e.altKey || e.code !== 'KeyB') return;
+      // Na galáxia (`/`) o Alt+B é da busca da galáxia.
+      if (window.location.pathname === '/') return;
       e.preventDefault();
       setOpen((prev) => !prev);
     };
@@ -171,7 +173,7 @@ export function SearchPalette() {
       ?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex, open]);
 
-  if (!open || pathname === '/login' || pathname === '/agent-skill') return null;
+  if (!open || pathname === '/' || pathname === '/login' || pathname === '/agent-skill') return null;
 
   return (
     <div

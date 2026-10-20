@@ -7,8 +7,8 @@ import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 import { buildChildAdjacency, collectReachable } from '@zettelkasten/core';
 import { buildNodeColorMap, buildNebulaMap } from '../../lib/graphColors';
 import { loadLayoutCache, isLayoutCacheValid } from '../../lib/graphLayoutCache';
-import { buildStars, drawStarfield } from './starfield';
-import { getNebulaSprite, NEBULA_WORLD_RADIUS } from './nebulaSprites';
+import { buildStars, drawStarfield } from '../../lib/galaxy/starfield';
+import { getNebulaSprite, NEBULA_WORLD_RADIUS } from '../../lib/galaxy/nebulaSprites';
 import { ReadingPanel, PANEL_WIDTH, PANEL_MAX_HEIGHT } from './ReadingPanel';
 import { SplitEditPanel } from './SplitEditPanel';
 

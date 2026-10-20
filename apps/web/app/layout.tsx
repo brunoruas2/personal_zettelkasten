@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Lora, JetBrains_Mono } from 'next/font/google';
+import { Lora, JetBrains_Mono, Newsreader, Geist } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '../providers/AuthProvider';
 import { DatabaseProvider } from '../providers/DatabaseProvider';
@@ -11,6 +11,10 @@ import { FONT_SCRIPT } from '../lib/font';
 
 const lora = Lora({ subsets: ['latin'], variable: '--font-lora', display: 'swap' });
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains', display: 'swap' });
+// Galáxia: títulos em Newsreader, interface em Geist (design aprovado). Só os
+// componentes da galáxia as usam (`font-newsreader`, `font-geist`).
+const newsreader = Newsreader({ subsets: ['latin'], variable: '--font-newsreader', display: 'swap' });
+const geist = Geist({ subsets: ['latin'], variable: '--font-geist', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'Zettelkasten',
@@ -32,7 +36,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${lora.variable} ${jetbrainsMono.variable}`}>
+    <html lang="pt-BR" className={`${lora.variable} ${jetbrainsMono.variable} ${newsreader.variable} ${geist.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT + FONT_SCRIPT }} />
       </head>

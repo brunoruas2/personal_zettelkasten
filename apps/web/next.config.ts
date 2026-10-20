@@ -7,8 +7,6 @@ const nextConfig: NextConfig = {
   transpilePackages: [
     '@zettelkasten/core',
     '@zettelkasten/db-web',
-    'graphology',
-    'graphology-layout-forceatlas2',
   ],
   // Skip type-check and lint during build — the VPS (500 MB RAM) runs out of
   // memory on these phases. Types are checked locally before every commit.
