@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useCallback, useState } from 'react';
 import { OfflineLink } from './OfflineLink';
-import type { Zettel, Link as ZettelLink } from '@zettelkasten/core';
+import type { ZettelMeta as Zettel, Link as ZettelLink } from '@zettelkasten/core';
 import { useZettelStore } from '../store/useZettelStore';
 import { buildNodeColorMap } from '../lib/graphColors';
 import { useOfflineRouter } from '../hooks/useOfflineRouter';

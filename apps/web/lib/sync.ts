@@ -1,9 +1,10 @@
 import { api, AuthError } from './api'
-import type { Zettel } from '@zettelkasten/core'
+import { utf8Length, type Zettel, type ZettelMeta } from '@zettelkasten/core'
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'offline' | 'error'
 
-interface ServerZettel {
+/** Zettel completo do servidor — busca FTS5 e o GET antigo. */
+export interface ServerZettel {
   id: string
   user_id: string
   title: string
@@ -14,6 +15,17 @@ interface ServerZettel {
   deleted_at: number | null
 }
 
+/** Linha do índice (`GET /api/zettels?fields=meta`): sem corpo. */
+interface ServerMeta {
+  id: string
+  title: string
+  tags: string[]
+  created_at: number
+  updated_at: number
+  deleted_at: number | null
+  body_len: number
+}
+
 type SyncOp =
   | { op: 'create'; payload: Zettel }
   | { op: 'update'; payload: Zettel }
@@ -22,14 +34,33 @@ type SyncOp =
 const QUEUE_KEY = 'zettel_sync_queue'
 const LAST_SYNC_KEY = 'zettel_last_sync_at'
 
-export function serverZettelToLocal(z: ServerZettel): Zettel {
+const MIGRATE_BATCH = 50
+
+function serverMetaToLocal(m: ServerMeta): Omit<ZettelMeta, 'bodyAt'> {
+  return {
+    id: m.id,
+    title: m.title,
+    tags: m.tags ?? [],
+    createdAt: m.created_at,
+    updatedAt: m.updated_at,
+    bodyLen: m.body_len ?? 0,
+  }
+}
+
+/**
+ * Resultado da busca do servidor como meta — o corpo é descartado, a lista
+ * global não guarda corpos. `bodyAt: null` porque a versão local do corpo não
+ * é conhecida aqui; quem abre o zettel lê a meta do Dexie.
+ */
+export function serverZettelToMeta(z: ServerZettel): ZettelMeta {
   return {
     id: z.id,
     title: z.title,
-    body: z.body,
     tags: z.tags ?? [],
     createdAt: z.created_at,
     updatedAt: z.updated_at,
+    bodyLen: utf8Length(z.body ?? ''),
+    bodyAt: null,
   }
 }
 
@@ -142,37 +173,40 @@ class SyncService {
 
   // --- Pull: server → local (delta by updated_at) ---
   //
-  // Strategy: server wins when server.updatedAt > local.updatedAt
-  // (local offline edits are preserved when they're newer)
+  // Só o índice (fields=meta): os corpos vêm depois, pelo downloader de
+  // `bodySync.ts`. Servidor vence quando server.updated_at > local.updatedAt
+  // (edições offline mais novas são preservadas). Uma meta mais nova deixa o
+  // corpo local desatualizado (bodyAt < updatedAt) sem apagá-lo: continua
+  // legível offline até o novo chegar.
 
   async pull(
-    getLocalFn: (id: string) => Promise<Zettel | null>,
-    upsertFn: (z: Zettel) => Promise<void>,
+    getLocalFn: (id: string) => Promise<ZettelMeta | null>,
+    upsertMetaFn: (metas: Omit<ZettelMeta, 'bodyAt'>[]) => Promise<void>,
     deleteFn: (id: string) => Promise<void>,
   ): Promise<void> {
     const since = Number(localStorage.getItem(LAST_SYNC_KEY) ?? '0')
     this.setStatus('syncing')
 
     try {
-      const res = await api.get(`/api/zettels?since=${since}`)
+      const res = await api.get(`/api/zettels?since=${since}&fields=meta`)
       if (!res.ok) {
         this.setStatus('error')
         return
       }
 
-      const serverZettels: ServerZettel[] = await res.json()
+      const serverMetas: ServerMeta[] = await res.json()
+      const newer: Omit<ZettelMeta, 'bodyAt'>[] = []
 
-      for (const sz of serverZettels) {
-        if (sz.deleted_at != null) {
-          await deleteFn(sz.id)
+      for (const sm of serverMetas) {
+        if (sm.deleted_at != null) {
+          await deleteFn(sm.id)
         } else {
-          const local = await getLocalFn(sz.id)
+          const local = await getLocalFn(sm.id)
           // Only overwrite if server version is strictly newer than local
-          if (!local || sz.updated_at > local.updatedAt) {
-            await upsertFn(serverZettelToLocal(sz))
-          }
+          if (!local || sm.updated_at > local.updatedAt) newer.push(serverMetaToLocal(sm))
         }
       }
+      await upsertMetaFn(newer)
 
       localStorage.setItem(LAST_SYNC_KEY, String(Date.now()))
       this.setStatus('synced')
@@ -184,13 +218,17 @@ class SyncService {
 
   // --- First-time migration: push all existing IndexedDB data to server ---
   // Called on first login. Skipped on subsequent sessions (LAST_SYNC_KEY is set).
+  // Corpos lidos em lotes por id — nunca a base inteira no heap.
 
   // Returns true if migration actually ran (i.e. there were local zettels to upload).
-  async migrateIfNeeded(getAllFn: () => Promise<Zettel[]>): Promise<boolean> {
+  async migrateIfNeeded(source: {
+    getAll(): Promise<ZettelMeta[]>
+    getBodies(ids: string[]): Promise<Map<string, string>>
+  }): Promise<boolean> {
     if (localStorage.getItem(LAST_SYNC_KEY) !== null) return false
 
-    const zettels = await getAllFn()
-    if (zettels.length === 0) {
+    const metas = await source.getAll()
+    if (metas.length === 0) {
       localStorage.setItem(LAST_SYNC_KEY, '0')
       return false
     }
@@ -198,12 +236,17 @@ class SyncService {
     this.setStatus('syncing')
     const failed: Zettel[] = []
 
-    for (const z of zettels) {
-      try {
-        await this.sendOp({ op: 'create', payload: z })
-      } catch (err) {
-        if (err instanceof AuthError) return false
-        failed.push(z)
+    for (let i = 0; i < metas.length; i += MIGRATE_BATCH) {
+      const batch = metas.slice(i, i + MIGRATE_BATCH)
+      const bodies = await source.getBodies(batch.map((m) => m.id))
+      for (const m of batch) {
+        const z: Zettel = { ...m, body: bodies.get(m.id) ?? '' }
+        try {
+          await this.sendOp({ op: 'create', payload: z })
+        } catch (err) {
+          if (err instanceof AuthError) return false
+          failed.push(z)
+        }
       }
     }
 

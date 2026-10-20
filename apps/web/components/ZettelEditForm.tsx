@@ -22,6 +22,7 @@ import { useReadingWidthClass } from '../lib/readingWidth';
 import { eventInEmbedded, EMBEDDED_ATTR } from '../lib/embeddedFocus';
 import { useEditorModeScrollSync } from '../hooks/useEditorModeScrollSync';
 import { useEmbeds } from '../hooks/useEmbeds';
+import { loadZettel } from '../lib/bodySync';
 import { rewriteLinkTitle, type Zettel } from '@zettelkasten/core';
 
 export interface ZettelEditFormProps {
@@ -113,6 +114,9 @@ export function ZettelEditForm({
     editorRef,
   });
   const [pendingImages, setPendingImages] = useState(0);
+  // Corpo local mais velho que a meta (offline, versão nova não baixada):
+  // salvar empurraria o corpo velho por cima da versão do outro aparelho.
+  const [stale, setStale] = useState(false);
 
   // Renomear um filho reescreve `[[antigo]]` no pai salvo (rewriteLinks); o corpo
   // em edição aqui também precisa, senão salvar o pai desfaria a reescrita.
@@ -135,7 +139,9 @@ export function ZettelEditForm({
   useEffect(() => {
     if (!controller) return;
     if (zettelId) {
-      controller.getById(zettelId).then((z) => {
+      // Busca o corpo na hora se estiver desatualizado e houver rede.
+      loadZettel(zettelId).then(({ zettel: z, stale: st }) => {
+        setStale(st);
         if (z) {
           setTitle(z.title);
           setBody(z.body);
@@ -168,7 +174,7 @@ export function ZettelEditForm({
     return () => window.removeEventListener('beforeunload', handler);
   }, [isPage]);
 
-  const handleLinkSelect = (zettel: Zettel, asParent: boolean) => {
+  const handleLinkSelect = (zettel: { title: string }, asParent: boolean) => {
     editor?.chain().focus().insertContent(`[[${asParent ? '^' : ''}${zettel.title}]]`).run();
     setLinkPickerOpen(false);
   };
@@ -243,7 +249,7 @@ export function ZettelEditForm({
   const justSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSave = useCallback(async () => {
-    if (!title.trim() || pendingImages > 0) return;
+    if (!title.trim() || pendingImages > 0 || stale) return;
     const payload = { title: title.trim(), body, tags };
     // Salvar um zettel existente (página de edição ou painel do mapa) não
     // navega: o formulário continua na tela, então precisa do feedback. Só a
@@ -265,7 +271,7 @@ export function ZettelEditForm({
     } finally {
       if (staysOnForm) setIsSaving(false);
     }
-  }, [title, body, tags, zettelId, pendingImages, updateZettel, createZettel, router, isPage, onSaved]);
+  }, [title, body, tags, zettelId, pendingImages, stale, updateZettel, createZettel, router, isPage, onSaved]);
 
   useEffect(() => {
     return () => {
@@ -410,7 +416,7 @@ export function ZettelEditForm({
           </div>
           <button
             onClick={handleSave}
-            disabled={!title.trim() || pendingImages > 0 || isSaving}
+            disabled={!title.trim() || pendingImages > 0 || isSaving || stale}
             className={`rounded-xl px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90 ${justSaved ? 'bg-green-600' : 'bg-brand'}`}
           >
             {pendingImages > 0
@@ -422,6 +428,12 @@ export function ZettelEditForm({
               : 'Salvar'}
           </button>
         </div>
+
+        {stale && (
+          <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+            A versão mais recente deste zettel ainda não foi baixada. Conecte-se para editar.
+          </p>
+        )}
 
         {/* Title — always visible */}
         <input

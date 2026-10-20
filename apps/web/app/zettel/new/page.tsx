@@ -121,7 +121,7 @@ export default function NewZettelPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, []);
 
-  const handleLinkSelect = (zettel: Zettel, asParent: boolean) => {
+  const handleLinkSelect = (zettel: { title: string }, asParent: boolean) => {
     editor?.chain().focus().insertContent(`[[${asParent ? '^' : ''}${zettel.title}]]`).run();
     setLinkPickerOpen(false);
   };

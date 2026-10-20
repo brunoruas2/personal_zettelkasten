@@ -2,6 +2,7 @@
 
 import { memo } from 'react';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer';
+import { useZettelBody } from '../../hooks/useZettelBody';
 
 export const PANEL_WIDTH = 380;
 export const PANEL_MAX_HEIGHT = 420;
@@ -9,7 +10,6 @@ export const PANEL_MAX_HEIGHT = 420;
 interface ReadingPanelProps {
   id: string;
   title: string;
-  body: string;
   /** Dentro do viewport atual do mapa — controla se o corpo é montado em markdown ou substituído por um placeholder leve. */
   visible: boolean;
   /** Estável entre renders (recebe o id), para o `memo` valer. */
@@ -18,7 +18,9 @@ interface ReadingPanelProps {
   registerEl: (id: string, el: HTMLDivElement | null) => void;
 }
 
-export const ReadingPanel = memo(function ReadingPanel({ id, title, body, visible, onOpen, registerEl }: ReadingPanelProps) {
+export const ReadingPanel = memo(function ReadingPanel({ id, title, visible, onOpen, registerEl }: ReadingPanelProps) {
+  // Corpo sob demanda (zettel-index): só para painéis visíveis, pelo cache LRU.
+  const { body, status } = useZettelBody(visible ? id : null);
   return (
     <div
       ref={(el) => registerEl(id, el)}
@@ -65,7 +67,13 @@ export const ReadingPanel = memo(function ReadingPanel({ id, title, body, visibl
           onClick={(e) => e.stopPropagation()}
           style={{ maxHeight: PANEL_MAX_HEIGHT - 40, overflowY: 'auto', lineHeight: 1.4, cursor: 'auto' }}
         >
-          {body.trim() ? (
+          {status === 'loading' ? (
+            <p style={{ color: '#7d8590', fontStyle: 'italic', margin: 0 }}>Carregando…</p>
+          ) : status === 'missing' ? (
+            <p style={{ color: '#7d8590', fontStyle: 'italic', margin: 0 }}>
+              Conteúdo ainda não disponível neste aparelho.
+            </p>
+          ) : body.trim() ? (
             <MarkdownRenderer body={body} disableWikiLinks onLinkPress={() => {}} />
           ) : (
             <p style={{ color: '#7d8590', fontStyle: 'italic', margin: 0 }}>Sem conteúdo ainda.</p>

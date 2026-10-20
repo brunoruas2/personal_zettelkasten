@@ -10,7 +10,7 @@ import { useSyncStore } from '../store/useSyncStore';
 import { useAuth } from '../providers/AuthProvider';
 import { isPasskeySupported } from '../lib/webauthn';
 import { Dashboard } from '../components/Dashboard';
-import type { Zettel } from '@zettelkasten/core';
+import type { ZettelMeta } from '@zettelkasten/core';
 
 function ZettelCard({
   zettel,
@@ -18,18 +18,11 @@ function ZettelCard({
   onTagClick,
   orphan,
 }: {
-  zettel: Zettel;
+  zettel: ZettelMeta;
   onDelete: () => void;
   onTagClick: (tag: string) => void;
   orphan?: boolean;
 }) {
-  const preview = zettel.body
-    .replace(/#{1,3} .+/g, '')
-    .replace(/\[\[|\]\]/g, '')
-    .replace(/\*\*|__|\*|_/g, '')
-    .trim()
-    .slice(0, 100);
-
   return (
     <OfflineLink
       href={`/zettel/${zettel.id}`}
@@ -44,11 +37,6 @@ function ZettelCard({
         </span>
       </div>
 
-      {preview && (
-        <p className="line-clamp-2 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-          {preview}
-        </p>
-      )}
 
       {zettel.tags.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">

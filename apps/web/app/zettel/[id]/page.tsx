@@ -15,7 +15,8 @@ import { eventInEmbedded } from '../../../lib/embeddedFocus';
 import { useOfflineRouter } from '../../../hooks/useOfflineRouter';
 import { extractHeadings } from '../../../lib/toc';
 import { useReadingWidthClass } from '../../../lib/readingWidth';
-import type { Zettel } from '@zettelkasten/core';
+import type { Zettel, ZettelMeta } from '@zettelkasten/core';
+import { loadZettel, isBodyMissing } from '../../../lib/bodySync';
 
 export default function ZettelDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -23,7 +24,9 @@ export default function ZettelDetailPage() {
   const offlineRouter = useOfflineRouter();
   const { controller, deleteZettel, updateZettel, graphExcludedTags } = useZettelStore();
   const [zettel, setZettel] = useState<Zettel | null>(null);
-  const [backlinks, setBacklinks] = useState<Zettel[]>([]);
+  const [backlinks, setBacklinks] = useState<ZettelMeta[]>([]);
+  // Corpo local de versão anterior à meta (offline, ainda não baixado).
+  const [stale, setStale] = useState(false);
   const [readFontSize, setReadFontSize] = useState(16);
   const widthClass = useReadingWidthClass();
   const [tocOpen, setTocOpen] = useState(false);
@@ -33,8 +36,12 @@ export default function ZettelDetailPage() {
   // Renomear um filho reescreve `[[antigo]]` no corpo do pai (rewriteLinks); o
   // pai em tela ainda tem o corpo velho.
   const handleChildTitleChanged = useCallback(() => {
-    controller?.getById(id).then((z) => z && setZettel(z));
-  }, [controller, id]);
+    loadZettel(id).then(({ zettel: z, stale: st }) => {
+      if (!z) return;
+      setZettel(z);
+      setStale(st);
+    });
+  }, [id]);
 
   // Cada filho aberto vira uma faixa logo abaixo do bloco que o referencia.
   const { embed, wikiLinkAction, embedSlot, portals } = useEmbeds({
@@ -82,7 +89,11 @@ export default function ZettelDetailPage() {
 
   useEffect(() => {
     if (!controller || !id) return;
-    controller.getById(id).then(setZettel);
+    // Corpo sob demanda: busca na hora se estiver desatualizado e houver rede.
+    loadZettel(id).then(({ zettel: z, stale: st }) => {
+      setZettel(z);
+      setStale(st);
+    });
     controller.getBacklinks(id).then(setBacklinks);
   }, [id, controller]);
 
@@ -145,7 +156,8 @@ export default function ZettelDetailPage() {
   };
 
   const handleChordsBodyChange = async (rawStart: number, rawEnd: number, newContent: string) => {
-    if (!zettel) return;
+    // Salvar sobre um corpo desatualizado apagaria no servidor a versão nova.
+    if (!zettel || stale) return;
     const newBody = zettel.body.slice(0, rawStart) + newContent + zettel.body.slice(rawEnd);
     setZettel((prev) => (prev ? { ...prev, body: newBody } : prev));
     await updateZettel(zettel.id, { body: newBody });
@@ -268,6 +280,14 @@ export default function ZettelDetailPage() {
       <div className="mb-5 flex items-start gap-3">
         <h1 className="flex-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">{zettel.title}</h1>
       </div>
+
+      {stale && (
+        <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+          {isBodyMissing(zettel)
+            ? 'O conteúdo deste zettel ainda não foi baixado neste aparelho. Conecte-se para vê-lo.'
+            : 'Esta é uma versão anterior: a mais recente ainda não foi baixada. Conecte-se para atualizar.'}
+        </p>
+      )}
 
       <div ref={contentRef}>
         <DrawingEditHost>

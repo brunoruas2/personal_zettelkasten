@@ -20,6 +20,8 @@ const MOCK_ZETTEL = {
   created_at: 1704067200000,
   updated_at: 1704067200000,
   deleted_at: null,
+  // Pull do índice (fields=meta) usa body_len; o corpo vem por /bodies.
+  body_len: 35,
 };
 
 function json(res, data, status = 200) {
@@ -64,6 +66,9 @@ const server = createServer((req, res) => {
   if (path.startsWith('/api/zettels') && method === 'GET') {
     // Includes ?since= queries
     return json(res, [MOCK_ZETTEL]);
+  }
+  if (path === '/api/zettels/bodies' && method === 'POST') {
+    return json(res, [{ id: MOCK_ZETTEL.id, body: MOCK_ZETTEL.body, updated_at: MOCK_ZETTEL.updated_at }]);
   }
   if (path.startsWith('/api/zettels') && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
     return json(res, {});

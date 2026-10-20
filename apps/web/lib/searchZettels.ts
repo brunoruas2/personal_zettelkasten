@@ -1,10 +1,14 @@
-import type { Zettel, ZettelController } from '@zettelkasten/core';
+import type { ZettelController, ZettelMeta } from '@zettelkasten/core';
 import { api } from './api';
-import { serverZettelToLocal } from './sync';
+import { serverZettelToMeta } from './sync';
 
 /**
- * Cadeia de busca única do app: FTS5 do servidor primeiro, busca local do
- * Dexie como fallback quando a requisição falha ou o dispositivo está offline.
+ * Cadeia de busca única do app: FTS5 do servidor primeiro, busca local
+ * híbrida (título/tags pelo índice + corpo por cursor) como fallback quando a
+ * requisição falha ou o dispositivo está offline.
+ *
+ * Devolve só metadados: o corpo que o servidor manda junto é descartado, a
+ * lista global não guarda corpos.
  *
  * Não escreve em estado nenhum — recebe o controller, devolve os zettels. É o
  * que permite a `SearchPalette` buscar sem tocar em `useZettelStore.zettels`,
@@ -13,14 +17,14 @@ import { serverZettelToLocal } from './sync';
 export async function searchZettels(
   controller: ZettelController,
   query: string,
-): Promise<Zettel[]> {
+): Promise<ZettelMeta[]> {
   if (!query.trim()) return controller.getAll();
 
   try {
     const res = await api.get(`/api/zettels?q=${encodeURIComponent(query)}`);
     if (res.ok) {
       const data = await res.json();
-      return data.map(serverZettelToLocal);
+      return data.map(serverZettelToMeta);
     }
   } catch {
     // offline ou erro — cai para a busca local

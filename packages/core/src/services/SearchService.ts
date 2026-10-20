@@ -9,7 +9,7 @@ export interface SearchResult {
  * Client-side fuzzy filter for autocomplete (used before DB query resolves).
  * The actual FTS5 search runs in packages/db via SQLite.
  */
-export function fuzzyFilter(zettels: Zettel[], query: string): Zettel[] {
+export function fuzzyFilter<T extends Pick<Zettel, 'title' | 'tags'>>(zettels: T[], query: string): T[] {
   const q = query.toLowerCase().trim();
   if (!q) return zettels;
 

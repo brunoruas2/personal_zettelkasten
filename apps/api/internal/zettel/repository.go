@@ -249,6 +249,80 @@ func scanRow(row *sql.Row) (*models.Zettel, error) {
 	return &z, nil
 }
 
+// ListMeta é o List sem corpo (pull do índice): mesmas linhas e ordem do
+// delta, inclusive deletados. body_len em bytes, como o TextEncoder do cliente.
+func (r *Repository) ListMeta(userID string, since int64) ([]models.ZettelMeta, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if since > 0 {
+		rows, err = r.db.Query(`
+			SELECT id, title, tags, created_at, updated_at, deleted_at, length(CAST(body AS BLOB))
+			FROM zettels WHERE user_id = ? AND updated_at > ? ORDER BY updated_at DESC
+		`, userID, since)
+	} else {
+		rows, err = r.db.Query(`
+			SELECT id, title, tags, created_at, updated_at, deleted_at, length(CAST(body AS BLOB))
+			FROM zettels WHERE user_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC
+		`, userID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.ZettelMeta{}
+	for rows.Next() {
+		var m models.ZettelMeta
+		var tagsJSON string
+		var deletedAt sql.NullInt64
+		var bodyLen sql.NullInt64
+		if err := rows.Scan(&m.ID, &m.Title, &tagsJSON, &m.CreatedAt, &m.UpdatedAt, &deletedAt, &bodyLen); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(tagsJSON), &m.Tags); err != nil || m.Tags == nil {
+			m.Tags = []string{}
+		}
+		if deletedAt.Valid {
+			m.DeletedAt = &deletedAt.Int64
+		}
+		m.BodyLen = bodyLen.Int64
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// Bodies devolve o corpo dos zettels vivos do usuário entre `ids`; ids
+// desconhecidos ou de outro usuário são ignorados.
+func (r *Repository) Bodies(userID string, ids []string) ([]models.ZettelBody, error) {
+	out := []models.ZettelBody{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, userID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := r.db.Query(`
+		SELECT id, body, updated_at FROM zettels
+		WHERE user_id = ? AND deleted_at IS NULL AND id IN (`+placeholders+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var b models.ZettelBody
+		if err := rows.Scan(&b.ID, &b.Body, &b.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
 func scanRows(rows *sql.Rows) ([]models.Zettel, error) {
 	var zettels []models.Zettel
 	for rows.Next() {

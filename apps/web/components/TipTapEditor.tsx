@@ -31,7 +31,7 @@ import Suggestion, {
 } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
 import type { Slice } from '@tiptap/pm/model';
-import { generateId, type Zettel } from '@zettelkasten/core';
+import { generateId, type ZettelMeta as Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { useDiagramLayout } from '../lib/diagramLayout';

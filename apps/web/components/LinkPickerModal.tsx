@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { fuzzyFilter } from '@zettelkasten/core';
-import type { Zettel } from '@zettelkasten/core';
+import type { ZettelMeta as Zettel } from '@zettelkasten/core';
 
 interface Props {
   open: boolean;

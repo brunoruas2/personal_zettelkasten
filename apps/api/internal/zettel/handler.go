@@ -37,6 +37,7 @@ func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/", h.list)
 	r.Post("/", h.create)
+	r.Post("/bodies", h.bodies)
 	r.Get("/{id}", h.getByID)
 	r.Put("/{id}", h.update)
 	r.Delete("/{id}", h.delete)
@@ -45,19 +46,66 @@ func (h *Handler) Routes() chi.Router {
 	return r
 }
 
-// GET /api/zettels?since=&q=
+// GET /api/zettels?since=&q=&fields=meta
+// Com fields=meta (e sem q) devolve o índice sem corpo — o pull do cliente; os
+// corpos vêm depois por POST /api/zettels/bodies. Sem fields, o comportamento
+// antigo (com corpo) continua para a chave de API e clientes antigos em cache.
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	userID := auth.GetUserID(r)
 	var since int64
 	if s := r.URL.Query().Get("since"); s != "" {
 		since, _ = strconv.ParseInt(s, 10, 64)
 	}
-	zettels, err := h.repo.List(userID, since, r.URL.Query().Get("q"))
+	q := r.URL.Query().Get("q")
+	if r.URL.Query().Get("fields") == "meta" && q == "" {
+		metas, err := h.repo.ListMeta(userID, since)
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		jsonOK(w, metas)
+		return
+	}
+	zettels, err := h.repo.List(userID, since, q)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	jsonOK(w, zettels)
+}
+
+// maxBodiesPerRequest limita o lote de POST /api/zettels/bodies.
+const maxBodiesPerRequest = 200
+
+var bodyIDRE = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
+
+// POST /api/zettels/bodies — { ids } → [{ id, body, updated_at }].
+// Fora da allowlist da chave de API (POST em /api/zettels/{x}): só JWT.
+func (h *Handler) bodies(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if len(req.IDs) > maxBodiesPerRequest {
+		jsonError(w, http.StatusBadRequest, fmt.Sprintf("at most %d ids per request", maxBodiesPerRequest))
+		return
+	}
+	for _, id := range req.IDs {
+		if !bodyIDRE.MatchString(id) {
+			jsonError(w, http.StatusBadRequest, "invalid zettel id")
+			return
+		}
+	}
+	out, err := h.repo.Bodies(auth.GetUserID(r), req.IDs)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonOK(w, out)
 }
 
 // GET /api/zettels/:id

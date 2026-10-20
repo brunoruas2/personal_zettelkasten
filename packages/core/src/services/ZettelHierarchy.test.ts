@@ -7,7 +7,7 @@ const NOW = 1_757_000_000_000;
 
 /** Título = id, para que a ordenação alfabética de irmãos seja a dos próprios ids. */
 function zettel(id: string, title = id): Zettel {
-  return { id, title, body: '', tags: [], createdAt: NOW, updatedAt: NOW };
+  return { id, title, body: '', tags: [], createdAt: NOW, updatedAt: NOW, bodyLen: 0, bodyAt: NOW };
 }
 
 /** `[[Título]]` escrito em `parent`: source=pai, target=filho. */

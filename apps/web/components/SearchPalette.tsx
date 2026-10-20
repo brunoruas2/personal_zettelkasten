@@ -2,52 +2,14 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
-import type { Zettel } from '@zettelkasten/core';
+import type { ZettelMeta } from '@zettelkasten/core';
 import { useZettelStore } from '../store/useZettelStore';
 import { useOfflineRouter } from '../hooks/useOfflineRouter';
 import { searchZettels } from '../lib/searchZettels';
 import { getRecentIds } from '../lib/recentZettels';
-import { MarkdownRenderer } from './MarkdownRenderer';
 
 const DEBOUNCE_MS = 200;
 const RECENT_LIMIT = 30;
-const SNIPPET_PAD = 60;
-
-interface Snippet {
-  before: string;
-  match: string;
-  after: string;
-}
-
-/**
- * Trecho do corpo em torno da primeira ocorrência do termo. Devolve as três
- * partes em vez de HTML: o destaque é composição de nós React, nunca
- * `dangerouslySetInnerHTML` — o corpo é conteúdo do usuário.
- */
-function buildSnippet(body: string, query: string): Snippet | null {
-  const text = body.replace(/\s+/g, ' ').trim();
-  if (!text) return null;
-
-  const head = (): Snippet => ({
-    before: text.slice(0, SNIPPET_PAD * 2) + (text.length > SNIPPET_PAD * 2 ? '…' : ''),
-    match: '',
-    after: '',
-  });
-
-  const q = query.trim();
-  if (!q) return head();
-
-  const idx = text.toLowerCase().indexOf(q.toLowerCase());
-  if (idx === -1) return head(); // casou por título ou tag
-
-  const start = Math.max(0, idx - SNIPPET_PAD);
-  const end = Math.min(text.length, idx + q.length + SNIPPET_PAD);
-  return {
-    before: (start > 0 ? '…' : '') + text.slice(start, idx),
-    match: text.slice(idx, idx + q.length),
-    after: text.slice(idx + q.length, end) + (end < text.length ? '…' : ''),
-  };
-}
 
 export function SearchPalette() {
   const zettels = useZettelStore((s) => s.zettels);
@@ -57,13 +19,12 @@ export function SearchPalette() {
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Zettel[]>([]);
+  const [results, setResults] = useState<ZettelMeta[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
   // Guard de geração: `lib/api.ts` não expõe `signal`, então a resposta de uma
   // busca antiga é descartada na chegada em vez de a requisição ser abortada.
   const genRef = useRef(0);
@@ -73,7 +34,7 @@ export function SearchPalette() {
   // abertura — o histórico muda a cada visita a um zettel.
   const recents = useMemo(() => {
     const byId = new Map(zettels.map((z) => [z.id, z]));
-    const out: Zettel[] = [];
+    const out: ZettelMeta[] = [];
     const seen = new Set<string>();
     for (const id of getRecentIds()) {
       const z = byId.get(id);
@@ -159,10 +120,10 @@ export function SearchPalette() {
     return () => clearTimeout(t);
   }, [query, open, controller, recents]);
 
-  const selected: Zettel | undefined = results[selectedIndex];
+  const selected: ZettelMeta | undefined = results[selectedIndex];
 
   const openZettel = useCallback(
-    (z: Zettel) => {
+    (z: ZettelMeta) => {
       setOpen(false);
       offlineRouter.push(`/zettel/${z.id}`);
     },
@@ -210,10 +171,6 @@ export function SearchPalette() {
       ?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex, open]);
 
-  useEffect(() => {
-    if (previewRef.current) previewRef.current.scrollTop = 0;
-  }, [selected?.id]);
-
   if (!open || pathname === '/login' || pathname === '/agent-skill') return null;
 
   return (
@@ -222,7 +179,7 @@ export function SearchPalette() {
       onClick={() => setOpen(false)}
     >
       <div
-        className="flex h-[70vh] max-h-[42rem] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-zinc-900"
+        className="flex h-[70vh] max-h-[42rem] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Campo de busca */}
@@ -242,85 +199,40 @@ export function SearchPalette() {
           </span>
         </div>
 
-        {/* Dois painéis: lista e preview. Abaixo de lg empilham, a lista com
-            teto de 45% da altura da caixa. */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,45%)_minmax(0,55%)] lg:grid-cols-[minmax(0,22rem)_1fr] lg:grid-rows-[minmax(0,1fr)]">
-          {/* Lista */}
-          <div
-            ref={listRef}
-            className="min-h-0 overflow-y-auto overscroll-contain border-b border-zinc-100 dark:border-zinc-800 lg:border-b-0 lg:border-r"
-          >
-            {results.length === 0 ? (
-              <p className="px-4 py-10 text-center text-sm text-zinc-400">
-                {loading ? 'Buscando…' : 'Nenhum resultado.'}
-              </p>
-            ) : (
-              results.map((z, idx) => {
-                const snippet = buildSnippet(z.body, query);
-                const active = idx === selectedIndex;
-                return (
-                  <button
-                    key={z.id}
-                    data-index={idx}
-                    onMouseEnter={() => setSelectedIndex(idx)}
-                    // No desktop o `mouseenter` já selecionou, então o clique
-                    // abre direto. No toque puro não há hover: o primeiro
-                    // toque seleciona e mostra o preview, o segundo abre —
-                    // senão o painel empilhado do mobile só mostraria o
-                    // primeiro resultado da lista.
-                    onClick={() => (idx === selectedIndex ? openZettel(z) : setSelectedIndex(idx))}
-                    className={`block w-full border-l-2 px-4 py-2.5 text-left transition-colors ${
-                      active
-                        ? 'border-brand bg-zinc-100 dark:bg-zinc-800'
-                        : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                    }`}
-                  >
-                    <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                      {z.title}
-                    </div>
-                    {z.tags.length > 0 && (
-                      <div className="mt-0.5 truncate text-xs text-brand">
-                        {z.tags.map((t) => `#${t}`).join(' ')}
-                      </div>
-                    )}
-                    {snippet && (
-                      <div className="mt-0.5 line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        {snippet.before}
-                        {snippet.match && (
-                          <mark className="bg-brand/20 text-zinc-900 dark:text-zinc-100">{snippet.match}</mark>
-                        )}
-                        {snippet.after}
-                      </div>
-                    )}
-                  </button>
-                );
-              })
-            )}
-          </div>
-
-          {/* Preview */}
-          <div ref={previewRef} className="min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
-            {selected ? (
-              <>
-                <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{selected.title}</h2>
-                {selected.tags.length > 0 && (
-                  <div className="mt-1 mb-3 text-xs text-brand">
-                    {selected.tags.map((t) => `#${t}`).join(' ')}
+        {/* Coluna única: a lista global não carrega corpos (zettel-index),
+            então não há preview nem trecho — abrir mostra o zettel. */}
+        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {results.length === 0 ? (
+            <p className="px-4 py-10 text-center text-sm text-zinc-400">
+              {loading ? 'Buscando…' : 'Nenhum resultado.'}
+            </p>
+          ) : (
+            results.map((z, idx) => {
+              const active = idx === selectedIndex;
+              return (
+                <button
+                  key={z.id}
+                  data-index={idx}
+                  onMouseEnter={() => setSelectedIndex(idx)}
+                  onClick={() => openZettel(z)}
+                  className={`block w-full border-l-2 px-4 py-2.5 text-left transition-colors ${
+                    active
+                      ? 'border-brand bg-zinc-100 dark:bg-zinc-800'
+                      : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                  }`}
+                >
+                  <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    {z.title}
                   </div>
-                )}
-                <MarkdownRenderer
-                  body={selected.body}
-                  onLinkPress={() => {}}
-                  disableWikiLinks
-                  disableHeavyBlocks
-                />
-              </>
-            ) : (
-              <p className="pt-10 text-center text-sm text-zinc-400">
-                Nenhum zettel selecionado.
-              </p>
-            )}
-          </div>
+                  {z.tags.length > 0 && (
+                    <div className="mt-0.5 truncate text-xs text-brand">
+                      {z.tags.map((t) => `#${t}`).join(' ')}
+                    </div>
+                  )}
+                </button>
+              );
+            })
+          )}
         </div>
 
         {/* Rodapé com as teclas */}

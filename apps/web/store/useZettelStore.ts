@@ -1,16 +1,19 @@
 'use client';
 
 import { create } from 'zustand';
-import type { Zettel, Link } from '@zettelkasten/core';
+import type { Zettel, ZettelMeta, Link } from '@zettelkasten/core';
 import type { ZettelController } from '@zettelkasten/core';
 import { syncService } from '../lib/sync'
 import { searchZettels } from '../lib/searchZettels';
 import { getNodeColorRules, saveNodeColorRules, type NodeColorRule } from '../lib/graphColors';
 import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
 import { placeMissingAndQueue, positionStore } from '../lib/positionSync';
+import { downloadBodies } from '../lib/bodySync';
+import { clearBodyCache, invalidateBody, setCachedBody } from '../lib/bodyCache';
 
 interface ZettelStore {
-  zettels: Zettel[];
+  /** Índice: metadados de todos os zettels, sem corpo (ver lib/bodyCache). */
+  zettels: ZettelMeta[];
   links: Link[];
   isLoading: boolean;
   controller: ZettelController | null;
@@ -79,6 +82,7 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     const { controller, loadAll } = get();
     if (!controller) throw new Error('Controller not initialized');
     const zettel = await controller.create(data);
+    setCachedBody(zettel.id, zettel.body, zettel.bodyLen);
     await loadAll();
     triggerGraphLayoutWorker();
     // Vaga na galáxia perto dos vizinhos de link — vale offline (fica pendente).
@@ -89,15 +93,24 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
   },
 
   updateZettel: async (id, data) => {
-    const { controller, loadAll, zettels } = get();
+    const { controller, loadAll } = get();
     if (!controller) throw new Error('Controller not initialized');
-    const existing = zettels.find((z) => z.id === id);
+    // Da base, não da lista global: a busca da sidebar substitui a lista.
+    const existing = await controller.getById(id);
     const zettel = await controller.update(id, data);
+    setCachedBody(zettel.id, zettel.body, zettel.bodyLen);
     syncService.push({ op: 'update', payload: zettel }).catch(() => {});
     if (data.title !== undefined && existing && data.title !== existing.title) {
-      const rewritten = await controller.rewriteLinks(existing.title, data.title, id);
+      // Corpos desatualizados não são reescritos (apagaria a versão de outro
+      // aparelho): com rede, baixa-os antes para a reescrita alcançar todos.
+      if (navigator.onLine) await downloadBodies().catch(() => {});
+      const { rewritten, skippedStale } = await controller.rewriteLinks(existing.title, data.title, id);
       for (const z of rewritten) {
+        invalidateBody(z.id);
         syncService.push({ op: 'update', payload: z }).catch(() => {});
+      }
+      if (skippedStale.length > 0) {
+        console.warn(`[rename] ${skippedStale.length} zettel(s) com corpo desatualizado não tiveram [[${existing.title}]] reescrito`);
       }
     }
     await loadAll();
@@ -109,6 +122,7 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     if (!controller) throw new Error('Controller not initialized');
     await controller.delete(id);
     await positionStore.delete(id);
+    invalidateBody(id);
     await loadAll();
     triggerGraphLayoutWorker();
     syncService.push({ op: 'delete', payload: { id } }).catch(() => {});
@@ -117,6 +131,7 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
   clearAll: async () => {
     const { controller } = get();
     if (controller) await controller.clearAll();
+    clearBodyCache();
     set({ zettels: [] });
   },
 }));

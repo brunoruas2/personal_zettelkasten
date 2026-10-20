@@ -1,8 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ZettelRepository } from '@zettelkasten/db-web';
-import { ZettelController } from '@zettelkasten/core';
 import type { Link } from '@zettelkasten/core';
 import { useZettelStore } from '../store/useZettelStore';
 import { useAuth } from './AuthProvider';
@@ -19,8 +17,9 @@ import {
   pullPositions,
   pushPendingPositions,
 } from '../lib/positionSync';
-const repo = new ZettelRepository();
-const controller = new ZettelController(repo);
+import { repo, controller } from '../lib/repo';
+import { downloadBodies } from '../lib/bodySync';
+import { invalidateBody } from '../lib/bodyCache';
 
 // The cache name must match the constant in worker/index.ts.
 const ROUTES_CACHE = 'zettelkasten-routes-v1';
@@ -64,10 +63,11 @@ function cacheZettelRoutes() {
 async function pullAll(): Promise<boolean> {
   await syncService.pull(
     (id) => repo.findById(id),
-    (z) => repo.update(z),
+    (metas) => repo.upsertMeta(metas),
     async (id) => {
       await repo.delete(id);
       await positionStore.delete(id);
+      invalidateBody(id);
     },
   );
 
@@ -159,7 +159,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
         // 2. Push local IndexedDB data to server if this is the first sync ever
         //    (handles V1 → V2 migration for existing users)
-        const migrated = await syncService.migrateIfNeeded(() => repo.findAll());
+        const migrated = await syncService.migrateIfNeeded(controller);
 
         // 3. If migration ran, rebuild all links server-side before pulling.
         //    Zettels were sent one-by-one so syncLinks ran with only partial data available
@@ -178,6 +178,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         void prefetchImages();
         triggerGraphLayoutWorker();
         void syncGalaxy(positionsPulled).catch(() => {});
+        void downloadBodies().catch(() => {});
 
         // Register manual sync trigger for UI button
         setSyncNow(async () => {
@@ -188,6 +189,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             void prefetchImages();
             triggerGraphLayoutWorker();
             void syncGalaxy(pulled).catch(() => {});
+            void downloadBodies().catch(() => {});
           } catch {
             // Network/auth errors are non-fatal — AuthError already redirects to /login
           }
@@ -205,6 +207,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         void uploadPending();
         void uploadPendingDrawings();
         void pushPendingPositions().catch(() => {});
+        void downloadBodies().catch(() => {});
       }
     };
     window.addEventListener('online', onOnline);
@@ -219,6 +222,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             void prefetchImages();
             triggerGraphLayoutWorker();
             void syncGalaxy(pulled).catch(() => {});
+            void downloadBodies().catch(() => {});
           })
           .catch(() => {});
       }

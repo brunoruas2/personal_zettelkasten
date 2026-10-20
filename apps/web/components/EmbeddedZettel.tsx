@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Zettel } from '@zettelkasten/core';
+import type { Zettel, ZettelMeta } from '@zettelkasten/core';
+import { useZettelBody } from '../hooks/useZettelBody';
 import { useZettelStore } from '../store/useZettelStore';
 import { useOfflineRouter } from '../hooks/useOfflineRouter';
 import { EMBEDDED_ATTR } from '../lib/embeddedFocus';
@@ -10,7 +11,7 @@ import { OfflineLink } from './OfflineLink';
 import { ZettelEditForm } from './ZettelEditForm';
 
 interface EmbeddedZettelProps {
-  zettel: Zettel;
+  zettel: ZettelMeta;
   /** Modo do pai: a faixa nasce nele e o acompanha quando o pai troca de modo. */
   parentMode: 'preview' | 'edit';
   onCollapse: () => void;
@@ -26,7 +27,9 @@ interface EmbeddedZettelProps {
 export function EmbeddedZettel({ zettel: initial, parentMode, onCollapse, onTitleChanged }: EmbeddedZettelProps) {
   const { controller } = useZettelStore();
   const offlineRouter = useOfflineRouter();
-  const [zettel, setZettel] = useState<Zettel>(initial);
+  const [zettel, setZettel] = useState<ZettelMeta>(initial);
+  // Corpo sob demanda (zettel-index): a lista global só tem metadados.
+  const { body, status } = useZettelBody(zettel.id);
   const [mode, setMode] = useState<'preview' | 'edit'>(parentMode);
   const [dirty, setDirty] = useState(false);
 
@@ -123,8 +126,12 @@ export function EmbeddedZettel({ zettel: initial, parentMode, onCollapse, onTitl
 
       {mode === 'preview' ? (
         <div className="max-h-[70vh] overflow-y-auto px-4 py-3">
-          {zettel.body.trim() ? (
-            <MarkdownRenderer body={zettel.body} onLinkPress={handleLinkPress} />
+          {status === 'loading' ? (
+            <p className="text-sm italic text-zinc-400">Carregando…</p>
+          ) : status === 'missing' ? (
+            <p className="text-sm italic text-zinc-400">Conteúdo ainda não disponível neste aparelho.</p>
+          ) : body.trim() ? (
+            <MarkdownRenderer body={body} onLinkPress={handleLinkPress} />
           ) : (
             <p className="text-sm italic text-zinc-400">Nenhum conteúdo ainda.</p>
           )}

@@ -5,7 +5,7 @@ import {
   type Point,
   type PositionRecord,
   type ServerPosition,
-  type Zettel,
+  type ZettelMeta,
 } from '@zettelkasten/core'
 import { api, AuthError } from './api'
 
@@ -29,7 +29,7 @@ function emitChanged(): void {
 
 /** De onde vêm zettels e links — o `ZettelController` satisfaz. */
 export interface GalaxySource {
-  getAll(): Promise<Zettel[]>
+  getAll(): Promise<ZettelMeta[]>
   getAllLinks(): Promise<Link[]>
 }
 

@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useZettelStore } from '../../../store/useZettelStore';
 import { useOfflineRouter } from '../../../hooks/useOfflineRouter';
 import { MarkdownRenderer } from '../../../components/MarkdownRenderer';
-import type { Zettel } from '@zettelkasten/core';
+import type { ZettelMeta } from '@zettelkasten/core';
 
 const PRINT_TIMEOUT_MS = 20000;
 const POLL_INTERVAL_MS = 150;
@@ -21,17 +21,20 @@ function formatDate(ms: number) {
 function ExportPdfContent() {
   const searchParams = useSearchParams();
   const offlineRouter = useOfflineRouter();
-  const { zettels } = useZettelStore();
+  const { zettels, controller } = useZettelStore();
+  // Corpos lidos do IndexedDB só para os zettels escolhidos: a lista global
+  // não carrega corpos (zettel-index).
+  const [bodies, setBodies] = useState<Map<string, string> | null>(null);
   const [pendingCount, setPendingCount] = useState(1);
   const [printed, setPrinted] = useState(false);
   const printedRef = useRef(false);
 
   const idsParam = searchParams.get('ids');
-  let selected: Zettel[];
+  let selected: ZettelMeta[];
   if (idsParam) {
     const ids = idsParam.split(',').map((s) => s.trim()).filter(Boolean);
     const byId = new Map(zettels.map((z) => [z.id, z]));
-    selected = ids.map((id) => byId.get(id)).filter((z): z is Zettel => !!z);
+    selected = ids.map((id) => byId.get(id)).filter((z): z is ZettelMeta => !!z);
   } else {
     selected = zettels;
   }
@@ -43,7 +46,21 @@ function ExportPdfContent() {
     window.print();
   };
 
+  const selectedKey = selected.map((z) => z.id).join(',');
   useEffect(() => {
+    if (!controller) return;
+    let cancelled = false;
+    void controller.getBodies(selectedKey ? selectedKey.split(',') : []).then((map) => {
+      if (!cancelled) setBodies(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [controller, selectedKey]);
+
+  useEffect(() => {
+    // Só começa a contar os diagramas depois que os corpos estão na tela.
+    if (!bodies) return;
     const start = Date.now();
     const interval = setInterval(() => {
       const loading = document.querySelectorAll('[data-render-state="loading"]').length;
@@ -55,7 +72,7 @@ function ExportPdfContent() {
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected.length]);
+  }, [selected.length, bodies]);
 
   return (
     <div className="min-h-screen bg-white text-zinc-900">
@@ -63,6 +80,8 @@ function ExportPdfContent() {
         <div className="text-sm text-zinc-600">
           {printed
             ? 'Escolha "Salvar como PDF" na janela de impressão.'
+            : !bodies
+            ? 'Carregando zettels…'
             : `Preparando PDF… ${pendingCount} diagrama${pendingCount === 1 ? '' : 's'} renderizando`}
         </div>
         <div className="flex items-center gap-3">
@@ -101,7 +120,7 @@ function ExportPdfContent() {
               <span>Criado em {formatDate(zettel.createdAt)}</span>
               <span>· Atualizado em {formatDate(zettel.updatedAt)}</span>
             </div>
-            <MarkdownRenderer body={zettel.body} onLinkPress={() => {}} disableWikiLinks />
+            <MarkdownRenderer body={bodies?.get(zettel.id) ?? ''} onLinkPress={() => {}} disableWikiLinks />
           </article>
         ))}
       </div>

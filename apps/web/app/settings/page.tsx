@@ -17,6 +17,8 @@ import { COMPRESSION_PROFILES } from '../../lib/imageCompress';
 import { isPrefetchEnabled, setPrefetchEnabled, prefetchImages, imageStore, countRejectedImages } from '../../lib/imageSync';
 import { countRejectedDrawings } from '../../lib/drawingSync';
 import { positionStore, resetGalaxyLayout, subscribePositions } from '../../lib/positionSync';
+import { getBodyProgress, refreshBodyProgress, subscribeBodyProgress } from '../../lib/bodySync';
+import { utf8Length } from '@zettelkasten/core';
 
 const CHUNK = 50
 
@@ -148,15 +150,25 @@ export default function SettingsPage() {
       .catch(() => setApiKey({ status: 'none' }))
   }, [])
 
-  // O texto sai da store, não do servidor: já está inteiro em memória e assim
-  // acompanha um import sem precisar de refetch.
+  // O texto sai do índice em memória, não do servidor nem dos corpos: o
+  // tamanho do corpo vem pronto em `bodyLen` (zettel-index), e assim acompanha
+  // um import sem refetch.
   const zettelUsage = useMemo(() => {
-    const encoder = new TextEncoder()
     let bytes = 0
     for (const z of zettels) {
-      bytes += encoder.encode(z.title + z.body + z.tags.join(' ')).length
+      bytes += z.bodyLen + utf8Length(z.title + z.tags.join(' '))
     }
     return { count: zettels.length, bytes }
+  }, [zettels])
+
+  // Corpos atualizados neste aparelho — sobe enquanto o download em
+  // background avança.
+  const [bodyProgress, setBodyProgress] = useState(getBodyProgress)
+  useEffect(() => {
+    const update = () => setBodyProgress(getBodyProgress())
+    const unsubscribe = subscribeBodyProgress(update)
+    void refreshBodyProgress().catch(() => {})
+    return unsubscribe
   }, [zettels])
 
   // Zettels com lugar na galáxia (dados locais). Recontado quando a lista muda
@@ -765,6 +777,14 @@ export default function SettingsPage() {
                 <span className="flex items-baseline gap-3 text-sm">
                   <span className="text-zinc-400">{zettelUsage.count} {zettelUsage.count === 1 ? 'nota' : 'notas'}</span>
                   <span className="font-medium tabular-nums text-zinc-700 dark:text-zinc-300">{formatBytes(zettelUsage.bytes)}</span>
+                </span>
+              </div>
+
+              {/* Corpos baixados */}
+              <div className="flex items-baseline justify-between gap-3 py-1.5">
+                <span className="text-sm text-zinc-700 dark:text-zinc-300">Conteúdo</span>
+                <span className="text-sm text-zinc-400 tabular-nums">
+                  {bodyProgress.fresh} de {bodyProgress.total} corpos baixados
                 </span>
               </div>
 

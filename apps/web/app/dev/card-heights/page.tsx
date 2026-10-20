@@ -5,7 +5,7 @@
 // arquivar a change.
 
 import { useEffect, useRef, useState } from 'react';
-import { CARD_WIDTH, type Zettel } from '@zettelkasten/core';
+import { CARD_WIDTH, type Zettel, type ZettelMeta } from '@zettelkasten/core';
 import { MarkdownRenderer } from '../../../components/MarkdownRenderer';
 import { useZettelStore } from '../../../store/useZettelStore';
 
@@ -22,12 +22,22 @@ function percentile(sorted: number[], p: number): number {
 
 export default function CardHeightsPage() {
   const controller = useZettelStore((s) => s.controller);
-  const [all, setAll] = useState<Zettel[]>([]);
+  const [all, setAll] = useState<ZettelMeta[]>([]);
   const [batch, setBatch] = useState<Zettel[]>([]);
   const [heights, setHeights] = useState<{ id: string; title: string; h: number }[]>([]);
   const [running, setRunning] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const cursor = useRef(0);
+
+  // Corpos lidos por lote do IndexedDB — a lista em memória só tem metadados.
+  const loadBatch = async (metas: ZettelMeta[]) => {
+    if (!controller || metas.length === 0) {
+      setBatch([]);
+      return;
+    }
+    const bodies = await controller.getBodies(metas.map((m) => m.id));
+    setBatch(metas.map((m) => ({ ...m, body: bodies.get(m.id) ?? '' })));
+  };
 
   useEffect(() => {
     // Lista completa do controller: a do store pode estar filtrada pela busca.
@@ -50,7 +60,7 @@ export default function CardHeightsPage() {
         cursor.current += BATCH;
         const next = all.slice(cursor.current, cursor.current + BATCH);
         if (next.length === 0) setRunning(false);
-        setBatch(next);
+        void loadBatch(next);
       });
     }, SETTLE_MS);
     return () => {
@@ -62,8 +72,8 @@ export default function CardHeightsPage() {
   const start = () => {
     cursor.current = 0;
     setHeights([]);
-    setBatch(all.slice(0, BATCH));
     setRunning(true);
+    void loadBatch(all.slice(0, BATCH));
   };
 
   const sorted = heights.map((x) => x.h).sort((a, b) => a - b);

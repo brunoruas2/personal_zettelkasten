@@ -6,7 +6,7 @@ import { extractPlainWikiTitles, selectEmbeddableChildren } from './EmbeddedChil
 const NOW = 1_757_000_000_000;
 
 function zettel(id: string, title = id): Zettel {
-  return { id, title, body: '', tags: [], createdAt: NOW, updatedAt: NOW };
+  return { id, title, body: '', tags: [], createdAt: NOW, updatedAt: NOW, bodyLen: 0, bodyAt: NOW };
 }
 
 function link(source: string, target: string): Link {

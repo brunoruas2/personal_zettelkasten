@@ -7,7 +7,6 @@ import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 import { buildChildAdjacency, collectReachable } from '@zettelkasten/core';
 import { buildNodeColorMap, buildNebulaMap } from '../../lib/graphColors';
 import { loadLayoutCache, isLayoutCacheValid } from '../../lib/graphLayoutCache';
-import { MarkdownRenderer } from '../../components/MarkdownRenderer';
 import { buildStars, drawStarfield } from './starfield';
 import { getNebulaSprite, NEBULA_WORLD_RADIUS } from './nebulaSprites';
 import { ReadingPanel, PANEL_WIDTH, PANEL_MAX_HEIGHT } from './ReadingPanel';
@@ -19,7 +18,6 @@ import { SplitEditPanel } from './SplitEditPanel';
  * cruzado.
  */
 const PREVIEW_DELAY_MS = 120;
-const PREVIEW_BODY_LIMIT = 1000;
 const PREVIEW_PANEL_SIZE = { w: 320, h: 260 };
 
 const TAU = Math.PI * 2;
@@ -141,7 +139,7 @@ export function GraphCanvas() {
   const panKeysRef = useRef<Set<string>>(new Set());
   // Espelha `splitEdit` para o listener de teclado (registrado uma vez, fora do render).
   const splitOpenRef = useRef(false);
-  const [preview, setPreview] = useState<{ x: number; y: number; title: string; tags: string[]; connections: number; body: string } | null>(null);
+  const [preview, setPreview] = useState<{ x: number; y: number; title: string; tags: string[]; connections: number } | null>(null);
   const [focusOriginId] = useState<string | null>(() => searchParams.get('focus'));
   // Sessão só é lida na montagem, como `focusOriginId` — sair/entrar em sessão
   // usa navegação dura (mesmo mecanismo do modo focus), então o valor nunca
@@ -303,7 +301,6 @@ export function GraphCanvas() {
     return { graphData: { nodes, links: graphLinks, maxConn }, legend: legendItems, nebulaMap };
   }, [zettels, links, controller, graphExcludedTags, graphNodeColors, focusOriginId]);
 
-  const zettelBodyById = useMemo(() => new Map(zettels.map((z) => [z.id, z.body])), [zettels]);
 
   // O loop de desenho lê a névoa por ref: assim uma regra de cor nova aparece
   // sem depender de o efeito pesado ser recriado.
@@ -982,11 +979,8 @@ export function GraphCanvas() {
         hoveredNodeIdRef.current = node.id;
         hoverTimerRef.current = setTimeout(() => {
           if (hoveredNodeIdRef.current !== node.id) return;
-          const zettel = zettelsRef.current.find((z) => z.id === node.id);
-          if (!zettel) return;
-          const truncated = zettel.body.length > PREVIEW_BODY_LIMIT
-            ? zettel.body.slice(0, PREVIEW_BODY_LIMIT) + '…'
-            : zettel.body;
+          // Só título e tags: a lista global não carrega corpos (zettel-index).
+          if (!zettelsRef.current.some((z) => z.id === node.id)) return;
           const { x: tx, y: ty, scale } = transformRef.current;
           setPreview({
             x: node.x! * scale + tx,
@@ -994,7 +988,6 @@ export function GraphCanvas() {
             title: node.title,
             tags: node.tags,
             connections: node.connections,
-            body: truncated,
           });
         }, PREVIEW_DELAY_MS);
       };
@@ -1622,7 +1615,6 @@ export function GraphCanvas() {
             key={node.id}
             registerEl={registerPanelEl}
             title={node.title}
-            body={zettelBodyById.get(node.id) ?? ''}
             id={node.id}
             visible={visiblePanelIdsRef.current.has(node.id)}
             onOpen={openPanelEdit}
@@ -1662,9 +1654,6 @@ export function GraphCanvas() {
                 ))}
               </div>
             )}
-            <div data-panel-scroll style={{ maxHeight: 170, overflowY: 'auto', pointerEvents: 'auto', fontSize: '0.78rem', lineHeight: 1.4 }}>
-              <MarkdownRenderer body={preview.body} disableWikiLinks onLinkPress={() => {}} />
-            </div>
           </div>
         )}
         {/* Dentro do container do canvas (não do wrapper de página inteira) —

@@ -1,14 +1,22 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   Zettel,
+  ZettelMeta,
   ZettelRow,
+  BodyEntry,
   Link,
   DrawingRecord,
   PositionRecord,
   ZettelRepository as IZettelRepository,
   DrawingRepository as IDrawingRepository,
 } from '@zettelkasten/core';
-import { rowToZettel, zettelToRow } from '@zettelkasten/core';
+import { rowToMeta, metaToRow, utf8Length } from '@zettelkasten/core';
+
+/** Corpo de um zettel, fora da linha de metadados (ver `version(18)`). */
+interface BodyRow {
+  id: string;
+  body: string;
+}
 
 /**
  * Imagem guardada localmente. O `blob` é um Blob nativo — Dexie persiste isso
@@ -32,6 +40,7 @@ export interface ImageRecord {
 
 class ZettelDb extends Dexie {
   zettels!: Table<ZettelRow, string>;
+  bodies!: Table<BodyRow, string>;
   links!: Table<Link, [string, string]>;
   images!: Table<ImageRecord, string>;
   drawings!: Table<DrawingRecord, string>;
@@ -89,67 +98,145 @@ class ZettelDb extends Dexie {
       drawings: 'id, syncState, updatedAt',
       positions: 'id, syncState, updatedAt',
     });
+    // Corpo fora da linha de metadados: o IndexedDB não projeta campos, então
+    // listar os zettels traria todos os corpos para o heap. Primeiro
+    // `.upgrade()` do projeto — move cada corpo para `bodies` e marca a versão
+    // local (`body_at = updated_at`), para nada migrado ser baixado de novo.
+    this.version(18)
+      .stores({
+        zettels: 'id, title, updated_at',
+        bodies: 'id',
+        links: '[sourceId+targetId], sourceId, targetId',
+        images: 'id, syncState',
+        drawings: 'id, syncState, updatedAt',
+        positions: 'id, syncState, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        const bodies: BodyRow[] = [];
+        await tx
+          .table('zettels')
+          .toCollection()
+          .modify((row: ZettelRow & { body?: string }) => {
+            const body = row.body ?? '';
+            bodies.push({ id: row.id, body });
+            row.body_len = utf8Length(body);
+            row.body_at = row.updated_at;
+            delete row.body;
+          });
+        await tx.table('bodies').bulkPut(bodies);
+      });
   }
 }
 
 const db = new ZettelDb();
 
 export class ZettelRepository implements IZettelRepository {
-  async findAll(): Promise<Zettel[]> {
+  async listMeta(): Promise<ZettelMeta[]> {
     const rows = await db.zettels.orderBy('updated_at').reverse().toArray();
-    return rows.map(rowToZettel);
+    return rows.map(rowToMeta);
   }
 
   async findById(id: string): Promise<Zettel | null> {
-    const row = await db.zettels.get(id);
-    return row ? rowToZettel(row) : null;
+    const [row, body] = await Promise.all([db.zettels.get(id), db.bodies.get(id)]);
+    return row ? { ...rowToMeta(row), body: body?.body ?? '' } : null;
   }
 
-  async findByTitle(title: string): Promise<Zettel | null> {
-    const rows = await db.zettels.toArray();
-    const row = rows.find((r) => r.title.toLowerCase() === title.toLowerCase());
-    return row ? rowToZettel(row) : null;
+  async findByTitle(title: string): Promise<ZettelMeta | null> {
+    const lower = title.toLowerCase();
+    const row = await db.zettels.filter((r) => r.title.toLowerCase() === lower).first();
+    return row ? rowToMeta(row) : null;
   }
 
-  async search(query: string): Promise<Zettel[]> {
-    if (!query.trim()) return this.findAll();
-    const q = query.toLowerCase();
-    const rows = await db.zettels.toArray();
-    return rows
-      .filter(
-        (r) =>
-          r.title.toLowerCase().includes(q) ||
-          r.body.toLowerCase().includes(q) ||
-          r.tags.toLowerCase().includes(q),
-      )
-      .sort((a, b) => b.updated_at - a.updated_at)
-      .map(rowToZettel);
+  async getBody(id: string): Promise<string | null> {
+    return (await db.bodies.get(id))?.body ?? null;
+  }
+
+  async getBodies(ids: string[]): Promise<Map<string, string>> {
+    const rows = await db.bodies.bulkGet(ids);
+    const out = new Map<string, string>();
+    for (const r of rows) if (r) out.set(r.id, r.body);
+    return out;
+  }
+
+  // Cursor: um corpo por vez no heap, nunca a tabela inteira.
+  async eachBody(cb: (id: string, body: string) => void): Promise<void> {
+    await db.bodies.each((r) => cb(r.id, r.body));
+  }
+
+  async searchBodies(query: string, limit: number, skip: Set<string>): Promise<string[]> {
+    const out: string[] = [];
+    if (!query) return out;
+    await db.bodies
+      .filter((r) => !skip.has(r.id) && r.body.toLowerCase().includes(query))
+      .until(() => out.length >= limit)
+      .each((r) => {
+        if (out.length < limit) out.push(r.id);
+      });
+    return out;
+  }
+
+  async putBodies(entries: BodyEntry[]): Promise<string[]> {
+    if (entries.length === 0) return [];
+    const applied: string[] = [];
+    await db.transaction('rw', db.zettels, db.bodies, async () => {
+      const rows = await db.zettels.bulkGet(entries.map((e) => e.id));
+      const metas: ZettelRow[] = [];
+      const bodies: BodyRow[] = [];
+      entries.forEach((e, i) => {
+        const row = rows[i];
+        // Edição local mais nova (ou zettel apagado aqui) vence o que veio do servidor.
+        if (!row || e.at < row.updated_at) return;
+        metas.push({ ...row, body_at: e.at, body_len: utf8Length(e.body) });
+        bodies.push({ id: e.id, body: e.body });
+        applied.push(e.id);
+      });
+      await db.zettels.bulkPut(metas);
+      await db.bodies.bulkPut(bodies);
+    });
+    return applied;
+  }
+
+  async upsertMeta(metas: Omit<ZettelMeta, 'bodyAt'>[]): Promise<void> {
+    if (metas.length === 0) return;
+    await db.transaction('rw', db.zettels, async () => {
+      const existing = await db.zettels.bulkGet(metas.map((m) => m.id));
+      await db.zettels.bulkPut(
+        metas.map((m, i) => metaToRow({ ...m, bodyAt: existing[i]?.body_at ?? null })),
+      );
+    });
   }
 
   async create(zettel: Zettel): Promise<void> {
-    await db.zettels.add(zettelToRow(zettel));
+    await db.transaction('rw', db.zettels, db.bodies, async () => {
+      await db.zettels.add(metaToRow(zettel));
+      await db.bodies.put({ id: zettel.id, body: zettel.body });
+    });
   }
 
   async update(zettel: Zettel): Promise<void> {
-    await db.zettels.put(zettelToRow(zettel));
+    await db.transaction('rw', db.zettels, db.bodies, async () => {
+      await db.zettels.put(metaToRow(zettel));
+      await db.bodies.put({ id: zettel.id, body: zettel.body });
+    });
   }
 
   async delete(id: string): Promise<void> {
-    await db.transaction('rw', db.zettels, db.links, async () => {
+    await db.transaction('rw', db.zettels, db.bodies, db.links, async () => {
       await db.zettels.delete(id);
+      await db.bodies.delete(id);
       await db.links.where('sourceId').equals(id).delete();
       await db.links.where('targetId').equals(id).delete();
     });
   }
 
-  async getBacklinks(id: string): Promise<Zettel[]> {
+  async getBacklinks(id: string): Promise<ZettelMeta[]> {
     const links = await db.links.where('targetId').equals(id).toArray();
     const sourceIds = links.map((l) => l.sourceId);
     if (sourceIds.length === 0) return [];
     const rows = await db.zettels.bulkGet(sourceIds);
     return rows
       .filter((r): r is ZettelRow => r !== undefined)
-      .map(rowToZettel)
+      .map(rowToMeta)
       .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'));
   }
 
@@ -176,10 +263,11 @@ export class ZettelRepository implements IZettelRepository {
   }
 
   async clearAll(): Promise<void> {
-    // Imagens, desenhos e posições entram aqui também: sem isso, o logout
-    // deixaria blobs, rabiscos e o mapa de uma sessão visíveis na seguinte.
-    await db.transaction('rw', [db.zettels, db.links, db.images, db.drawings, db.positions], async () => {
+    // Corpos, imagens, desenhos e posições entram aqui também: sem isso, o
+    // logout deixaria conteúdo de uma sessão visível na seguinte.
+    await db.transaction('rw', [db.zettels, db.bodies, db.links, db.images, db.drawings, db.positions], async () => {
       await db.zettels.clear();
+      await db.bodies.clear();
       await db.links.clear();
       await db.images.clear();
       await db.drawings.clear();

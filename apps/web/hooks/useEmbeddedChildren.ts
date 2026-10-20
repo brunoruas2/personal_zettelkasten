@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { selectEmbeddableChildren, type Zettel } from '@zettelkasten/core';
+import { selectEmbeddableChildren, type ZettelMeta } from '@zettelkasten/core';
 import { useZettelStore } from '../store/useZettelStore';
 
 const STORAGE_KEY = 'zettel_embed_children';
@@ -19,14 +19,14 @@ interface Options {
 }
 
 export interface EmbeddedChildrenState {
-  children: Zettel[];
+  children: ZettelMeta[];
   hasChildren: boolean;
   globalOn: boolean;
   toggleGlobal: () => void;
   isOpen: (id: string) => boolean;
   toggleChild: (id: string) => void;
   /** Devolve o filho embutível que um `[[título]]` resolve, se houver. */
-  childForTitle: (title: string) => Zettel | undefined;
+  childForTitle: (title: string) => ZettelMeta | undefined;
 }
 
 /**
@@ -38,7 +38,7 @@ export function useEmbeddedChildren({ parentId, body, useLinkTable }: Options): 
   const { links, zettels, controller } = useZettelStore();
   // `zettels` do store pode estar filtrado pela busca da sidebar (`search()` o
   // substitui); os filhos precisam ser resolvidos contra a lista completa.
-  const [allZettels, setAllZettels] = useState<Zettel[] | null>(null);
+  const [allZettels, setAllZettels] = useState<ZettelMeta[] | null>(null);
   const [globalOn, setGlobalOn] = useState(false);
   const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
@@ -77,7 +77,7 @@ export function useEmbeddedChildren({ parentId, body, useLinkTable }: Options): 
   );
 
   const byTitle = useMemo(() => {
-    const map = new Map<string, Zettel>();
+    const map = new Map<string, ZettelMeta>();
     for (const c of children) map.set(c.title.trim().toLowerCase(), c);
     return map;
   }, [children]);

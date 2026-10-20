@@ -16,12 +16,12 @@ import { parseLinks } from './LinkParser';
  * onde o texto ainda não salvo é a verdade e a tabela persistida está defasada
  * (um zettel novo nem tem linha nela).
  */
-export function selectEmbeddableChildren(
+export function selectEmbeddableChildren<T extends Pick<Zettel, 'id' | 'title'>>(
   parentId: string,
   body: string,
   links: Link[] | null,
-  zettels: Zettel[],
-): Zettel[] {
+  zettels: T[],
+): T[] {
   let linkedIds: Set<string> | null = null;
   if (links) {
     linkedIds = new Set<string>();
@@ -33,7 +33,7 @@ export function selectEmbeddableChildren(
     if (linkedIds.size === 0) return [];
   }
 
-  const byTitle = new Map<string, Zettel>();
+  const byTitle = new Map<string, T>();
   for (const z of zettels) {
     if (z.id === parentId) continue;
     if (linkedIds && !linkedIds.has(z.id)) continue;
@@ -41,7 +41,7 @@ export function selectEmbeddableChildren(
     if (!byTitle.has(key)) byTitle.set(key, z);
   }
 
-  const result: Zettel[] = [];
+  const result: T[] = [];
   const seen = new Set<string>();
   for (const p of parseLinks(body)) {
     if (p.isParentRef) continue;
