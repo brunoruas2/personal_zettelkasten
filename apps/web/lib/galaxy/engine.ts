@@ -1,3 +1,4 @@
+import { CARD_MAX_HEIGHT, CARD_WIDTH } from '@zettelkasten/core';
 import type { GalaxyData } from '../../components/galaxy/useGalaxyData';
 import {
   type Camera,
@@ -32,6 +33,27 @@ export interface GalaxyCallbacks {
   /** Clique/toque no vazio. */
   onBackgroundTap(): void;
   onCameraChange(cam: Camera): void;
+  /** Zettels que devem estar montados como card (só muda quando o conjunto muda). */
+  onVisibleCards(ids: string[]): void;
+  /** Câmera parada há ~300 ms (true) ou voltou a se mover (false). */
+  onCameraSettled(settled: boolean): void;
+}
+
+export type Lod = 'points' | 'silhouettes' | 'cards';
+
+/** Abaixo: pontos. A partir daqui: silhuetas (canvas). */
+export const LOD_SILHOUETTE = 0.18;
+/** A partir daqui: cards de leitura (DOM). */
+export const LOD_CARDS = 0.42;
+export const MAX_CARDS = 36;
+
+export function lodFor(scale: number): Lod {
+  return scale < LOD_SILHOUETTE ? 'points' : scale < LOD_CARDS ? 'silhouettes' : 'cards';
+}
+
+/** Altura estimada da silhueta (mundo) — só uma pista até o card real. */
+function silhouetteHeight(bodyLen: number): number {
+  return Math.min(CARD_MAX_HEIGHT, Math.max(140, 140 + bodyLen * 0.35));
 }
 
 const BG = '#05070c';
@@ -41,7 +63,9 @@ const HIT_RADIUS_PX = 8;
 const DRAG_THRESHOLD_PX = 6;
 const KEY_PAN_SPEED = 900; // px de tela por segundo
 const FLY_MS = 450;
-const FLY_MIN_SCALE = 0.5;
+/** O voo termina com o card legível (nível de cards). */
+export const FLY_MIN_SCALE = 0.75;
+const SETTLE_MS = 300;
 const HIGHLIGHT_MS = 1500;
 /** Raio da nebulosa em unidades de mundo (~2,5 pegadas de card). */
 const NEBULA_RADIUS = 1400;
@@ -93,11 +117,17 @@ export class GalaxyEngine {
 
   private hoverIdx = -1;
   private pinnedIdx = -1;
+  /** Card DOM sob o cursor (vem do React): arestas sem mini card. */
+  private cardHoverIdx = -1;
+  private cardLayer: HTMLElement | null = null;
+  private visibleKey = '';
+  private settled = false;
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private dwellTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingMove: { x: number; y: number } | null = null;
 
   private pointers = new Map<number, { x: number; y: number; type: string }>();
-  private down: { x: number; y: number; moved: boolean; type: string } | null = null;
+  private down: { x: number; y: number; moved: boolean; type: string; onCard: boolean } | null = null;
   private pinch: { dist: number; cx: number; cy: number } | null = null;
   private keys = new Set<string>();
   private inputEnabled = true;
@@ -115,15 +145,20 @@ export class GalaxyEngine {
   ) {
     this.bg = document.createElement('canvas');
     this.scene = document.createElement('canvas');
+    // Antes de qualquer filho do React (a camada de cards): o canvas fica por
+    // baixo dos cards.
+    const anchor = container.firstChild;
     for (const c of [this.bg, this.scene]) {
       c.style.position = 'absolute';
       c.style.inset = '0';
       c.style.width = '100%';
       c.style.height = '100%';
       c.style.display = 'block';
-      container.appendChild(c);
+      container.insertBefore(c, anchor);
     }
-    this.scene.style.touchAction = 'none';
+    // Os cards (DOM) ficam por cima do canvas: a entrada é ouvida no
+    // contêiner, para arraste/pinça/roda navegarem por cima deles também.
+    container.style.touchAction = 'none';
     this.bgCtx = this.bg.getContext('2d', { alpha: false })!;
     this.ctx = this.scene.getContext('2d')!;
 
@@ -136,12 +171,12 @@ export class GalaxyEngine {
     this.ro.observe(container);
     this.resize();
 
-    this.scene.addEventListener('pointerdown', this.onPointerDown);
-    this.scene.addEventListener('pointermove', this.onPointerMove);
-    this.scene.addEventListener('pointerup', this.onPointerUp);
-    this.scene.addEventListener('pointercancel', this.onPointerCancel);
-    this.scene.addEventListener('pointerleave', this.onPointerLeave);
-    this.scene.addEventListener('wheel', this.onWheel, { passive: false });
+    container.addEventListener('pointerdown', this.onPointerDown);
+    container.addEventListener('pointermove', this.onPointerMove);
+    container.addEventListener('pointerup', this.onPointerUp);
+    container.addEventListener('pointercancel', this.onPointerCancel);
+    container.addEventListener('pointerleave', this.onPointerLeave);
+    container.addEventListener('wheel', this.onWheel, { passive: false });
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('blur', this.onBlur);
@@ -152,7 +187,15 @@ export class GalaxyEngine {
   destroy(): void {
     cancelAnimationFrame(this.raf);
     if (this.dwellTimer) clearTimeout(this.dwellTimer);
+    if (this.settleTimer) clearTimeout(this.settleTimer);
     this.ro.disconnect();
+    const c = this.container;
+    c.removeEventListener('pointerdown', this.onPointerDown);
+    c.removeEventListener('pointermove', this.onPointerMove);
+    c.removeEventListener('pointerup', this.onPointerUp);
+    c.removeEventListener('pointercancel', this.onPointerCancel);
+    c.removeEventListener('pointerleave', this.onPointerLeave);
+    c.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
@@ -189,6 +232,27 @@ export class GalaxyEngine {
   setInputEnabled(enabled: boolean): void {
     this.inputEnabled = enabled;
     if (!enabled) this.keys.clear();
+  }
+
+  getLod(): Lod {
+    return lodFor(this.cam.scale);
+  }
+
+  /**
+   * Contêiner dos cards (DOM). Os cards ficam nele em coordenadas de mundo; o
+   * motor escreve só o transform da câmera nele — pan/zoom não re-renderizam
+   * nem fazem relayout dos cards.
+   */
+  setCardLayer(el: HTMLElement | null): void {
+    this.cardLayer = el;
+    this.applyLayerTransform();
+  }
+
+  /** Cursor sobre um card: arestas e vizinhos realçados, sem mini card. */
+  setHoverFromCard(idx: number): void {
+    if (this.cardHoverIdx === idx) return;
+    this.cardHoverIdx = idx;
+    this.markScene();
   }
 
   /** Mantém o destaque de um ponto (mini card aberto por toque ou hover). */
@@ -239,8 +303,25 @@ export class GalaxyEngine {
     this.sceneDirty = true;
     this.bgDirty = true;
     saveCamera(this.cam);
+    this.applyLayerTransform();
     this.cb.onCameraChange({ ...this.cam });
     this.clearHover();
+    if (this.settled) {
+      this.settled = false;
+      this.cb.onCameraSettled(false);
+    }
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(() => {
+      this.settleTimer = null;
+      this.settled = true;
+      this.cb.onCameraSettled(true);
+    }, SETTLE_MS);
+  }
+
+  private applyLayerTransform(): void {
+    if (!this.cardLayer) return;
+    const s = this.cam.scale;
+    this.cardLayer.style.transform = `translate(${this.w / 2 - this.cam.x * s}px, ${this.h / 2 - this.cam.y * s}px) scale(${s})`;
   }
 
   private clearHover(): void {
@@ -265,44 +346,88 @@ export class GalaxyEngine {
       c.height = Math.round(this.h * this.dpr);
     }
     this.minScale = minScaleFor(this.data?.bbox ?? null, this.w, this.h);
+    this.applyLayerTransform();
     this.sceneDirty = true;
     this.bgDirty = true;
   }
 
   private hitTest(sx: number, sy: number): number {
     if (!this.data || this.data.count === 0) return -1;
+    const d = this.data;
     const [wx, wy] = screenToWorld(this.cam, this.w, this.h, sx, sy);
-    return this.data.grid.nearest(wx, wy, (HIT_RADIUS_PX + 4) / this.cam.scale);
+    if (lodFor(this.cam.scale) === 'points') {
+      return d.grid.nearest(wx, wy, (HIT_RADIUS_PX + 4) / this.cam.scale);
+    }
+    // Silhuetas/cards: o alvo é o retângulo do card, não o ponto.
+    let hit = -1;
+    d.grid.forEachCell(wx - CARD_WIDTH, wy - CARD_MAX_HEIGHT, wx + CARD_WIDTH, wy + CARD_MAX_HEIGHT, (indices) => {
+      for (const i of indices) {
+        const top = d.ys[i] - CARD_MAX_HEIGHT / 2;
+        if (
+          Math.abs(wx - d.xs[i]) <= CARD_WIDTH / 2 &&
+          wy >= top &&
+          wy <= top + silhouetteHeight(d.metas[i].bodyLen)
+        ) {
+          hit = i;
+        }
+      }
+    });
+    return hit;
   }
 
   private localPoint(e: PointerEvent | WheelEvent): [number, number] {
-    const rect = this.scene.getBoundingClientRect();
+    const rect = this.container.getBoundingClientRect();
     return [e.clientX - rect.left, e.clientY - rect.top];
   }
 
   // --- entrada ---
 
   private onPointerDown = (e: PointerEvent): void => {
+    const target = e.target instanceof Element ? e.target : null;
+    // Links/botões/campos dos cards (e qualquer [data-no-pan]) são do card.
+    if (target?.closest('a, button, input, textarea, select, [data-no-pan]')) return;
+    // Mouse dentro do texto do card: seleção de texto, não pan. No toque um
+    // dedo sempre navega (não há seleção por arraste).
+    if (e.pointerType === 'mouse' && target?.closest('[data-card-body]')) return;
+    const onCard = !!target?.closest('[data-galaxy-card]');
+
     const [x, y] = this.localPoint(e);
-    this.scene.setPointerCapture(e.pointerId);
+    // Sem pointer capture aqui: com captura, o `click` de um toque cairia no
+    // contêiner e não no link do card. Captura só quando o arraste começa.
     this.pointers.set(e.pointerId, { x, y, type: e.pointerType });
     if (this.pointers.size === 1) {
-      this.down = { x, y, moved: false, type: e.pointerType };
+      this.down = { x, y, moved: false, type: e.pointerType, onCard };
       this.fly = null;
     } else if (this.pointers.size === 2) {
       // Segundo dedo: vira pinça, o toque deixa de ser um tap.
       if (this.down) this.down.moved = true;
       const [a, b] = [...this.pointers.values()];
       this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+      for (const id of this.pointers.keys()) this.capture(id);
     }
   };
+
+  private capture(pointerId: number): void {
+    try {
+      this.container.setPointerCapture(pointerId);
+    } catch {
+      // ponteiro já liberado
+    }
+  }
 
   private onPointerMove = (e: PointerEvent): void => {
     const [x, y] = this.localPoint(e);
     const p = this.pointers.get(e.pointerId);
     if (!p) {
-      // Mouse sem botão: hover, coalescido no rAF.
-      if (e.pointerType === 'mouse') this.pendingMove = { x, y };
+      // Mouse sem botão: hover, coalescido no rAF. Sobre um card, quem cuida
+      // do hover é o próprio card.
+      if (e.pointerType === 'mouse') {
+        const overCard = e.target instanceof Element && !!e.target.closest('[data-galaxy-card]');
+        if (overCard) {
+          this.pendingMove = null;
+          this.clearHover();
+        } else this.pendingMove = { x, y };
+      }
       return;
     }
     const prev = { x: p.x, y: p.y };
@@ -325,6 +450,7 @@ export class GalaxyEngine {
     if (!this.down) return;
     if (!this.down.moved && Math.hypot(x - this.down.x, y - this.down.y) > DRAG_THRESHOLD_PX) {
       this.down.moved = true;
+      this.capture(e.pointerId);
     }
     if (this.down.moved) {
       this.cam = { ...this.cam, x: this.cam.x - (x - prev.x) / this.cam.scale, y: this.cam.y - (y - prev.y) / this.cam.scale };
@@ -334,15 +460,23 @@ export class GalaxyEngine {
 
   private onPointerUp = (e: PointerEvent): void => {
     const [x, y] = this.localPoint(e);
+    if (!this.pointers.has(e.pointerId)) return;
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch = null;
     const down = this.down;
     if (this.pointers.size === 0) this.down = null;
     if (!down || down.moved || this.pointers.size > 0) return;
+    // O card cuida do próprio clique (Abrir, links); clicar no corpo não navega.
+    if (down.onCard) return;
 
     const idx = this.hitTest(x, y);
     if (idx < 0) {
       this.cb.onBackgroundTap();
+      return;
+    }
+    // Silhueta (ou card além do teto): aproxima até virar card legível.
+    if (lodFor(this.cam.scale) !== 'points') {
+      this.flyTo(idx);
       return;
     }
     if (down.type === 'mouse') this.cb.onOpen(idx);
@@ -363,10 +497,21 @@ export class GalaxyEngine {
   };
 
   private onWheel = (e: WheelEvent): void => {
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.h : 1;
+    const zoom = e.ctrlKey || e.metaKey;
+    // Roda sobre o corpo de um card com overflow na direção do gesto: rola o
+    // card (sem preventDefault). Sem espaço para rolar, navega a galáxia.
+    if (!zoom && e.target instanceof Element) {
+      const scroller = e.target.closest<HTMLElement>('[data-card-scroll]');
+      if (scroller && scroller.scrollHeight > scroller.clientHeight + 1) {
+        const canDown = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
+        const canUp = scroller.scrollTop > 0;
+        if ((e.deltaY > 0 && canDown) || (e.deltaY < 0 && canUp)) return;
+      }
+    }
     e.preventDefault();
     this.fly = null;
-    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.h : 1;
-    if (e.ctrlKey || e.metaKey) {
+    if (zoom) {
       const [x, y] = this.localPoint(e);
       this.cam = zoomAt(this.cam, this.w, this.h, x, y, Math.exp(-e.deltaY * unit * 0.0015), this.minScale);
     } else {
@@ -443,13 +588,15 @@ export class GalaxyEngine {
         this.dwellTimer = null;
         if (idx < 0) this.cb.onHover(-1);
         else {
+          // Mini card só no nível de pontos; nos outros, a silhueta/card já
+          // mostra o título — o hover só realça as ligações.
           this.dwellTimer = setTimeout(() => {
             this.dwellTimer = null;
-            if (this.hoverIdx === idx) this.cb.onHover(idx);
+            if (this.hoverIdx === idx && lodFor(this.cam.scale) === 'points') this.cb.onHover(idx);
           }, HOVER_DWELL_MS);
         }
       }
-      this.scene.style.cursor = idx >= 0 ? 'pointer' : 'grab';
+      this.container.style.cursor = idx >= 0 ? 'pointer' : 'grab';
     }
 
     if (this.highlight) {
@@ -487,7 +634,10 @@ export class GalaxyEngine {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.w, this.h);
     const d = this.data;
-    if (!d || d.count === 0) return;
+    if (!d || d.count === 0) {
+      this.emitVisibleCards([]);
+      return;
+    }
 
     const { scale } = this.cam;
     const halfW = this.w / 2 / scale;
@@ -501,9 +651,8 @@ export class GalaxyEngine {
 
     this.drawNebulas(ctx, d, minX, minY, maxX, maxY, toSx, toSy);
 
-    const visible = d.grid.query(minX - 20 / scale, minY - 20 / scale, maxX + 20 / scale, maxY + 20 / scale, []);
-
-    const focus = this.hoverIdx >= 0 ? this.hoverIdx : this.pinnedIdx;
+    const lod = lodFor(scale);
+    const focus = this.hoverIdx >= 0 ? this.hoverIdx : this.cardHoverIdx >= 0 ? this.cardHoverIdx : this.pinnedIdx;
     const neighbors = focus >= 0 ? new Set(d.adjacency[focus]) : null;
 
     // Arestas: só do ponto em foco.
@@ -521,6 +670,14 @@ export class GalaxyEngine {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
+
+    if (lod !== 'points') {
+      this.drawCardsLevel(ctx, d, lod, minX, minY, maxX, maxY, toSx, toSy, focus, neighbors, now);
+      return;
+    }
+    this.emitVisibleCards([]);
+
+    const visible = d.grid.query(minX - 20 / scale, minY - 20 / scale, maxX + 20 / scale, maxY + 20 / scale, []);
 
     // Pontos agrupados por cor: um fill por cor.
     const paths = new Map<string, Path2D>();
@@ -575,6 +732,115 @@ export class GalaxyEngine {
     }
 
     this.drawLabels(ctx, d, minX, minY, maxX, maxY, toSx, toSy, focus, neighbors);
+  }
+
+  /** Avisa o React só quando o conjunto de cards muda. */
+  private emitVisibleCards(ids: string[]): void {
+    const key = ids.join(',');
+    if (key === this.visibleKey) return;
+    this.visibleKey = key;
+    this.cb.onVisibleCards(ids);
+  }
+
+  /**
+   * Silhuetas e cards. No nível de cards, os mais próximos do centro (até o
+   * teto) viram DOM; o resto vira silhueta. Nenhum ponto/rótulo é desenhado.
+   */
+  private drawCardsLevel(
+    ctx: CanvasRenderingContext2D,
+    d: GalaxyData,
+    lod: Lod,
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    toSx: (x: number) => number,
+    toSy: (y: number) => number,
+    focus: number,
+    neighbors: Set<number> | null,
+    now: number,
+  ): void {
+    const { scale } = this.cam;
+    const cards = new Set<number>();
+    if (lod === 'cards') {
+      // Margem de meia tela: o card já está montado quando entra na tela.
+      const mx = (maxX - minX) / 2 + CARD_WIDTH;
+      const my = (maxY - minY) / 2 + CARD_MAX_HEIGHT;
+      const candidates = d.grid.query(minX - mx, minY - my, maxX + mx, maxY + my, []);
+      candidates.sort(
+        (a, b) =>
+          (d.xs[a] - this.cam.x) ** 2 + (d.ys[a] - this.cam.y) ** 2 -
+          ((d.xs[b] - this.cam.x) ** 2 + (d.ys[b] - this.cam.y) ** 2),
+      );
+      for (let k = 0; k < candidates.length && k < MAX_CARDS; k++) cards.add(candidates[k]);
+      this.emitVisibleCards([...cards].sort((a, b) => a - b).map((i) => d.ids[i]));
+    } else {
+      this.emitVisibleCards([]);
+    }
+
+    const visible = d.grid.query(
+      minX - CARD_WIDTH,
+      minY - CARD_MAX_HEIGHT,
+      maxX + CARD_WIDTH,
+      maxY + CARD_MAX_HEIGHT,
+      [],
+    );
+    const titleSize = 24 * scale;
+    for (const i of visible) {
+      if (cards.has(i)) continue;
+      const left = toSx(d.xs[i] - CARD_WIDTH / 2);
+      const top = toSy(d.ys[i] - CARD_MAX_HEIGHT / 2);
+      const w = CARD_WIDTH * scale;
+      const h = silhouetteHeight(d.metas[i].bodyLen) * scale;
+      const emphasis = i === focus || (neighbors?.has(i) ?? false);
+      ctx.beginPath();
+      ctx.roundRect(left, top, w, h, 12 * scale);
+      ctx.fillStyle = '#0e121a';
+      ctx.globalAlpha = focus >= 0 && !emphasis ? 0.55 : 0.95;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = emphasis ? this.accent : 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = emphasis ? 1.5 : 1;
+      ctx.stroke();
+      if (titleSize >= 5) {
+        const title = d.metas[i].title || 'Sem título';
+        const pad = 20 * scale;
+        const maxChars = Math.max(4, Math.floor((w - pad * 2) / (titleSize * 0.5)));
+        const text = title.length > maxChars ? title.slice(0, maxChars - 1) + '…' : title;
+        ctx.font = `500 ${titleSize}px ${this.fontTitle}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#e6e9f0';
+        ctx.globalAlpha = focus >= 0 && !emphasis ? 0.5 : 0.95;
+        ctx.fillText(text, left + pad, top + pad);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Destaque do voo: contorno pulsante na silhueta. No card (DOM opaco por
+    // cima) quem destaca é o próprio card.
+    if (this.highlight && !cards.has(this.highlight.idx)) {
+      const i = this.highlight.idx;
+      const pulse = 0.5 + 0.5 * Math.sin(now / 120);
+      ctx.strokeStyle = '#f5f3ff';
+      ctx.globalAlpha = 0.4 + 0.5 * pulse;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(
+        toSx(d.xs[i] - CARD_WIDTH / 2) - 4,
+        toSy(d.ys[i] - CARD_MAX_HEIGHT / 2) - 4,
+        CARD_WIDTH * scale + 8,
+        silhouetteHeight(d.metas[i].bodyLen) * scale + 8,
+        14 * scale + 4,
+      );
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /** Card em destaque pelo voo (o DOM desenha o contorno). */
+  getHighlightId(): string | null {
+    return this.highlight && this.data ? this.data.ids[this.highlight.idx] ?? null : null;
   }
 
   private drawNebulas(

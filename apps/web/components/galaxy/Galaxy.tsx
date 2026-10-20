@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGalaxyData } from './useGalaxyData';
-import { GalaxyEngine } from '../../lib/galaxy/engine';
+import { FLY_MIN_SCALE, GalaxyEngine, LOD_SILHOUETTE } from '../../lib/galaxy/engine';
 import { loadCamera, type Camera } from '../../lib/galaxy/camera';
 import { HoverCard } from './HoverCard';
+import { CardLayer } from './CardLayer';
 import { GalaxyTopBar, ZoomControls, type MenuAction } from './GalaxyTopBar';
 import { GalaxyModal } from './GalaxyModal';
 import { GalaxySearch, type SearchFilters } from './GalaxySearch';
@@ -16,6 +17,9 @@ import { useOfflineRouter } from '../../hooks/useOfflineRouter';
 type Modal = 'settings' | 'tags' | 'passkeys' | null;
 
 const CARD_HIDE_DELAY_MS = 150;
+const HIGHLIGHT_MS = 2000;
+/** Zoom a partir do qual os cards podem renderizar diagramas (câmera parada). */
+const HEAVY_MIN_SCALE = 0.6;
 
 /** Grava `?z=<id>` na URL de `/` sem empilhar histórico. */
 function setZParam(id: string | null): void {
@@ -36,6 +40,11 @@ export function Galaxy() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GalaxyEngine | null>(null);
+  const cardLayerRef = useRef<HTMLDivElement>(null);
+  const [visibleIds, setVisibleIds] = useState<string[]>([]);
+  const [settled, setSettled] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializedRef = useRef(false);
 
   const [scale, setScale] = useState(0.05);
@@ -67,6 +76,10 @@ export function Galaxy() {
     if (idx === undefined) return;
     engineRef.current?.flyTo(idx);
     setZParam(id);
+    // No nível de cards o destaque do voo é o contorno do próprio card.
+    setHighlightId(id);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightId(null), HIGHLIGHT_MS);
   }, []);
 
   // Motor: criado uma vez; callbacks leem estado por ref.
@@ -101,8 +114,16 @@ export function Galaxy() {
       onCameraChange: (cam: Camera) => {
         setScale(cam.scale);
         setCamTick((t) => t + 1);
+        // Fora do nível de pontos não há mini card nem seleção por toque.
+        if (cam.scale >= LOD_SILHOUETTE) {
+          setPinnedIdx(-1);
+          setHoverIdx(-1);
+        }
       },
+      onVisibleCards: (ids) => setVisibleIds(ids),
+      onCameraSettled: (s) => setSettled(s),
     });
+    engine.setCardLayer(cardLayerRef.current);
     engineRef.current = engine;
     return () => {
       engine.destroy();
@@ -128,7 +149,7 @@ export function Galaxy() {
     const saved = loadCamera();
     const idx = z ? data.indexById.get(z) : undefined;
     if (idx !== undefined) {
-      engine.setCamera({ x: data.xs[idx], y: data.ys[idx], scale: Math.max(saved?.scale ?? 0, 0.5) });
+      engine.setCamera({ x: data.xs[idx], y: data.ys[idx], scale: Math.max(saved?.scale ?? 0, FLY_MIN_SCALE) });
       engine.flyTo(idx, false);
     } else if (saved) {
       engine.setCamera(saved);
@@ -177,13 +198,45 @@ export function Galaxy() {
 
   const unplacedSet = useMemo(() => new Set(data.unplacedIds), [data.unplacedIds]);
 
+  // Títulos (sem caixa) → id, para os [[links]] dos cards voarem. Mesma regra
+  // do findByTitle.
+  const idByTitle = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const z of data.metas) {
+      const k = z.title.trim().toLowerCase();
+      if (!m.has(k)) m.set(k, z.id);
+    }
+    return m;
+  }, [data.metas]);
+
+  const onCardLink = useCallback(
+    (title: string) => {
+      const id = idByTitle.get(title.trim().toLowerCase());
+      if (id) flyTo(id);
+    },
+    [idByTitle, flyTo],
+  );
+
+  const onCardHover = useCallback((idx: number) => engineRef.current?.setHoverFromCard(idx), []);
+
   const cardIdx = pinnedIdx >= 0 ? pinnedIdx : hoverIdx;
   const cardPos = cardIdx >= 0 ? engineRef.current?.screenOf(cardIdx) ?? null : null;
   const cardMeta = cardIdx >= 0 ? data.metas[cardIdx] : undefined;
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#05070c]">
-      <div ref={containerRef} className="absolute inset-0" />
+      <div ref={containerRef} className="absolute inset-0">
+        <CardLayer
+          ref={cardLayerRef}
+          data={data}
+          ids={visibleIds}
+          heavy={settled && scale >= HEAVY_MIN_SCALE}
+          highlightId={highlightId}
+          onLink={onCardLink}
+          onOpen={open}
+          onHover={onCardHover}
+        />
+      </div>
 
       {cardMeta && cardPos && (
         <HoverCard
