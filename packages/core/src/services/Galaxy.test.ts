@@ -35,6 +35,36 @@ function randomGraph(n: number, edges: number, seed: number): { ids: string[]; l
 
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
+/** Componente conexo: árvore aleatória + arestas extras, ids com prefixo. */
+function connectedGraph(prefix: string, n: number, extra: number, seed: number): { ids: string[]; links: Link[] } {
+  const rnd = lcg(seed);
+  const ids = Array.from({ length: n }, (_, i) => `${prefix}${String(i).padStart(5, '0')}`);
+  const links: Link[] = [];
+  for (let i = 1; i < n; i++) links.push({ sourceId: ids[i], targetId: ids[Math.floor(rnd() * i)] });
+  for (let i = 0; i < extra; i++) {
+    links.push({ sourceId: ids[Math.floor(rnd() * n)], targetId: ids[Math.floor(rnd() * n)] });
+  }
+  return { ids, links };
+}
+
+function aspect(points: Point[]): number {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return (Math.max(...xs) - Math.min(...xs)) / (Math.max(...ys) - Math.min(...ys));
+}
+
+function centroid(points: Point[]): Point {
+  let x = 0;
+  let y = 0;
+  for (const p of points) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / points.length, y: y / points.length };
+}
+
+const FOOTPRINT_DIAGONAL = Math.hypot(FOOTPRINT_W, FOOTPRINT_H);
+
 describe('SpatialGrid / placeNear', () => {
   it('vaga numa grade vazia é a própria âncora arredondada', () => {
     expect(placeNear({ x: 10.4, y: -3.6 }, new SpatialGrid())).toEqual({ x: 10, y: -4 });
@@ -158,6 +188,67 @@ describe('freezeLayout', () => {
       }
     }
     expect(inside / ni).toBeLessThan(across / na);
+  });
+
+  it('componente grande ocupa região aproximadamente circular', () => {
+    const { ids, links } = connectedGraph('a', 300, 60, 11);
+    const r = aspect([...freezeLayout(ids, links).values()]);
+    expect(r).toBeGreaterThan(0.75);
+    expect(r).toBeLessThan(1.33);
+  }, 60_000);
+
+  it('mediana da distância ao vizinho mais próximo passa da diagonal da pegada', () => {
+    const { ids, links } = connectedGraph('a', 250, 50, 12);
+    const pts = [...freezeLayout(ids, links).values()];
+    const nn = pts
+      .map((p, i) => Math.min(...pts.map((q, j) => (i === j ? Infinity : dist(p, q)))))
+      .sort((a, b) => a - b);
+    expect(nn[Math.floor(nn.length / 2)]).toBeGreaterThan(FOOTPRINT_DIAGONAL);
+  }, 60_000);
+
+  it('componentes sem ligação viram ilhas separadas, a maior no centro', () => {
+    const big = connectedGraph('a', 60, 10, 21);
+    const small = connectedGraph('b', 20, 4, 22);
+    const out = freezeLayout([...big.ids, ...small.ids], [...big.links, ...small.links]);
+
+    // Maior distância, dentro de um componente, ao vizinho de link mais próximo.
+    let intra = 0;
+    for (const g of [big, small]) {
+      const adj = buildAdjacency(g.links);
+      for (const id of g.ids) {
+        const p = out.get(id)!;
+        const d = Math.min(...[...(adj.get(id) ?? [])].map((nb) => dist(p, out.get(nb)!)));
+        intra = Math.max(intra, d);
+      }
+    }
+    let between = Infinity;
+    for (const a of big.ids) for (const b of small.ids) between = Math.min(between, dist(out.get(a)!, out.get(b)!));
+    expect(between).toBeGreaterThan(intra);
+
+    const origin = { x: 0, y: 0 };
+    const cBig = centroid(big.ids.map((id) => out.get(id)!));
+    const cSmall = centroid(small.ids.map((id) => out.get(id)!));
+    expect(dist(cBig, origin)).toBeLessThan(dist(cSmall, origin));
+  }, 60_000);
+
+  it('avulsos ficam no anel externo', () => {
+    const g = connectedGraph('a', 40, 8, 31);
+    const loose = Array.from({ length: 30 }, (_, i) => `z${String(i).padStart(3, '0')}`);
+    const out = freezeLayout([...g.ids, ...loose], g.links);
+    const origin = { x: 0, y: 0 };
+    const islandMax = Math.max(...g.ids.map((id) => dist(out.get(id)!, origin)));
+    const looseMin = Math.min(...loose.map((id) => dist(out.get(id)!, origin)));
+    expect(looseMin).toBeGreaterThan(islandMax);
+    expect(overlappingPairs(out)).toBe(0);
+  }, 60_000);
+
+  it('só avulsos: disco sem sobreposição', () => {
+    const ids = Array.from({ length: 200 }, (_, i) => `z${String(i).padStart(3, '0')}`);
+    const out = freezeLayout(ids, []);
+    expect(overlappingPairs(out)).toBe(0);
+    const r = aspect([...out.values()]);
+    expect(r).toBeGreaterThan(0.75);
+    expect(r).toBeLessThan(1.33);
   });
 
   it('grafo sem arestas e links para ids inexistentes', () => {
