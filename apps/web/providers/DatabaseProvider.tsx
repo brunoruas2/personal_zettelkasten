@@ -1,23 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ZettelRepository, ReviewStore } from '@zettelkasten/db-web';
-import { ZettelController, ReviewController } from '@zettelkasten/core';
+import { ZettelRepository } from '@zettelkasten/db-web';
+import { ZettelController } from '@zettelkasten/core';
 import type { Link } from '@zettelkasten/core';
 import { useZettelStore } from '../store/useZettelStore';
-import { useReviewStore } from '../store/useReviewStore';
 import { useAuth } from './AuthProvider';
 import { syncService } from '../lib/sync';
 import { api } from '../lib/api';
 import { useSyncStore } from '../store/useSyncStore';
 import { triggerGraphLayoutWorker } from '../lib/triggerGraphLayout';
 import { uploadPending, prefetchImages } from '../lib/imageSync';
-import { drainReviewQueue, pullReviews } from '../lib/reviewSync';
 import { uploadPendingDrawings, pullDrawings } from '../lib/drawingSync';
 const repo = new ZettelRepository();
 const controller = new ZettelController(repo);
-const reviewStore = new ReviewStore();
-const reviewController = new ReviewController(reviewStore);
 
 // The cache name must match the constant in worker/index.ts.
 const ROUTES_CACHE = 'zettelkasten-routes-v1';
@@ -30,9 +26,7 @@ const ROUTES_CACHE = 'zettelkasten-routes-v1';
 // Skips routes already in cache; ignores network errors (offline, etc.).
 function cacheZettelRoutes() {
   if (!('caches' in window)) return;
-  // A sessão de revisão entra junto: sem isso ela só abriria offline depois de
-  // ter sido visitada online uma vez.
-  const routes = ['/review', ...useZettelStore.getState().zettels.map((z) => `/zettel/${z.id}`)];
+  const routes = useZettelStore.getState().zettels.map((z) => `/zettel/${z.id}`);
   if (routes.length === 0) return;
 
   void (async () => {
@@ -78,13 +72,6 @@ async function pullAll() {
     await repo.replaceAllLinks(links);
   }
 
-  // Estado de revisão: coleção pequena, sincronizada por inteiro como os links.
-  try {
-    await pullReviews(reviewStore);
-  } catch {
-    // Servidor antigo ou rede instável — a fila local cobre o caso.
-  }
-
   // Desenhos: pull por manifesto (silencioso; nunca interrompe a sincronização).
   await pullDrawings();
 }
@@ -92,9 +79,6 @@ async function pullAll() {
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const { setController, loadAll, setGraphExcludedTags, setGraphNodeColors } = useZettelStore();
-  const setReviewController = useReviewStore((s) => s.setController);
-  const loadReviewStates = useReviewStore((s) => s.loadStates);
-  const setNewPerDay = useReviewStore((s) => s.setNewPerDay);
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const setStatus = useSyncStore((s) => s.setStatus);
   const setSyncNow = useSyncStore((s) => s.setSyncNow);
@@ -113,9 +97,15 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       navigator.storage.persist();
     }
 
+    // Fila offline da revisão espaçada, removida do app. Apagada no boot, e não
+    // só no logout, para não sobrar em dispositivo que nunca desloga.
+    try {
+      localStorage.removeItem('zettel_review_queue');
+    } catch {
+      // localStorage indisponível (modo privado, bloqueio) — nada a limpar.
+    }
+
     setController(controller);
-    setReviewController(reviewController);
-    void loadReviewStates();
     loadAll().then(async () => {
       setReady(true);
 
@@ -131,9 +121,6 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(data?.graph_node_colors)) {
             setGraphNodeColors(data.graph_node_colors);
           }
-          if (typeof data?.review_new_per_day === 'number' && data.review_new_per_day > 0) {
-            setNewPerDay(data.review_new_per_day);
-          }
         })
         .catch(() => {});
 
@@ -144,7 +131,6 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         await syncService.drainQueue();
         void uploadPending();
         void uploadPendingDrawings();
-        void drainReviewQueue().catch(() => {});
 
         // 2. Push local IndexedDB data to server if this is the first sync ever
         //    (handles V1 → V2 migration for existing users)
@@ -163,7 +149,6 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
         // 5. Refresh in-memory state with merged data
         await loadAll();
-        await loadReviewStates();
         cacheZettelRoutes();
         void prefetchImages();
         triggerGraphLayoutWorker();
@@ -173,7 +158,6 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           try {
             await pullAll();
             await loadAll();
-            await loadReviewStates();
             cacheZettelRoutes();
             void prefetchImages();
             triggerGraphLayoutWorker();
@@ -193,7 +177,6 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         syncService.drainQueue().then(() => loadAll()).catch(() => {});
         void uploadPending();
         void uploadPendingDrawings();
-        void drainReviewQueue().then(() => loadReviewStates()).catch(() => {});
       }
     };
     window.addEventListener('online', onOnline);
@@ -203,7 +186,6 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
       if (isAuthenticated && document.visibilityState === 'visible') {
         pullAll()
           .then(() => loadAll())
-          .then(() => loadReviewStates())
           .then(() => { cacheZettelRoutes(); void prefetchImages(); triggerGraphLayoutWorker(); })
           .catch(() => {});
       }

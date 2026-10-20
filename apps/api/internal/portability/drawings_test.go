@@ -17,7 +17,6 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/portability"
-	"github.com/brunofullstack/zettelkasten/api/internal/review"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
@@ -62,7 +61,7 @@ func newEnv(t *testing.T, quota int64) *env {
 	dRepo := drawings.NewRepository(database)
 	zRepo := zettel.NewRepository(database)
 	zHandler := zettel.NewHandler(zRepo, images.NewRepository(database)).WithDrawings(dRepo)
-	pHandler := portability.NewHandler(zRepo, authRepo, images.NewRepository(database), review.NewRepository(database)).
+	pHandler := portability.NewHandler(zRepo, authRepo, images.NewRepository(database)).
 		WithDrawings(dRepo, quota)
 
 	r := chi.NewRouter()

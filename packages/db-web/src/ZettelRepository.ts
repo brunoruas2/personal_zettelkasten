@@ -3,14 +3,11 @@ import type {
   Zettel,
   ZettelRow,
   Link,
-  ReviewRow,
-  ReviewState,
   DrawingRecord,
   ZettelRepository as IZettelRepository,
-  ReviewRepository as IReviewRepository,
   DrawingRepository as IDrawingRepository,
 } from '@zettelkasten/core';
-import { rowToZettel, zettelToRow, rowToReview, reviewToRow } from '@zettelkasten/core';
+import { rowToZettel, zettelToRow } from '@zettelkasten/core';
 
 /**
  * Imagem guardada localmente. O `blob` é um Blob nativo — Dexie persiste isso
@@ -36,7 +33,6 @@ class ZettelDb extends Dexie {
   zettels!: Table<ZettelRow, string>;
   links!: Table<Link, [string, string]>;
   images!: Table<ImageRecord, string>;
-  reviews!: Table<ReviewRow, string>;
   drawings!: Table<DrawingRecord, string>;
 
   constructor() {
@@ -71,6 +67,16 @@ class ZettelDb extends Dexie {
       links: '[sourceId+targetId], sourceId, targetId',
       images: 'id, syncState',
       reviews: 'zettel_id, due_at',
+      drawings: 'id, syncState, updatedAt',
+    });
+    // Revisão espaçada removida do app: `null` apaga a tabela na abertura. As
+    // versões 14 e 15 ficam como estão — descrevem o caminho de upgrade de quem
+    // ainda está nelas.
+    this.version(16).stores({
+      zettels: 'id, title, updated_at',
+      links: '[sourceId+targetId], sourceId, targetId',
+      images: 'id, syncState',
+      reviews: null,
       drawings: 'id, syncState, updatedAt',
     });
   }
@@ -160,14 +166,12 @@ export class ZettelRepository implements IZettelRepository {
   }
 
   async clearAll(): Promise<void> {
-    // As imagens, os estados de revisão e os desenhos entram aqui também: sem isso,
-    // o logout deixaria blobs, progresso de estudo e rabiscos de uma sessão
-    // visíveis na seguinte.
-    await db.transaction('rw', [db.zettels, db.links, db.images, db.reviews, db.drawings], async () => {
+    // As imagens e os desenhos entram aqui também: sem isso, o logout deixaria
+    // blobs e rabiscos de uma sessão visíveis na seguinte.
+    await db.transaction('rw', [db.zettels, db.links, db.images, db.drawings], async () => {
       await db.zettels.clear();
       await db.links.clear();
       await db.images.clear();
-      await db.reviews.clear();
       await db.drawings.clear();
     });
   }
@@ -221,39 +225,6 @@ export class ImageStore {
       total += r.byteLen;
     });
     return total;
-  }
-}
-
-/**
- * Estado de revisão espaçada. Tabela própria, e não colunas em `zettels`: o
- * `put` de linha inteira daquele repositório destruiria campos fora de
- * `zettelToRow`, e cada avaliação viraria uma edição de conteúdo para o sync.
- */
-export class ReviewStore implements IReviewRepository {
-  async findAll(): Promise<ReviewState[]> {
-    const rows = await db.reviews.toArray();
-    return rows.map(rowToReview);
-  }
-
-  async findById(zettelId: string): Promise<ReviewState | null> {
-    const row = await db.reviews.get(zettelId);
-    return row ? rowToReview(row) : null;
-  }
-
-  async put(state: ReviewState): Promise<void> {
-    await db.reviews.put(reviewToRow(state));
-  }
-
-  async putMany(states: ReviewState[]): Promise<void> {
-    await db.reviews.bulkPut(states.map(reviewToRow));
-  }
-
-  async delete(zettelId: string): Promise<void> {
-    await db.reviews.delete(zettelId);
-  }
-
-  async clearAll(): Promise<void> {
-    await db.reviews.clear();
   }
 }
 

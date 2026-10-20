@@ -59,7 +59,6 @@ func (h *Handler) exportZipForUser(w http.ResponseWriter, userID string) {
 		Zettels:    zettels,
 		Links:      links,
 		Images:     h.imageManifest(userID),
-		Reviews:    h.reviewsForExport(userID),
 		Drawings:   h.drawingManifest(userID),
 	}
 	if f, err := zw.Create("zettels.json"); err == nil {
@@ -153,8 +152,6 @@ func (h *Handler) importZip(w http.ResponseWriter, r *http.Request) {
 		h.syncImageRefs(userID, z.ID, z.Body)
 		h.syncDrawingRefs(userID, z.ID, z.Body)
 	}
-
-	h.importReviews(userID, payload.Reviews)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{

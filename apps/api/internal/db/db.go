@@ -209,26 +209,6 @@ func migrate(db *sql.DB) error {
 
 		CREATE INDEX IF NOT EXISTS idx_image_refs_zettel ON image_refs(zettel_id);
 
-		-- Estado de revisão espaçada, também em tabela própria: é escrito a cada
-		-- avaliação, e uma coluna em zettels faria o trigger zettels_au
-		-- reconstruir o índice FTS5 toda vez, além de marcar o zettel como
-		-- editado para o pull delta dos outros dispositivos.
-		CREATE TABLE IF NOT EXISTS reviews (
-			user_id          TEXT    NOT NULL REFERENCES users(id),
-			zettel_id        TEXT    NOT NULL,
-			due_at           INTEGER NOT NULL,
-			interval_days    INTEGER NOT NULL,
-			ease             REAL    NOT NULL,
-			reps             INTEGER NOT NULL,
-			lapses           INTEGER NOT NULL,
-			last_reviewed_at INTEGER NOT NULL,
-			suspended        INTEGER NOT NULL DEFAULT 0,
-			updated_at       INTEGER NOT NULL,
-			PRIMARY KEY (user_id, zettel_id)
-		);
-
-		CREATE INDEX IF NOT EXISTS idx_reviews_due ON reviews(user_id, due_at);
-
 		-- Desenhos (cena de traços + preview SVG) em tabela própria, pelo mesmo
 		-- motivo das imagens: o JSON da cena é grande e, numa coluna de zettels,
 		-- os triggers zettels_* o arrastariam para o índice FTS5. O id é gerado
@@ -261,6 +241,11 @@ func migrate(db *sql.DB) error {
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_drawing_refs_zettel ON drawing_refs(user_id, zettel_id);
+
+		-- Revisão espaçada removida do app: descarta a tabela e o índice de quem
+		-- ainda os tem. Idempotente, roda em todo boot.
+		DROP INDEX IF EXISTS idx_reviews_due;
+		DROP TABLE IF EXISTS reviews;
 	`)
 	return err
 }

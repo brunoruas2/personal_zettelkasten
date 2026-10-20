@@ -14,7 +14,6 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/portability"
-	"github.com/brunofullstack/zettelkasten/api/internal/review"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -57,10 +56,8 @@ func main() {
 
 	zettelRepo := zettel.NewRepository(database)
 	zettelHandler := zettel.NewHandler(zettelRepo, imageRepo).WithDrawings(drawingRepo)
-	reviewRepo := review.NewRepository(database)
-	reviewHandler := review.NewHandler(reviewRepo)
 
-	portabilityHandler := portability.NewHandler(zettelRepo, authRepo, imageRepo, reviewRepo).
+	portabilityHandler := portability.NewHandler(zettelRepo, authRepo, imageRepo).
 		WithDrawings(drawingRepo, drawingQuota)
 
 	startOrphanPurge(imageRepo, drawingRepo)
@@ -107,12 +104,6 @@ func main() {
 		r.Put("/api/drawings/{id}", drawingHandler.Put)
 		r.Get("/api/drawings/{id}", drawingHandler.Get)
 		r.Delete("/api/drawings/{id}", drawingHandler.Delete)
-
-		// Revisão espaçada: inline pelo mesmo motivo das imagens — o Mount em
-		// "/api" acima impede um Mount novo sob esse prefixo.
-		r.Get("/api/reviews", reviewHandler.List)
-		r.Put("/api/reviews/{zettelId}", reviewHandler.Upsert)
-		r.Delete("/api/reviews/{zettelId}", reviewHandler.Delete)
 
 		r.Get("/api/links", func(w http.ResponseWriter, req *http.Request) {
 			links, err := zettelRepo.GetAllLinks(auth.GetUserID(req))
