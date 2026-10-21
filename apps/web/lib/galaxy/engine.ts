@@ -13,6 +13,7 @@ import {
 } from './camera';
 import { buildStars, drawStarfield, type Star } from './starfield';
 import { getNebulaSprite } from './nebulaSprites';
+import { classifyWheel, type WheelMemory } from './wheel';
 
 /**
  * Motor imperativo da galáxia (o React só monta e passa callbacks — o estado
@@ -68,6 +69,8 @@ export const FLY_MIN_SCALE = 0.75;
 const SETTLE_MS = 300;
 const DOUBLE_CLICK_MS = 300;
 const HIGHLIGHT_MS = 1500;
+/** Folga entre a base da barra do topo e o topo do card raiz no foco. */
+const FOCUS_TOP_GAP = 16;
 /** Raio da nebulosa em unidades de mundo (~2,5 pegadas de card). */
 const NEBULA_RADIUS = 1400;
 /** Abaixo deste zoom, as nebulosas são agregadas por célula da grade. */
@@ -116,6 +119,11 @@ export class GalaxyEngine {
   private lastTwinkle = 0;
   private lastFrame = 0;
 
+  private wheelMemory: WheelMemory | null = null;
+  /** Altura real (mundo) dos cards montados, por id — sobrevive às reconstruções dos dados. */
+  private cardHeights = new Map<string, number>();
+  /** Base da barra do topo (px de tela): o foco põe o topo do raiz abaixo dela. */
+  private topInset = 72;
   private hoverIdx = -1;
   private pinnedIdx = -1;
   /** Card DOM sob o cursor (vem do React): arestas sem mini card. */
@@ -243,7 +251,7 @@ export class GalaxyEngine {
    * Modo foco: desenha só `idxSet` e enquadra o conjunto; `null` sai e volta
    * à câmera de antes do foco.
    */
-  setFocus(idxSet: Set<number> | null, fit = true): void {
+  setFocus(idxSet: Set<number> | null, fit = true, rootIdx = -1): void {
     if (idxSet) {
       if (!this.focusSet) this.cameraBeforeFocus = { ...this.cam };
       this.focusSet = idxSet;
@@ -251,7 +259,10 @@ export class GalaxyEngine {
       this.pinnedIdx = -1;
       // `fit = false`: só troca o conjunto (os índices mudam a cada
       // reconstrução dos dados) sem mexer na câmera.
-      if (fit) this.fitIds(idxSet);
+      if (fit) {
+        if (rootIdx >= 0) this.focusOn(rootIdx);
+        else this.fitIds(idxSet);
+      }
     } else if (this.focusSet) {
       this.focusSet = null;
       const back = this.cameraBeforeFocus;
@@ -259,6 +270,24 @@ export class GalaxyEngine {
       if (back) this.animateTo(back, true);
     }
     this.markScene();
+  }
+
+  setTopInset(px: number): void {
+    this.topInset = px;
+  }
+
+  /**
+   * Voa até o raiz do foco: centrado na horizontal, topo do card logo abaixo
+   * da barra do topo, zoom de leitura (atual se já em 75–100%).
+   */
+  focusOn(idx: number, animate = true): void {
+    const d = this.data;
+    if (!d || idx < 0) return;
+    const scale = clampScale(Math.min(1, Math.max(this.cam.scale, FLY_MIN_SCALE)), this.minScale);
+    const top = d.ys[idx] - CARD_MAX_HEIGHT / 2;
+    const y = top + (this.h / 2 - this.topInset - FOCUS_TOP_GAP) / scale;
+    this.animateTo({ x: d.xs[idx], y, scale }, animate);
+    this.highlight = { idx, until: performance.now() + (animate ? FLY_MS : 0) + HIGHLIGHT_MS };
   }
 
   /** Enquadra um conjunto de índices (pegada inteira de cada card), até 100%. */
@@ -295,6 +324,29 @@ export class GalaxyEngine {
   setCardLayer(el: HTMLElement | null): void {
     this.cardLayer = el;
     this.applyLayerTransform();
+  }
+
+  /** Altura medida de um card montado (`null` ao desmontar). */
+  setCardHeight(id: string, h: number | null): void {
+    if (h === null) {
+      this.cardHeights.delete(id);
+      return;
+    }
+    if (this.cardHeights.get(id) === h) return;
+    this.cardHeights.set(id, h);
+    // Só as arestas dependem da altura.
+    if (this.hoverIdx >= 0 || this.cardHoverIdx >= 0 || this.pinnedIdx >= 0) this.markScene();
+  }
+
+  /**
+   * `y` de mundo onde a aresta encosta: no nível de pontos, o ponto; acima
+   * dele, o meio do card desenhado (altura real se montado, senão a
+   * estimativa da silhueta). O centro da pegada fica abaixo de card curto.
+   */
+  private anchorY(d: GalaxyData, i: number, lod: Lod): number {
+    if (lod === 'points') return d.ys[i];
+    const h = this.cardHeights.get(d.ids[i]) ?? silhouetteHeight(d.metas[i].bodyLen);
+    return d.ys[i] - CARD_MAX_HEIGHT / 2 + h / 2;
   }
 
   /** Cursor sobre um card: arestas e vizinhos realçados, sem mini card. */
@@ -577,10 +629,10 @@ export class GalaxyEngine {
 
   private onWheel = (e: WheelEvent): void => {
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.h : 1;
-    const zoom = e.ctrlKey || e.metaKey;
+    const pinch = e.ctrlKey || e.metaKey;
     // Roda sobre o corpo de um card com overflow na direção do gesto: rola o
     // card (sem preventDefault). Sem espaço para rolar, navega a galáxia.
-    if (!zoom && e.target instanceof Element) {
+    if (!pinch && !e.shiftKey && e.target instanceof Element) {
       const scroller = e.target.closest<HTMLElement>('[data-card-scroll]');
       if (scroller && scroller.scrollHeight > scroller.clientHeight + 1) {
         const canDown = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
@@ -590,15 +642,31 @@ export class GalaxyEngine {
     }
     e.preventDefault();
     this.fly = null;
-    if (zoom) {
+    if (pinch) {
+      // Ctrl/⌘ + roda e pinça do trackpad (chega como ctrl+wheel).
       const [x, y] = this.localPoint(e);
       this.cam = zoomAt(this.cam, this.w, this.h, x, y, Math.exp(-e.deltaY * unit * 0.0015), this.minScale);
+    } else if (e.shiftKey) {
+      // Pan horizontal; o Windows às vezes já entrega Shift+roda em deltaX.
+      const d = (e.deltaX || e.deltaY) * unit;
+      this.cam = { ...this.cam, x: this.cam.x + d / this.cam.scale };
     } else {
-      this.cam = {
-        ...this.cam,
-        x: this.cam.x + (e.deltaX * unit) / this.cam.scale,
-        y: this.cam.y + (e.deltaY * unit) / this.cam.scale,
-      };
+      const now = performance.now();
+      const source = classifyWheel(e, now, this.wheelMemory);
+      this.wheelMemory = { source, at: now };
+      if (source === 'mouse') {
+        // Delta limitado: um entalhe com escala de DPI (125) ou aceleração
+        // não salta vários níveis.
+        const d = Math.max(-120, Math.min(120, e.deltaY * unit));
+        const [x, y] = this.localPoint(e);
+        this.cam = zoomAt(this.cam, this.w, this.h, x, y, Math.exp(-d * 0.0015), this.minScale);
+      } else {
+        this.cam = {
+          ...this.cam,
+          x: this.cam.x + (e.deltaX * unit) / this.cam.scale,
+          y: this.cam.y + (e.deltaY * unit) / this.cam.scale,
+        };
+      }
     }
     this.cameraChanged();
   };
@@ -741,10 +809,10 @@ export class GalaxyEngine {
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       const fx = toSx(d.xs[focus]);
-      const fy = toSy(d.ys[focus]);
+      const fy = toSy(this.anchorY(d, focus, lod));
       for (const n of neighbors!) {
         ctx.moveTo(fx, fy);
-        ctx.lineTo(toSx(d.xs[n]), toSy(d.ys[n]));
+        ctx.lineTo(toSx(d.xs[n]), toSy(this.anchorY(d, n, lod)));
       }
       ctx.stroke();
       ctx.globalAlpha = 1;

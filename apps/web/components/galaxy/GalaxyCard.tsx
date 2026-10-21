@@ -24,6 +24,8 @@ export interface CardActions {
   onMoved: (id: string, dx: number, dy: number) => void;
   /** Escala atual da câmera (para converter o arraste de tela em mundo). */
   getScale: () => number;
+  /** Altura real do card em unidades de mundo (`null` ao desmontar): ponta das arestas. */
+  onHeight: (id: string, h: number | null) => void;
 }
 
 /**
@@ -71,6 +73,20 @@ export const GalaxyCard = memo(function GalaxyCard({
   const [dragging, setDragging] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
   const drag = useRef<{ sx: number; sy: number; scale: number; dx: number; dy: number } | null>(null);
+
+  // `offsetHeight` ignora o transform da camada: já está em unidades de mundo.
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const report = () => actions.onHeight(meta.id, el.offsetHeight);
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      actions.onHeight(meta.id, null);
+    };
+  }, [actions, meta.id]);
 
   const onBodyClick = (e: React.MouseEvent) => {
     if (editing) return;

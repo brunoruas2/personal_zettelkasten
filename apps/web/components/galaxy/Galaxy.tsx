@@ -233,11 +233,11 @@ export function Galaxy() {
       focusFittedRef.current = null;
       return;
     }
-    // Enquadra só ao entrar no foco; reconstruções dos dados só trocam o conjunto.
+    // Posiciona só ao entrar no foco; reconstruções dos dados só trocam o conjunto.
     const fit = focusFittedRef.current !== focusRootId;
     focusFittedRef.current = focusRootId;
-    engine.setFocus(focus.idxSet, fit);
-  }, [focus, focusRootId]);
+    engine.setFocus(focus.idxSet, fit, data.indexById.get(focusRootId) ?? -1);
+  }, [focus, focusRootId, data]);
 
   // --- criar ---
 
@@ -323,6 +323,7 @@ export function Galaxy() {
     onCreateLink: createLink,
     onMoved: (id, dx, dy) => void onMoved(id, dx, dy),
     getScale: () => engineRef.current?.getCamera().scale ?? 1,
+    onHeight: (id, h) => engineRef.current?.setCardHeight(id, h),
   };
   const actions = useMemo<CardActions>(
     () => ({
@@ -336,6 +337,7 @@ export function Galaxy() {
       onCreateLink: (t) => actionsRef.current!.onCreateLink(t),
       onMoved: (id, dx, dy) => actionsRef.current!.onMoved(id, dx, dy),
       getScale: () => actionsRef.current!.getScale(),
+      onHeight: (id, h) => actionsRef.current!.onHeight(id, h),
     }),
     [],
   );
@@ -392,6 +394,25 @@ export function Galaxy() {
       engineRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Base da barra do topo (px do contêiner): o foco põe o topo do raiz abaixo dela.
+  useEffect(() => {
+    const root = containerRef.current?.parentElement;
+    const bar = root?.querySelector<HTMLElement>('[data-galaxy-topbar]');
+    if (!root || !bar) return;
+    const update = () => {
+      const bottom = bar.getBoundingClientRect().bottom - root.getBoundingClientRect().top;
+      engineRef.current?.setTopInset(bottom > 0 ? bottom : 72);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(bar);
+    window.addEventListener('resize', update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', update);
+    };
   }, []);
 
   useEffect(() => {

@@ -59,7 +59,7 @@ export function GalaxyTopBar({
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-3 p-3 font-geist lg:p-4">
+    <div data-galaxy-topbar className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-3 p-3 font-geist lg:p-4">
       <div className="pointer-events-auto relative">
         <button
           type="button"

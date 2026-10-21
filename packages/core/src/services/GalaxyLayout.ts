@@ -10,27 +10,29 @@ import { SpatialGrid, placeNear } from './GalaxyPlacement';
 // pegada que não se tocam contêm retângulos que não se tocam.
 const R = Math.hypot(FOOTPRINT_W, FOOTPRINT_H) / 2;
 
-// Parâmetros próprios da galáxia: a repulsão vence a colisão antes de as
-// pegadas encostarem, deixando vão visível entre pontos no nível de pontos.
-// Calibrado com árvores aleatórias de 250–1000 nós: mediana da distância ao
-// vizinho mais próximo ≈ 1,2–1,9× a diagonal da pegada (antes ≈ 0,8×). Com
-// alcance curto (8·R) componentes grandes voltavam a empacotar por colisão;
-// sem limite o mapa ficava 3× mais esparso e 5× mais lento.
-const LINK_DISTANCE = 2 * R + 240;
+// Parâmetros próprios da galáxia: repulsão fraca e curta, para os vizinhos
+// ficarem a cerca de uma pegada (a colisão segura o resto). Calibrado com
+// árvores aleatórias de 250–1000 nós: mediana da distância ao vizinho mais
+// próximo ≈ 1,0× a diagonal da pegada e extensão ≈ 1,1–1,4·√n diagonais
+// (antes, com carga −2R² e alcance 15R, ≈ 1,2–1,9× e o mapa 2–3× mais largo,
+// pan demais para navegar). Colisão menor que R aproximava mais, mas deixava
+// pegadas encostadas e o `resolveOverlaps` movia 25–70% dos nós.
+const LINK_DISTANCE = 2 * R;
 const LINK_STRENGTH = 0.3;
-const CHARGE = -2 * R * R;
-const CHARGE_DISTANCE_MAX = 15 * R;
+const CHARGE = -0.5 * R * R;
+const CHARGE_DISTANCE_MAX = 6 * R;
 // Puxão fraco para o centro do componente: mantém árvores longas redondas em
-// vez de esticadas. A força cresce com a distância, então qualquer valor
-// acima disso comprime componentes grandes de volta à colisão.
+// vez de esticadas.
 const GRAVITY = 0.002;
 const MAX_TICKS = 3000;
 const SEED = 0x2f6b1d;
 
 // Ilhas (componentes conexos) e anel de avulsos.
-const ISLAND_GAP = 3 * R;
+const ISLAND_GAP = R;
 const ANCHOR_STEP = Math.round(R);
-const LOOSE_STEP = Math.round(2 * R + 160);
+// Reticulado quadrado com passo da altura da pegada: sem sobreposição e sem
+// folga extra.
+const LOOSE_STEP = FOOTPRINT_H;
 
 interface Node extends SimulationNodeDatum {
   id: string;
@@ -261,6 +263,15 @@ function looseRing(n: number, innerR: number): Point[] {
  * Devolve coordenadas inteiras sem nenhuma pegada sobreposta.
  */
 export function freezeLayout(ids: string[], links: Link[]): Map<string, Point> {
+  return resolveOverlaps(simulateLayout(ids, links));
+}
+
+/**
+ * Posições da simulação antes do `resolveOverlaps` (inteiras, podendo ter
+ * pegadas encostadas). Exportada para os testes medirem quantos nós a
+ * garantia final precisa mover.
+ */
+export function simulateLayout(ids: string[], links: Link[]): Map<string, Point> {
   const sorted = [...new Set(ids)].sort(byId);
   const known = new Set(sorted);
 
@@ -299,7 +310,7 @@ export function freezeLayout(ids: string[], links: Link[]): Map<string, Point> {
   const ring = looseRing(loose.length, islands.length > 0 ? extent + ISLAND_GAP : 0);
   loose.forEach((id, i) => raw.set(id, ring[i]));
 
-  return resolveOverlaps(raw);
+  return raw;
 }
 
 /**

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Link } from '../models/Link';
 import { FOOTPRINT_H, FOOTPRINT_W, footprintsOverlap, type Point } from '../models/GalaxyPosition';
 import { SpatialGrid, anchorFor, buildAdjacency, placeMissing, placeNear } from './GalaxyPlacement';
-import { freezeLayout, resolveOverlaps } from './GalaxyLayout';
+import { freezeLayout, resolveOverlaps, simulateLayout } from './GalaxyLayout';
 
 function lcg(seed: number): () => number {
   let s = seed >>> 0;
@@ -197,13 +197,30 @@ describe('freezeLayout', () => {
     expect(r).toBeLessThan(1.33);
   }, 60_000);
 
-  it('mediana da distância ao vizinho mais próximo passa da diagonal da pegada', () => {
-    const { ids, links } = connectedGraph('a', 250, 50, 12);
+  it.each([
+    [250, 12],
+    [1000, 13],
+  ])('mediana da distância ao vizinho mais próximo fica perto de uma pegada (%i nós)', (n, seed) => {
+    const { ids, links } = connectedGraph('a', n, Math.floor(n / 5), seed);
     const pts = [...freezeLayout(ids, links).values()];
     const nn = pts
       .map((p, i) => Math.min(...pts.map((q, j) => (i === j ? Infinity : dist(p, q)))))
       .sort((a, b) => a - b);
-    expect(nn[Math.floor(nn.length / 2)]).toBeGreaterThan(FOOTPRINT_DIAGONAL);
+    const median = nn[Math.floor(nn.length / 2)];
+    expect(median).toBeGreaterThan(0.7 * FOOTPRINT_DIAGONAL);
+    expect(median).toBeLessThan(1.2 * FOOTPRINT_DIAGONAL);
+  }, 60_000);
+
+  it('resolveOverlaps move poucos nós do layout simulado', () => {
+    const { ids, links } = connectedGraph('a', 1000, 200, 13);
+    const raw = simulateLayout(ids, links);
+    const out = resolveOverlaps(raw);
+    let moved = 0;
+    for (const [id, p] of raw) {
+      const q = out.get(id)!;
+      if (q.x !== p.x || q.y !== p.y) moved++;
+    }
+    expect(moved / ids.length).toBeLessThan(0.1);
   }, 60_000);
 
   it('componentes sem ligação viram ilhas separadas, a maior no centro', () => {
