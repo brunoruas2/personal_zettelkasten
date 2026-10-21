@@ -10,6 +10,7 @@ import {
   worldToScreen,
   zoomAt,
   clampScale,
+  MAX_SCALE,
 } from './camera';
 import { buildStars, drawStarfield, type Star } from './starfield';
 import { getNebulaSprite } from './nebulaSprites';
@@ -288,12 +289,12 @@ export class GalaxyEngine {
 
   /**
    * Voa até o raiz do foco: centrado na horizontal, topo do card logo abaixo
-   * da barra do topo, zoom de leitura (atual se já em 75–100%).
+   * da barra do topo, sempre no zoom máximo.
    */
   focusOn(idx: number, animate = true): void {
     const d = this.data;
     if (!d || idx < 0) return;
-    const scale = clampScale(Math.min(1, Math.max(this.cam.scale, FLY_MIN_SCALE)), this.minScale);
+    const scale = clampScale(MAX_SCALE, this.minScale);
     const top = d.ys[idx] - CARD_MAX_HEIGHT / 2;
     const y = top + (this.h / 2 - this.topInset - FOCUS_TOP_GAP) / scale;
     this.animateTo({ x: d.xs[idx], y, scale }, animate);
