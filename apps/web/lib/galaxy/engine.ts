@@ -630,14 +630,16 @@ export class GalaxyEngine {
   private onWheel = (e: WheelEvent): void => {
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.h : 1;
     const pinch = e.ctrlKey || e.metaKey;
-    // Roda sobre o corpo de um card com overflow na direção do gesto: rola o
-    // card (sem preventDefault). Sem espaço para rolar, navega a galáxia.
-    if (!pinch && !e.shiftKey && e.target instanceof Element) {
+    // Card com overflow: o gesto é dele. Com espaço na direção, o navegador
+    // rola; no início/fim, engole o evento — sem transbordo para zoom/pan
+    // enquanto o cursor está no card. Card sem overflow navega normalmente.
+    if (!pinch && e.target instanceof Element) {
       const scroller = e.target.closest<HTMLElement>('[data-card-scroll]');
       if (scroller && scroller.scrollHeight > scroller.clientHeight + 1) {
         const canDown = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
         const canUp = scroller.scrollTop > 0;
-        if ((e.deltaY > 0 && canDown) || (e.deltaY < 0 && canUp)) return;
+        if (!((e.deltaY > 0 && canDown) || (e.deltaY < 0 && canUp))) e.preventDefault();
+        return;
       }
     }
     e.preventDefault();
