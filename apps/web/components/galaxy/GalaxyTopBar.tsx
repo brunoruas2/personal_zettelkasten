@@ -232,7 +232,7 @@ export function ZoomControls({
       <button
         type="button"
         onClick={onFit}
-        title="Ver tudo (0)"
+        title="Ver tudo (0) · Z alterna entre 150% e Ver tudo"
         className="rounded-xl border border-white/10 bg-[#0e121a]/90 px-3 py-1.5 text-sm text-[#c9cfdb] shadow-lg hover:bg-white/5"
       >
         Ver tudo

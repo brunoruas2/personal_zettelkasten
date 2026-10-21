@@ -61,7 +61,7 @@ const HOVER_DWELL_MS = 120;
 const HIT_RADIUS_PX = 8;
 const DRAG_THRESHOLD_PX = 6;
 const KEY_PAN_SPEED = 900; // px de tela por segundo
-const FLY_MS = 450;
+export const FLY_MS = 450;
 /** O voo termina com o card legível (nível de cards). */
 export const FLY_MIN_SCALE = 0.75;
 const SETTLE_MS = 300;
@@ -137,6 +137,8 @@ export class GalaxyEngine {
   private pinch: { dist: number; cx: number; cy: number } | null = null;
   private keys = new Set<string>();
   private inputEnabled = true;
+  /** Último ponto do mouse sobre o contêiner (âncora do `Z`); null fora dele. */
+  private lastPointer: [number, number] | null = null;
 
   private fly: { from: Camera; to: Camera; start: number } | null = null;
   private highlight: { idx: number; until: number } | null = null;
@@ -383,6 +385,17 @@ export class GalaxyEngine {
     this.animateTo(to, animate);
   }
 
+  /** `Z`: abaixo do máximo vai a 150% no cursor (ou no centro); no máximo, "Ver tudo". */
+  toggleMaxZoom(): void {
+    // Folga de 2%: escala arredondada (149,9%) volta ao panorama em vez de zoom.
+    if (this.cam.scale >= MAX_SCALE * 0.98) {
+      this.fit();
+      return;
+    }
+    const [ax, ay] = this.lastPointer ?? [this.w / 2, this.h / 2];
+    this.animateTo(zoomAt(this.cam, this.w, this.h, ax, ay, MAX_SCALE / this.cam.scale, this.minScale), true);
+  }
+
   zoomBy(factor: number): void {
     this.animateTo(zoomAt(this.cam, this.w, this.h, this.w / 2, this.h / 2, factor, this.minScale), true);
   }
@@ -545,6 +558,7 @@ export class GalaxyEngine {
 
   private onPointerMove = (e: PointerEvent): void => {
     const [x, y] = this.localPoint(e);
+    if (e.pointerType === 'mouse') this.lastPointer = [x, y];
     const p = this.pointers.get(e.pointerId);
     if (!p) {
       // Mouse sem botão: hover, coalescido no rAF. Sobre um card, quem cuida
@@ -632,6 +646,7 @@ export class GalaxyEngine {
   };
 
   private onPointerLeave = (e: PointerEvent): void => {
+    if (e.pointerType === 'mouse') this.lastPointer = null;
     if (e.pointerType === 'mouse' && this.pointers.size === 0) {
       this.pendingMove = null;
       this.clearHover();
@@ -695,6 +710,7 @@ export class GalaxyEngine {
     if (e.key === '+' || e.key === '=') this.zoomBy(1.4);
     else if (e.key === '-' || e.key === '_') this.zoomBy(1 / 1.4);
     else if (e.key === '0') this.fit();
+    else if (e.code === 'KeyZ' && !e.repeat) this.toggleMaxZoom();
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { analyzeSubtree, subtreeDepths, type Zettel, type ZettelMeta } from '@zettelkasten/core';
 import { useGalaxyData } from './useGalaxyData';
-import { FLY_MIN_SCALE, GalaxyEngine, LOD_CARDS, LOD_SILHOUETTE } from '../../lib/galaxy/engine';
+import { FLY_MIN_SCALE, FLY_MS, GalaxyEngine, LOD_CARDS, LOD_SILHOUETTE } from '../../lib/galaxy/engine';
 import { loadCamera, type Camera } from '../../lib/galaxy/camera';
 import { snapPosition } from '../../lib/galaxy/snap';
 import { setManualPosition } from '../../lib/positionSync';
@@ -106,6 +106,11 @@ export function Galaxy() {
   const [fullscreen, setFullscreen] = useState<{ zettel: Zettel; variant: 'card' | 'mobile' } | null>(null);
   const [exportId, setExportId] = useState<string | null>(null);
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
+  /** Leitura escondida enquanto a câmera voa até o próximo zettel. */
+  const [readerFlying, setReaderFlying] = useState(false);
+  const readerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maximizedIdRef = useRef(maximizedId);
+  maximizedIdRef.current = maximizedId;
   const [autoFocusTitle, setAutoFocusTitle] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const editorRef = useRef<InplaceEditorHandle>(null);
@@ -147,6 +152,55 @@ export function Galaxy() {
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => setHighlightId(null), HIGHLIGHT_MS);
   }, []);
+
+  // --- leitura em tela cheia ---
+
+  // Com card na galáxia (e, em foco, no conjunto): esconde a leitura, voa e
+  // reabre no fim do voo. Sem card (sem lugar, oculto, fora do foco): só troca.
+  const navigateReader = useCallback(
+    (id: string) => {
+      const idx = dataRef.current.indexById.get(id);
+      const f = focusRef.current;
+      const hasCard = idx !== undefined && (!f || f.idxSet.has(idx));
+      setMaximizedId(id);
+      if (readerTimer.current) clearTimeout(readerTimer.current);
+      if (!hasCard) {
+        pushRecent(id);
+        readerTimer.current = null;
+        setReaderFlying(false);
+        return;
+      }
+      setReaderFlying(true);
+      flyTo(id);
+      readerTimer.current = setTimeout(() => setReaderFlying(false), FLY_MS + 120);
+    },
+    [flyTo],
+  );
+
+  const closeReader = useCallback(() => {
+    if (readerTimer.current) clearTimeout(readerTimer.current);
+    readerTimer.current = null;
+    setReaderFlying(false);
+    // O popstate restaurou o ?z= de quando a leitura abriu.
+    const id = maximizedIdRef.current;
+    if (id && dataRef.current.indexById.has(id)) setZParam(id);
+    setMaximizedId(null);
+  }, []);
+  useEffect(() => () => {
+    if (readerTimer.current) clearTimeout(readerTimer.current);
+  }, []);
+
+  // Mesma regra do findByTitle: primeiro os posicionados, depois o índice todo.
+  const navigateReaderByTitle = useCallback(
+    (title: string) => {
+      const key = title.trim().toLowerCase();
+      const id =
+        idByTitleRef.current.get(key) ??
+        useZettelStore.getState().zettels.find((z) => z.title.trim().toLowerCase() === key)?.id;
+      if (id) navigateReader(id);
+    },
+    [navigateReader],
+  );
 
   // --- edição ---
 
@@ -238,6 +292,8 @@ export function Galaxy() {
     const items: FocusItem[] = order.map((id) => ({ meta: data.metas[data.indexById.get(id)!], depth: depths.get(id) ?? 0 }));
     return { idxSet, items, total: visibleIds.length, maxDepth, depth };
   }, [focusRootId, focusDepth, links, data]);
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
 
   const focusFittedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -545,6 +601,15 @@ export function Galaxy() {
   const cardPos = cardIdx >= 0 ? engineRef.current?.screenOf(cardIdx) ?? null : null;
   const cardMeta = cardIdx >= 0 ? data.metas[cardIdx] : undefined;
   const focusRootMeta = focusRootId ? data.metas[data.indexById.get(focusRootId) ?? -1] : undefined;
+  // Zettel sem card (sem lugar/oculto) vem do índice inteiro; só varre com a leitura aberta nele.
+  const unplacedMaximized = useZettelStore((s) =>
+    maximizedId && !data.indexById.has(maximizedId) ? s.zettels.find((z) => z.id === maximizedId) : undefined,
+  );
+  const maximizedMeta = maximizedId
+    ? data.indexById.has(maximizedId)
+      ? data.metas[data.indexById.get(maximizedId)!]
+      : unplacedMaximized
+    : undefined;
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#05070c]">
@@ -680,12 +745,26 @@ export function Galaxy() {
         </div>
       )}
 
-      {maximizedId && data.indexById.has(maximizedId) && (
+      {maximizedMeta && (
         <MaximizedReader
-          meta={data.metas[data.indexById.get(maximizedId)!]}
-          onClose={() => setMaximizedId(null)}
+          meta={maximizedMeta}
+          hidden={readerFlying}
+          focus={
+            focus && focusRootMeta
+              ? {
+                  root: focusRootMeta,
+                  items: focus.items,
+                  total: focus.total,
+                  depth: focus.depth,
+                  maxDepth: focus.maxDepth,
+                  onDepthChange: setFocusDepth,
+                }
+              : undefined
+          }
+          onClose={closeReader}
           onEdit={(id) => void openFullscreen(id)}
-          onLink={(title) => actions.onLink(title)}
+          onNavigate={navigateReaderByTitle}
+          onPick={navigateReader}
         />
       )}
 
