@@ -12,7 +12,6 @@ import {
   clampScale,
   MAX_SCALE,
 } from './camera';
-import { buildStars, drawStarfield, type Star } from './starfield';
 import { getNebulaSprite } from './nebulaSprites';
 import { classifyWheel, type WheelMemory } from './wheel';
 
@@ -20,9 +19,8 @@ import { classifyWheel, type WheelMemory } from './wheel';
  * Motor imperativo da galáxia (o React só monta e passa callbacks — o estado
  * mutável de câmera, ponteiros e desenho mora aqui, como no `SketchEngine`).
  *
- * Duas camadas repintadas sob demanda: o fundo (estrelas, que cintilam a
- * ~15fps) e a cena (nebulosas, pontos, rótulos, hover). Um frame sem nada sujo
- * não desenha; a cintilação nunca força repintar os pontos.
+ * Uma camada repintada sob demanda (nebulosas, pontos, rótulos, hover) sobre o
+ * fundo liso do contêiner. Um frame sem nada sujo não desenha.
  */
 
 export interface GalaxyCallbacks {
@@ -59,7 +57,6 @@ function silhouetteHeight(bodyLen: number): number {
 }
 
 const BG = '#05070c';
-const TWINKLE_INTERVAL_MS = 66;
 const HOVER_DWELL_MS = 120;
 const HIT_RADIUS_PX = 8;
 const DRAG_THRESHOLD_PX = 6;
@@ -101,9 +98,7 @@ export function pointRadius(degree: number, scale: number): number {
 }
 
 export class GalaxyEngine {
-  private bg: HTMLCanvasElement;
   private scene: HTMLCanvasElement;
-  private bgCtx: CanvasRenderingContext2D;
   private ctx: CanvasRenderingContext2D;
   private w = 0;
   private h = 0;
@@ -112,12 +107,9 @@ export class GalaxyEngine {
   private data: GalaxyData | null = null;
   private cam: Camera = { x: 0, y: 0, scale: 0.05 };
   private minScale = 0.0005;
-  private stars: Star[] = buildStars(220);
 
   private sceneDirty = true;
-  private bgDirty = true;
   private raf = 0;
-  private lastTwinkle = 0;
   private lastFrame = 0;
 
   private wheelMemory: WheelMemory | null = null;
@@ -157,23 +149,21 @@ export class GalaxyEngine {
     private container: HTMLElement,
     private cb: GalaxyCallbacks,
   ) {
-    this.bg = document.createElement('canvas');
     this.scene = document.createElement('canvas');
     // Antes de qualquer filho do React (a camada de cards): o canvas fica por
     // baixo dos cards.
-    const anchor = container.firstChild;
-    for (const c of [this.bg, this.scene]) {
-      c.style.position = 'absolute';
-      c.style.inset = '0';
-      c.style.width = '100%';
-      c.style.height = '100%';
-      c.style.display = 'block';
-      container.insertBefore(c, anchor);
-    }
+    const c = this.scene;
+    c.style.position = 'absolute';
+    c.style.inset = '0';
+    c.style.width = '100%';
+    c.style.height = '100%';
+    c.style.display = 'block';
+    container.insertBefore(c, container.firstChild);
+    // Fundo liso no próprio contêiner: sem estrelas, nada que pareça um zettel.
+    container.style.background = BG;
     // Os cards (DOM) ficam por cima do canvas: a entrada é ouvida no
     // contêiner, para arraste/pinça/roda navegarem por cima deles também.
     container.style.touchAction = 'none';
-    this.bgCtx = this.bg.getContext('2d', { alpha: false })!;
     this.ctx = this.scene.getContext('2d')!;
 
     this.accent = rgbVarToHex('--color-brand', '#7c3aed');
@@ -213,7 +203,6 @@ export class GalaxyEngine {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
-    this.bg.remove();
     this.scene.remove();
   }
 
@@ -428,7 +417,6 @@ export class GalaxyEngine {
 
   private cameraChanged(): void {
     this.sceneDirty = true;
-    this.bgDirty = true;
     saveCamera(this.cam);
     this.applyLayerTransform();
     this.cb.onCameraChange({ ...this.cam });
@@ -468,14 +456,11 @@ export class GalaxyEngine {
     this.w = Math.max(1, rect.width);
     this.h = Math.max(1, rect.height);
     this.dpr = window.devicePixelRatio || 1;
-    for (const c of [this.bg, this.scene]) {
-      c.width = Math.round(this.w * this.dpr);
-      c.height = Math.round(this.h * this.dpr);
-    }
+    this.scene.width = Math.round(this.w * this.dpr);
+    this.scene.height = Math.round(this.h * this.dpr);
     this.minScale = minScaleFor(this.data?.bbox ?? null, this.w, this.h);
     this.applyLayerTransform();
     this.sceneDirty = true;
-    this.bgDirty = true;
   }
 
   private hitTest(sx: number, sy: number): number {
@@ -779,15 +764,6 @@ export class GalaxyEngine {
       this.sceneDirty = true;
     }
 
-    if (now - this.lastTwinkle >= TWINKLE_INTERVAL_MS) {
-      this.lastTwinkle = now;
-      this.bgDirty = true;
-    }
-
-    if (this.bgDirty) {
-      this.bgDirty = false;
-      this.drawBackground(now);
-    }
     if (this.sceneDirty) {
       this.sceneDirty = false;
       this.drawScene(now);
@@ -795,14 +771,6 @@ export class GalaxyEngine {
   };
 
   // --- desenho ---
-
-  private drawBackground(now: number): void {
-    const ctx = this.bgCtx;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, this.w, this.h);
-    drawStarfield(ctx, this.stars, this.w, this.h, -this.cam.x * this.cam.scale, -this.cam.y * this.cam.scale, now);
-  }
 
   private drawScene(now: number): void {
     const ctx = this.ctx;

@@ -116,6 +116,8 @@ export function Galaxy() {
   // Apagar e foco
   const [deleteMeta, setDeleteMeta] = useState<ZettelMeta | null>(null);
   const [focusRootId, setFocusRootId] = useState<string | null>(null);
+  // Profundidade máxima exibida no foco; todo foco começa em 1 (não persiste).
+  const [focusDepth, setFocusDepth] = useState<number | 'all'>(1);
   const focusRootRef = useRef<string | null>(null);
   focusRootRef.current = focusRootId;
   /** Zettel recém-criado esperando entrar no índice para voar/editar. */
@@ -216,6 +218,7 @@ export function Galaxy() {
         showToast('Esse zettel ainda não tem lugar na galáxia.');
         return;
       }
+      setFocusDepth(1);
       setFocusRootId(id);
     },
     [showToast],
@@ -225,11 +228,16 @@ export function Galaxy() {
     if (!focusRootId) return null;
     const depths = subtreeDepths(focusRootId, links);
     const visibleIds = [...depths.keys()].filter((id) => data.indexById.has(id));
-    const idxSet = new Set(visibleIds.map((id) => data.indexById.get(id)!));
-    const order = analyzeSubtree(focusRootId, data.metas, links).ids.filter((id) => data.indexById.has(id));
+    let maxDepth = 0;
+    for (const id of visibleIds) maxDepth = Math.max(maxDepth, depths.get(id) ?? 0);
+    // Limitado à subárvore atual: um sync pode encolhê-la abaixo do nível escolhido.
+    const depth: number | 'all' = focusDepth === 'all' || focusDepth >= maxDepth ? 'all' : focusDepth;
+    const within = (id: string) => depth === 'all' || (depths.get(id) ?? 0) <= depth;
+    const idxSet = new Set(visibleIds.filter(within).map((id) => data.indexById.get(id)!));
+    const order = analyzeSubtree(focusRootId, data.metas, links).ids.filter((id) => data.indexById.has(id) && within(id));
     const items: FocusItem[] = order.map((id) => ({ meta: data.metas[data.indexById.get(id)!], depth: depths.get(id) ?? 0 }));
-    return { idxSet, items };
-  }, [focusRootId, links, data]);
+    return { idxSet, items, total: visibleIds.length, maxDepth, depth };
+  }, [focusRootId, focusDepth, links, data]);
 
   const focusFittedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -611,7 +619,16 @@ export function Galaxy() {
       )}
 
       {focus && focusRootMeta && (
-        <FocusPanel root={focusRootMeta} items={focus.items} onPick={(id) => flyTo(id)} onExit={exitFocus} />
+        <FocusPanel
+          root={focusRootMeta}
+          items={focus.items}
+          total={focus.total}
+          depth={focus.depth}
+          maxDepth={focus.maxDepth}
+          onDepthChange={setFocusDepth}
+          onPick={(id) => flyTo(id)}
+          onExit={exitFocus}
+        />
       )}
 
       {data.ready && data.count === 0 && (

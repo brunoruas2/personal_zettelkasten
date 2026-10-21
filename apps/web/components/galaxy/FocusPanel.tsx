@@ -14,14 +14,29 @@ export interface FocusItem {
 export function FocusPanel({
   root,
   items,
+  total,
+  depth,
+  maxDepth,
+  onDepthChange,
   onPick,
   onExit,
 }: {
   root: ZettelMeta;
   items: FocusItem[];
+  /** Alcançáveis visíveis, antes do filtro de níveis. */
+  total: number;
+  /** Nível efetivo (`'all'` quando cobre a subárvore inteira). */
+  depth: number | 'all';
+  maxDepth: number;
+  onDepthChange: (depth: number | 'all') => void;
   onPick: (id: string) => void;
   onExit: () => void;
 }) {
+  const shown = depth === 'all' ? maxDepth : depth;
+  const canLess = shown > 1;
+  const canMore = depth !== 'all';
+  const stepBtn =
+    'flex h-6 w-6 items-center justify-center rounded-md border border-white/10 text-[#c9cfdb] hover:bg-white/5 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent';
   return (
     <aside className="absolute inset-x-0 bottom-0 z-30 max-h-[45vh] overflow-hidden border-t border-white/10 bg-[#0e121a]/95 font-geist text-[#e6e9f0] shadow-2xl lg:inset-x-auto lg:bottom-auto lg:right-4 lg:top-20 lg:max-h-[calc(100vh-7rem)] lg:w-72 lg:rounded-2xl lg:border">
       <div className="flex items-start justify-between gap-2 border-b border-white/10 px-4 py-3">
@@ -29,7 +44,45 @@ export function FocusPanel({
           <div className="text-[11px] uppercase tracking-wide text-[#6f7787]">Foco</div>
           <div className="truncate font-newsreader text-lg">{root.title || 'Sem título'}</div>
           <div className="mt-0.5 text-xs text-[#8b93a3]">
-            {items.length} zettel{items.length === 1 ? '' : 's'} alcançáve{items.length === 1 ? 'l' : 'is'} · o resto da galáxia está oculto
+            {items.length === total
+              ? `${total} zettel${total === 1 ? '' : 's'} alcançáve${total === 1 ? 'l' : 'is'}`
+              : `${items.length} de ${total} zettels`}{' '}
+            · o resto da galáxia está oculto
+          </div>
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-[#8b93a3]">
+            <span className="mr-0.5">Níveis</span>
+            <button
+              type="button"
+              aria-label="Menos níveis"
+              disabled={!canLess}
+              onClick={() => onDepthChange(shown - 1)}
+              className={stepBtn}
+            >
+              −
+            </button>
+            <span className="w-5 text-center tabular-nums text-[#e6e9f0]">{shown}</span>
+            <button
+              type="button"
+              aria-label="Mais níveis"
+              disabled={!canMore}
+              onClick={() => onDepthChange(shown + 1)}
+              className={stepBtn}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              disabled={maxDepth === 0}
+              aria-pressed={depth === 'all'}
+              onClick={() => onDepthChange('all')}
+              className={`ml-1 rounded-md border px-2 py-0.5 disabled:opacity-30 ${
+                depth === 'all'
+                  ? 'border-brand/60 bg-brand/15 text-brand-light'
+                  : 'border-white/10 text-[#c9cfdb] hover:bg-white/5'
+              }`}
+            >
+              Todos
+            </button>
           </div>
         </div>
         <button
