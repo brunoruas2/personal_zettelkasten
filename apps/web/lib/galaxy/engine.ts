@@ -292,13 +292,28 @@ export class GalaxyEngine {
    * da barra do topo, sempre no zoom máximo.
    */
   focusOn(idx: number, animate = true): void {
+    this.flyToTop(idx, animate);
+  }
+
+  /** "Aproximar": mesmo enquadramento do foco, sem entrar nele. */
+  approach(idx: number, animate = true): void {
+    this.flyToTop(idx, animate);
+  }
+
+  private flyToTop(idx: number, animate: boolean): void {
+    const to = this.topAlignedCamera(idx);
+    if (!to) return;
+    this.animateTo(to, animate);
+    this.highlight = { idx, until: performance.now() + (animate ? FLY_MS : 0) + HIGHLIGHT_MS };
+  }
+
+  /** Zoom máximo, card centrado na horizontal e topo logo abaixo da barra do topo. */
+  private topAlignedCamera(idx: number): Camera | null {
     const d = this.data;
-    if (!d || idx < 0) return;
+    if (!d || idx < 0) return null;
     const scale = clampScale(MAX_SCALE, this.minScale);
     const top = d.ys[idx] - CARD_MAX_HEIGHT / 2;
-    const y = top + (this.h / 2 - this.topInset - FOCUS_TOP_GAP) / scale;
-    this.animateTo({ x: d.xs[idx], y, scale }, animate);
-    this.highlight = { idx, until: performance.now() + (animate ? FLY_MS : 0) + HIGHLIGHT_MS };
+    return { x: d.xs[idx], y: top + (this.h / 2 - this.topInset - FOCUS_TOP_GAP) / scale, scale };
   }
 
   /** Enquadra um conjunto de índices (pegada inteira de cada card), até 100%. */

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Chord, Interval } from 'tonal';
+import { segmentChordPair } from '@zettelkasten/core';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,7 +65,7 @@ function transposeSource(source: string, semitones: number): string {
 function ChordLine({ line, semitones }: { line: string; semitones: number }) {
   const parts = line.replace(/^%c\s*/, '').split(/(\s+)/);
   return (
-    <div className="whitespace-pre font-semibold leading-5 text-brand">
+    <div className="whitespace-pre-wrap break-words font-semibold leading-5 text-brand">
       {parts.map((p, i) =>
         /^\s+$/.test(p) ? p : isChord(p) ? tx(p, semitones) : p
       )}
@@ -81,7 +82,7 @@ function InlineLine({ line, semitones }: { line: string; semitones: number }) {
   while ((m = re.exec(line)) !== null) {
     if (m.index > last) nodes.push(<span key={k++}>{line.slice(last, m.index)}</span>);
     nodes.push(
-      <span key={k++} className="font-semibold text-brand">
+      <span key={k++} className="whitespace-nowrap font-semibold text-brand">
         [{tx(m[1], semitones)}]
       </span>
     );
@@ -90,10 +91,59 @@ function InlineLine({ line, semitones }: { line: string; semitones: number }) {
   if (last < line.length) nodes.push(<span key={k++}>{line.slice(last)}</span>);
 
   return (
-    <div className="whitespace-pre leading-relaxed text-zinc-800 dark:text-zinc-200">
+    <div className="whitespace-pre-wrap break-words leading-relaxed text-zinc-800 dark:text-zinc-200">
       {nodes}
     </div>
   );
+}
+
+// Chord line over a lyric line: one inline block per segment (chord on top,
+// lyric below), so wrapping happens between segments and every chord stays
+// over its syllable. Segmentation runs on the original columns; only the
+// chord text of each segment is transposed.
+function ChordPair({ chordLine, lyricLine, semitones }: { chordLine: string; lyricLine: string; semitones: number }) {
+  return (
+    <div className="flex flex-wrap">
+      {segmentChordPair(chordLine, lyricLine).map((seg, i) => {
+        const chord = seg.chord ? tx(seg.chord, semitones) : '';
+        return (
+          <span
+            key={i}
+            className="inline-flex flex-col whitespace-pre"
+            style={chord ? { minWidth: `${chord.length + 1}ch` } : undefined}
+          >
+            <span className="font-semibold leading-5 text-brand">{chord || '\u00A0'}</span>
+            <span className="leading-relaxed text-zinc-800 dark:text-zinc-200">{seg.text || '\u00A0'}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderLines(lines: string[], semitones: number): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (hasInlineChords(line)) {
+      out.push(<InlineLine key={i} line={line} semitones={semitones} />);
+    } else if (isChordLine(line)) {
+      const next = lines[i + 1];
+      if (next !== undefined && next.trim() && !hasInlineChords(next) && !isChordLine(next)) {
+        out.push(<ChordPair key={i} chordLine={line} lyricLine={next} semitones={semitones} />);
+        i++;
+      } else {
+        out.push(<ChordLine key={i} line={line} semitones={semitones} />);
+      }
+    } else {
+      out.push(
+        <div key={i} className="whitespace-pre-wrap break-words leading-relaxed text-zinc-800 dark:text-zinc-200">
+          {line || '\u00A0'}
+        </div>,
+      );
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,21 +213,8 @@ export function Chords({
       </div>
 
       {/* Sheet */}
-      <div className="overflow-x-auto p-3 font-mono" style={{ fontSize: fontSize ?? undefined }}>
-        {lines.map((line, i) =>
-          hasInlineChords(line) ? (
-            <InlineLine key={i} line={line} semitones={semitones} />
-          ) : isChordLine(line) ? (
-            <ChordLine key={i} line={line} semitones={semitones} />
-          ) : (
-            <div
-              key={i}
-              className="whitespace-pre leading-relaxed text-zinc-800 dark:text-zinc-200"
-            >
-              {line || '\u00A0'}
-            </div>
-          )
-        )}
+      <div className="p-3 font-mono" style={{ fontSize: fontSize ?? undefined }}>
+        {renderLines(lines, semitones)}
       </div>
     </div>
   );

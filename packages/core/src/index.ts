@@ -18,3 +18,4 @@ export * from './services/SketchSelection';
 export * from './models/GalaxyPosition';
 export * from './services/GalaxyPlacement';
 export * from './services/GalaxyLayout';
+export * from './services/ChordWrap';

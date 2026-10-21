@@ -15,6 +15,7 @@ import { CardLayer } from './CardLayer';
 import type { CardActions } from './GalaxyCard';
 import type { InplaceEditorHandle, SaveStatus } from './InplaceEditor';
 import { FullscreenEditor } from './FullscreenEditor';
+import { MaximizedReader } from './MaximizedReader';
 import { ExportScopeModal } from '../ExportScopeModal';
 import { pushRecent } from '../../lib/recentZettels';
 import { DeleteZettelModal } from './DeleteZettelModal';
@@ -104,6 +105,7 @@ export function Galaxy() {
   /** Editor em tela cheia: celular, ou zettel sem lugar em qualquer dispositivo. */
   const [fullscreen, setFullscreen] = useState<{ zettel: Zettel; variant: 'card' | 'mobile' } | null>(null);
   const [exportId, setExportId] = useState<string | null>(null);
+  const [maximizedId, setMaximizedId] = useState<string | null>(null);
   const [autoFocusTitle, setAutoFocusTitle] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const editorRef = useRef<InplaceEditorHandle>(null);
@@ -130,10 +132,12 @@ export function Galaxy() {
     if (s === 'saved') savedTimer.current = setTimeout(() => setSaveStatus('idle'), SAVED_LINGER_MS);
   }, []);
 
-  const flyTo = useCallback((id: string, minScale = FLY_MIN_SCALE) => {
+  // `minScale: 'top'` = "Aproximar": zoom máximo com o topo do card sob a barra.
+  const flyTo = useCallback((id: string, minScale: number | 'top' = FLY_MIN_SCALE) => {
     const idx = dataRef.current.indexById.get(id);
     if (idx === undefined) return;
-    engineRef.current?.flyTo(idx, true, minScale);
+    if (minScale === 'top') engineRef.current?.approach(idx);
+    else engineRef.current?.flyTo(idx, true, minScale);
     setZParam(id);
     pushRecent(id);
     // No nível de cards o destaque do voo é o contorno do próprio card.
@@ -329,6 +333,7 @@ export function Galaxy() {
     getViewportRect: () => engineRef.current?.getViewportRect() ?? null,
     onDragState: setDraggingId,
     onHeight: (id, h) => engineRef.current?.setCardHeight(id, h),
+    onMaximize: setMaximizedId,
   };
   const actions = useMemo<CardActions>(
     () => ({
@@ -346,6 +351,7 @@ export function Galaxy() {
       getViewportRect: () => actionsRef.current!.getViewportRect(),
       onDragState: (id) => actionsRef.current!.onDragState(id),
       onHeight: (id, h) => actionsRef.current!.onHeight(id, h),
+      onMaximize: (id) => actionsRef.current!.onMaximize(id),
     }),
     [],
   );
@@ -465,7 +471,7 @@ export function Galaxy() {
   }, [data, showToast]);
 
   // Overlays desligam pan por teclado/atalhos do canvas.
-  const overlayOpen = modal !== null || search !== null || deleteMeta !== null || fullscreen !== null || exportId !== null;
+  const overlayOpen = modal !== null || search !== null || deleteMeta !== null || fullscreen !== null || exportId !== null || maximizedId !== null;
   useEffect(() => {
     engineRef.current?.setInputEnabled(!overlayOpen);
   }, [overlayOpen]);
@@ -564,7 +570,7 @@ export function Galaxy() {
             overCardRef.current = false;
             if (pinnedIdx < 0) setHoverIdx(-1);
           }}
-          onApproach={() => flyTo(cardMeta.id)}
+          onApproach={() => flyTo(cardMeta.id, 'top')}
           onEdit={() => {
             setHoverIdx(-1);
             setPinnedIdx(-1);
@@ -655,6 +661,15 @@ export function Galaxy() {
         <div className="dark">
           <ExportScopeModal open zettelId={exportId} onClose={() => setExportId(null)} />
         </div>
+      )}
+
+      {maximizedId && data.indexById.has(maximizedId) && (
+        <MaximizedReader
+          meta={data.metas[data.indexById.get(maximizedId)!]}
+          onClose={() => setMaximizedId(null)}
+          onEdit={(id) => void openFullscreen(id)}
+          onLink={(title) => actions.onLink(title)}
+        />
       )}
 
       {fullscreen && (

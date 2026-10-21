@@ -31,7 +31,7 @@ export interface ServerPosition {
   updated_at: number;
 }
 
-export const CARD_WIDTH = 480;
+export const CARD_WIDTH = 640;
 /** Calibrado medindo as alturas reais dos zettels (p80, múltiplo de 40). */
 export const CARD_MAX_HEIGHT = 720;
 export const CARD_GAP = 48;

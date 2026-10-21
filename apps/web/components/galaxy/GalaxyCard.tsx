@@ -37,6 +37,8 @@ export interface CardActions {
   onDragState: (id: string | null) => void;
   /** Altura real do card em unidades de mundo (`null` ao desmontar): ponta das arestas. */
   onHeight: (id: string, h: number | null) => void;
+  /** Botão Maximizar: leitura em tela cheia. */
+  onMaximize: (id: string) => void;
 }
 
 /**
@@ -270,6 +272,14 @@ export const GalaxyCard = memo(function GalaxyCard({
                 className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
               >
                 Focar
+              </button>
+              <button
+                type="button"
+                title="Maximizar"
+                onClick={() => actions.onMaximize(meta.id)}
+                className="shrink-0 rounded-lg border border-white/10 px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
+              >
+                ⤢
               </button>
               <button
                 ref={menuBtnRef}
