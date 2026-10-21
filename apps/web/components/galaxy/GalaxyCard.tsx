@@ -8,6 +8,7 @@ import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from './Inpl
 
 /** Altura do cabeçalho (título + tags) que sai da altura máxima do corpo. */
 const HEADER_RESERVE = 96;
+const MENU_WIDTH = 176;
 
 export interface CardActions {
   onLink: (title: string) => void;
@@ -69,7 +70,13 @@ export const GalaxyCard = memo(function GalaxyCard({
   useEffect(() => {
     if (heavy) setHeavyOnce(true);
   }, [heavy]);
-  const [menuOpen, setMenuOpen] = useState(false);
+  // Posição do menu em unidades de mundo, relativa ao topo-esquerdo do card;
+  // `null` = fechado. O menu é irmão do <article> porque o card recorta
+  // (`overflow-hidden` + `contain: paint`) e um card curto cortava "Apagar".
+  const [menuAt, setMenuAt] = useState<{ top: number; right: number } | null>(null);
+  const menuOpen = menuAt !== null;
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
   const drag = useRef<{ sx: number; sy: number; scale: number; dx: number; dy: number } | null>(null);
@@ -87,6 +94,30 @@ export const GalaxyCard = memo(function GalaxyCard({
       actions.onHeight(meta.id, null);
     };
   }, [actions, meta.id]);
+
+  // Fecha ao tocar fora: sobre outro card o `mouseleave` não basta, e toque
+  // não tem leave. Captura sem preventDefault, para o pan seguir normal.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t) || menuBtnRef.current?.contains(t)) return;
+      setMenuAt(null);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [menuOpen]);
+
+  const toggleMenu = () => {
+    const btn = menuBtnRef.current;
+    if (menuOpen || !btn) {
+      setMenuAt(null);
+      return;
+    }
+    // offsetParent do botão é o <article>; offsets ignoram o transform da câmera.
+    setMenuAt({ top: btn.offsetTop + btn.offsetHeight + 4, right: CARD_WIDTH - (btn.offsetLeft + btn.offsetWidth) });
+  };
+  const closeMenu = () => setMenuAt(null);
 
   const onBodyClick = (e: React.MouseEvent) => {
     if (editing) return;
@@ -123,120 +154,131 @@ export const GalaxyCard = memo(function GalaxyCard({
   const border = editing || dragging ? 'border-brand/70' : highlighted ? 'border-[#f5f3ff]/70' : 'border-white/[0.08]';
 
   return (
-    <article
-      ref={cardRef}
-      data-galaxy-card
-      onPointerEnter={() => actions.onHover(idx)}
-      onPointerLeave={() => actions.onHover(-1)}
-      className={`dark absolute flex flex-col overflow-hidden rounded-xl border bg-[#0e121a] font-geist text-[#c9cfdb] shadow-2xl ${border}`}
-      style={{
-        left: x - CARD_WIDTH / 2,
-        top: y - CARD_MAX_HEIGHT / 2,
-        width: CARD_WIDTH,
-        maxHeight: CARD_MAX_HEIGHT,
-        contain: 'layout paint style',
-        zIndex: editing || dragging ? 10 : undefined,
-      }}
-    >
-      {editing && editingZettel ? (
-        <>
-          <div className="flex shrink-0 justify-end gap-2 px-4 pt-3" data-no-pan>
-            <span className="mr-auto text-[11px] text-[#6f7787]">Editando · Esc para sair</span>
-          </div>
-          <InplaceEditor
-            ref={editorRef}
-            zettel={editingZettel}
-            variant="card"
-            autoFocusTitle={autoFocusTitle}
-            onStatus={actions.onStatus}
-            onCreateLink={actions.onCreateLink}
-          />
-        </>
-      ) : (
-        <>
-          <header className="flex shrink-0 items-start gap-2 px-6 pb-2 pt-5">
-            <button
-              type="button"
-              data-no-pan
-              title="Arrastar para mover"
-              onPointerDown={onHandleDown}
-              onPointerMove={onHandleMove}
-              onPointerUp={onHandleUp}
-              onPointerCancel={onHandleUp}
-              className="-ml-3 mt-1 shrink-0 cursor-grab touch-none rounded px-1 text-[#6f7787] hover:text-[#c9cfdb] active:cursor-grabbing"
-            >
-              ⋮⋮
-            </button>
-            <div className="min-w-0 flex-1">
-              <h3 className="font-newsreader text-[22px] font-medium leading-snug text-[#f5f3ff]">
-                {meta.title || 'Sem título'}
-              </h3>
-              {meta.tags.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {meta.tags.map((t) => (
-                    <span key={t} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]">
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              )}
+    <>
+      <article
+        ref={cardRef}
+        data-galaxy-card
+        onPointerEnter={() => actions.onHover(idx)}
+        onPointerLeave={() => actions.onHover(-1)}
+        className={`dark absolute flex flex-col overflow-hidden rounded-xl border bg-[#0e121a] font-geist text-[#c9cfdb] shadow-2xl ${border}`}
+        style={{
+          left: x - CARD_WIDTH / 2,
+          top: y - CARD_MAX_HEIGHT / 2,
+          width: CARD_WIDTH,
+          maxHeight: CARD_MAX_HEIGHT,
+          contain: 'layout paint style',
+          zIndex: editing || dragging ? 10 : undefined,
+        }}
+      >
+        {editing && editingZettel ? (
+          <>
+            <div className="flex shrink-0 justify-end gap-2 px-4 pt-3" data-no-pan>
+              <span className="mr-auto text-[11px] text-[#6f7787]">Editando · Esc para sair</span>
             </div>
-            <button
-              type="button"
-              onClick={() => actions.onFocus(meta.id)}
-              className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
-            >
-              Focar
-            </button>
-            <div className="relative shrink-0">
+            <InplaceEditor
+              ref={editorRef}
+              zettel={editingZettel}
+              variant="card"
+              autoFocusTitle={autoFocusTitle}
+              onStatus={actions.onStatus}
+              onCreateLink={actions.onCreateLink}
+            />
+          </>
+        ) : (
+          <>
+            <header className="flex shrink-0 items-start gap-2 px-6 pb-2 pt-5">
               <button
                 type="button"
+                data-no-pan
+                title="Arrastar para mover"
+                onPointerDown={onHandleDown}
+                onPointerMove={onHandleMove}
+                onPointerUp={onHandleUp}
+                onPointerCancel={onHandleUp}
+                className="-ml-3 mt-1 shrink-0 cursor-grab touch-none rounded px-1 text-[#6f7787] hover:text-[#c9cfdb] active:cursor-grabbing"
+              >
+                ⋮⋮
+              </button>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-newsreader text-[22px] font-medium leading-snug text-[#f5f3ff]">
+                  {meta.title || 'Sem título'}
+                </h3>
+                {meta.tags.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {meta.tags.map((t) => (
+                      <span key={t} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => actions.onFocus(meta.id)}
+                className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
+              >
+                Focar
+              </button>
+              <button
+                ref={menuBtnRef}
+                type="button"
                 title="Mais ações"
-                onClick={() => setMenuOpen((v) => !v)}
-                className="rounded-lg border border-white/10 px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
+                onClick={toggleMenu}
+                className="shrink-0 rounded-lg border border-white/10 px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
               >
                 ⋯
               </button>
-              {menuOpen && (
-                <div
-                  className="absolute right-0 top-full z-20 mt-1 w-44 rounded-lg border border-white/10 bg-[#0e121a] p-1 text-sm shadow-2xl"
-                  onMouseLeave={() => setMenuOpen(false)}
-                >
-                  <MenuItem label="Focar" onClick={() => { setMenuOpen(false); actions.onFocus(meta.id); }} />
-                  <MenuItem label="Exportar PDF" onClick={() => { setMenuOpen(false); actions.onExport(meta.id); }} />
-                  <MenuItem label="Apagar" danger onClick={() => { setMenuOpen(false); actions.onDelete(meta.id); }} />
-                </div>
-              )}
+            </header>
+            <div
+              data-card-scroll
+              className="min-h-0 cursor-text overflow-y-auto overscroll-contain px-6 pb-5 text-[14px] leading-relaxed"
+              style={{ maxHeight: CARD_MAX_HEIGHT - HEADER_RESERVE }}
+              onClick={onBodyClick}
+            >
+              <div data-card-body>
+                {status === 'loading' ? (
+                  <p className="text-[#6f7787]">Carregando…</p>
+                ) : status === 'missing' ? (
+                  <p className="text-[#6f7787]">Conteúdo ainda não disponível neste aparelho.</p>
+                ) : (
+                  <>
+                    {status === 'stale' && (
+                      <p className="mb-2 text-[11px] text-amber-200/80">versão anterior — a mais recente ainda não foi baixada</p>
+                    )}
+                    {body.trim() ? (
+                      <MarkdownRenderer body={body} onLinkPress={actions.onLink} disableHeavyBlocks={!heavyOnce} />
+                    ) : (
+                      <p className="italic text-[#6f7787]">Sem conteúdo — clique para escrever.</p>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </header>
-          <div
-            data-card-scroll
-            className="min-h-0 cursor-text overflow-y-auto overscroll-contain px-6 pb-5 text-[14px] leading-relaxed"
-            style={{ maxHeight: CARD_MAX_HEIGHT - HEADER_RESERVE }}
-            onClick={onBodyClick}
-          >
-            <div data-card-body>
-              {status === 'loading' ? (
-                <p className="text-[#6f7787]">Carregando…</p>
-              ) : status === 'missing' ? (
-                <p className="text-[#6f7787]">Conteúdo ainda não disponível neste aparelho.</p>
-              ) : (
-                <>
-                  {status === 'stale' && (
-                    <p className="mb-2 text-[11px] text-amber-200/80">versão anterior — a mais recente ainda não foi baixada</p>
-                  )}
-                  {body.trim() ? (
-                    <MarkdownRenderer body={body} onLinkPress={actions.onLink} disableHeavyBlocks={!heavyOnce} />
-                  ) : (
-                    <p className="italic text-[#6f7787]">Sem conteúdo — clique para escrever.</p>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </>
+          </>
+        )}
+      </article>
+      {menuAt && !editing && (
+        <div
+          ref={menuRef}
+          data-galaxy-card
+          className="dark absolute rounded-lg border border-white/10 bg-[#0e121a] p-1 font-geist text-sm shadow-2xl"
+          style={{
+            left: x + CARD_WIDTH / 2 - menuAt.right - MENU_WIDTH,
+            top: y - CARD_MAX_HEIGHT / 2 + menuAt.top,
+            width: MENU_WIDTH,
+            zIndex: 20,
+          }}
+          onPointerEnter={() => actions.onHover(idx)}
+          onPointerLeave={() => actions.onHover(-1)}
+          onMouseLeave={closeMenu}
+        >
+          <MenuItem label="Focar" onClick={() => { closeMenu(); actions.onFocus(meta.id); }} />
+          <MenuItem label="Exportar PDF" onClick={() => { closeMenu(); actions.onExport(meta.id); }} />
+          <MenuItem label="Apagar" danger onClick={() => { closeMenu(); actions.onDelete(meta.id); }} />
+        </div>
       )}
-    </article>
+    </>
   );
 });
 
