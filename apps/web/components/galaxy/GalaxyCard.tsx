@@ -6,9 +6,13 @@ import { useZettelBody } from '../../hooks/useZettelBody';
 import { MarkdownRenderer } from '../MarkdownRenderer';
 import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from './InplaceEditor';
 
-/** Altura do cabeçalho (título + tags) que sai da altura máxima do corpo. */
-const HEADER_RESERVE = 96;
+/** Altura do cabeçalho (título de até 2 linhas; as tags ficam no fim do corpo)
+ *  que sai da altura máxima do corpo. */
+const HEADER_RESERVE = 88;
 const MENU_WIDTH = 176;
+/** Auto-pan do arraste: zona junto à borda (px de tela) e velocidade máxima (px/s). */
+const EDGE = 64;
+const EDGE_SPEED = 1200;
 
 export interface CardActions {
   onLink: (title: string) => void;
@@ -23,8 +27,14 @@ export interface CardActions {
   onCreateLink: (title: string) => void | Promise<void>;
   /** Fim do arraste pela alça: deslocamento em unidades de mundo. */
   onMoved: (id: string, dx: number, dy: number) => void;
-  /** Escala atual da câmera (para converter o arraste de tela em mundo). */
-  getScale: () => number;
+  /** Câmera atual (escala converte o arraste de tela em mundo; x/y somam o auto-pan). */
+  getCamera: () => { x: number; y: number; scale: number };
+  /** Auto-pan do arraste, em pixels de tela. */
+  panBy: (dxScreen: number, dyScreen: number) => void;
+  /** Retângulo da galáxia na tela (bordas do auto-pan). */
+  getViewportRect: () => DOMRect | null;
+  /** Card em arraste (`null` ao soltar): fica montado mesmo fora da tela. */
+  onDragState: (id: string | null) => void;
   /** Altura real do card em unidades de mundo (`null` ao desmontar): ponta das arestas. */
   onHeight: (id: string, h: number | null) => void;
 }
@@ -79,7 +89,15 @@ export const GalaxyCard = memo(function GalaxyCard({
   const menuRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
-  const drag = useRef<{ sx: number; sy: number; scale: number; dx: number; dy: number } | null>(null);
+  const drag = useRef<{
+    /** Início e posição atual do ponteiro (tela). */
+    sx: number; sy: number; px: number; py: number;
+    /** Câmera no início do arraste. */
+    scale: number; cx: number; cy: number;
+    /** Deslocamento atual em mundo. */
+    dx: number; dy: number;
+    t: number; raf: number;
+  } | null>(null);
 
   // `offsetHeight` ignora o transform da camada: já está em unidades de mundo.
   useEffect(() => {
@@ -129,27 +147,69 @@ export const GalaxyCard = memo(function GalaxyCard({
   };
 
   // Mover pela alça: transform imperativo em unidades de mundo (o card está
-  // dentro da camada escalada), sem React por frame.
+  // dentro da camada escalada), sem React por frame. Perto da borda a câmera
+  // rola (auto-pan) e o deslocamento soma o quanto ela andou, então o card
+  // segue sob o ponteiro parado.
+  const applyDrag = () => {
+    const d = drag.current;
+    if (!d || !cardRef.current) return;
+    const cam = actions.getCamera();
+    d.dx = (d.px - d.sx) / d.scale + (cam.x - d.cx);
+    d.dy = (d.py - d.sy) / d.scale + (cam.y - d.cy);
+    cardRef.current.style.transform = `translate(${d.dx}px, ${d.dy}px)`;
+  };
+  const autoPan = (t: number) => {
+    const d = drag.current;
+    if (!d) return;
+    const dt = Math.min(t - d.t, 50) / 1000;
+    d.t = t;
+    const r = actions.getViewportRect();
+    if (r) {
+      const v = (dist: number) => (dist < EDGE ? EDGE_SPEED * ((EDGE - Math.max(dist, 0)) / EDGE) ** 2 : 0);
+      const vx = v(d.px - r.left) * -1 + v(r.right - d.px);
+      const vy = v(d.py - r.top) * -1 + v(r.bottom - d.py);
+      if (vx || vy) {
+        actions.panBy(vx * dt, vy * dt);
+        applyDrag();
+      }
+    }
+    d.raf = requestAnimationFrame(autoPan);
+  };
   const onHandleDown = (e: React.PointerEvent) => {
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    drag.current = { sx: e.clientX, sy: e.clientY, scale: actions.getScale(), dx: 0, dy: 0 };
+    const cam = actions.getCamera();
+    drag.current = {
+      sx: e.clientX, sy: e.clientY, px: e.clientX, py: e.clientY,
+      scale: cam.scale, cx: cam.x, cy: cam.y, dx: 0, dy: 0,
+      t: performance.now(), raf: requestAnimationFrame(autoPan),
+    };
     setDragging(true);
+    actions.onDragState(meta.id);
   };
   const onHandleMove = (e: React.PointerEvent) => {
     const d = drag.current;
-    if (!d || !cardRef.current) return;
-    d.dx = (e.clientX - d.sx) / d.scale;
-    d.dy = (e.clientY - d.sy) / d.scale;
-    cardRef.current.style.transform = `translate(${d.dx}px, ${d.dy}px)`;
+    if (!d) return;
+    d.px = e.clientX;
+    d.py = e.clientY;
+    applyDrag();
   };
   const onHandleUp = () => {
     const d = drag.current;
+    if (d) {
+      cancelAnimationFrame(d.raf);
+      applyDrag();
+    }
     drag.current = null;
     setDragging(false);
+    actions.onDragState(null);
     if (cardRef.current) cardRef.current.style.transform = '';
     if (d && Math.hypot(d.dx, d.dy) * d.scale > 4) actions.onMoved(meta.id, d.dx, d.dy);
   };
+  // Desmontar no meio do arraste (ex.: zettel apagado) não deixa o laço vivo.
+  useEffect(() => () => {
+    if (drag.current) cancelAnimationFrame(drag.current.raf);
+  }, []);
 
   const border = editing || dragging ? 'border-brand/70' : highlighted ? 'border-[#f5f3ff]/70' : 'border-white/[0.08]';
 
@@ -203,15 +263,6 @@ export const GalaxyCard = memo(function GalaxyCard({
                 <h3 className="font-newsreader text-[22px] font-medium leading-snug text-[#f5f3ff]">
                   {meta.title || 'Sem título'}
                 </h3>
-                {meta.tags.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {meta.tags.map((t) => (
-                      <span key={t} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
               <button
                 type="button"
@@ -254,6 +305,15 @@ export const GalaxyCard = memo(function GalaxyCard({
                   </>
                 )}
               </div>
+              {meta.tags.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-1">
+                  {meta.tags.map((t) => (
+                    <span key={t} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}

@@ -98,6 +98,8 @@ export function Galaxy() {
 
   // Edição
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** Card em arraste: o CardLayer o mantém montado durante o auto-pan. */
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [editingZettel, setEditingZettel] = useState<Zettel | null>(null);
   /** Editor em tela cheia: celular, ou zettel sem lugar em qualquer dispositivo. */
   const [fullscreen, setFullscreen] = useState<{ zettel: Zettel; variant: 'card' | 'mobile' } | null>(null);
@@ -322,7 +324,10 @@ export function Galaxy() {
     onStatus,
     onCreateLink: createLink,
     onMoved: (id, dx, dy) => void onMoved(id, dx, dy),
-    getScale: () => engineRef.current?.getCamera().scale ?? 1,
+    getCamera: () => engineRef.current?.getCamera() ?? { x: 0, y: 0, scale: 1 },
+    panBy: (dx, dy) => engineRef.current?.panBy(dx, dy),
+    getViewportRect: () => engineRef.current?.getViewportRect() ?? null,
+    onDragState: setDraggingId,
     onHeight: (id, h) => engineRef.current?.setCardHeight(id, h),
   };
   const actions = useMemo<CardActions>(
@@ -336,7 +341,10 @@ export function Galaxy() {
       onStatus: (s) => actionsRef.current!.onStatus(s),
       onCreateLink: (t) => actionsRef.current!.onCreateLink(t),
       onMoved: (id, dx, dy) => actionsRef.current!.onMoved(id, dx, dy),
-      getScale: () => actionsRef.current!.getScale(),
+      getCamera: () => actionsRef.current!.getCamera(),
+      panBy: (dx, dy) => actionsRef.current!.panBy(dx, dy),
+      getViewportRect: () => actionsRef.current!.getViewportRect(),
+      onDragState: (id) => actionsRef.current!.onDragState(id),
       onHeight: (id, h) => actionsRef.current!.onHeight(id, h),
     }),
     [],
@@ -534,6 +542,7 @@ export function Galaxy() {
           heavy={settled && scale >= HEAVY_MIN_SCALE}
           highlightId={highlightId}
           editingId={editingId}
+          draggingId={draggingId}
           editingZettel={editingZettel}
           autoFocusTitle={autoFocusTitle}
           editorRef={editorRef}

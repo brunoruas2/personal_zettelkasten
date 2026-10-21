@@ -872,13 +872,17 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
               char: '[[',
               allowSpaces: true,
               allowedPrefixes: null,
+              // `allowSpaces` faz a query ir até o cursor: um `]` digitado à mão
+              // (link já fechado) encerra a sugestão, senão o Enter seguinte
+              // confirmaria "Criar «X]]»".
+              allow: ({ state, range }) => !state.doc.textBetween(range.from + 2, range.to).includes(']'),
               items: ({ query }) => {
                 const raw = (query.startsWith('^') ? query.slice(1) : query).trim();
                 const q = raw.toLowerCase();
                 const found = zettelsSuggestionRef.current
                   .filter((z) => !q || z.title.toLowerCase().includes(q))
                   .slice(0, 8);
-                if (onCreateLinkRef.current && raw && !zettelsSuggestionRef.current.some((z) => z.title.toLowerCase() === q)) {
+                if (onCreateLinkRef.current && raw && !/[[\]]/.test(raw) && !zettelsSuggestionRef.current.some((z) => z.title.toLowerCase() === q)) {
                   found.push(createLinkItem(raw));
                 }
                 return found;

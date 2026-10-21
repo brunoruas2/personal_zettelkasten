@@ -6,9 +6,11 @@ interface Props {
   tags: string[];
   onChange: (tags: string[]) => void;
   suggestions?: string[];
+  /** Sugestões acima do campo (campo no fim de uma área rolável). */
+  dropUp?: boolean;
 }
 
-export function TagInput({ tags, onChange, suggestions = [] }: Props) {
+export function TagInput({ tags, onChange, suggestions = [], dropUp = false }: Props) {
   const [input, setInput] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -115,7 +117,7 @@ export function TagInput({ tags, onChange, suggestions = [] }: Props) {
         />
 
         {dropdownOpen && matches.length > 0 && (
-          <ul className="absolute left-0 top-full z-20 mt-1 w-full rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          <ul className={`absolute left-0 z-20 w-full ${dropUp ? 'bottom-full mb-1 max-h-48 overflow-y-auto' : 'top-full mt-1'} rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900`}>
             {matches.map((tag, idx) => (
               <li key={tag}>
                 <button

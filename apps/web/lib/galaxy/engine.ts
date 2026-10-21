@@ -238,6 +238,16 @@ export class GalaxyEngine {
     return { ...this.cam };
   }
 
+  /** Pan em pixels de tela (auto-pan do arraste de card), sem mudar o zoom. */
+  panBy(dxScreen: number, dyScreen: number): void {
+    const s = this.cam.scale;
+    this.setCamera({ ...this.cam, x: this.cam.x + dxScreen / s, y: this.cam.y + dyScreen / s });
+  }
+
+  getViewportRect(): DOMRect {
+    return this.container.getBoundingClientRect();
+  }
+
   getSize(): { w: number; h: number } {
     return { w: this.w, h: this.h };
   }

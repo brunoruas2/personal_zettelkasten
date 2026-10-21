@@ -179,16 +179,6 @@ export const InplaceEditor = forwardRef<
           placeholder="Título"
           className="w-full bg-transparent font-newsreader text-[22px] font-medium leading-snug text-[#f5f3ff] outline-none placeholder:text-[#6f7787]"
         />
-        <div className="mt-2" data-no-pan>
-          <TagInput
-            tags={tags}
-            onChange={(t) => {
-              setTags(t);
-              schedule();
-            }}
-            suggestions={allTags}
-          />
-        </div>
       </div>
 
       <div
@@ -221,6 +211,18 @@ export const InplaceEditor = forwardRef<
               onCreateLink={onCreateLink}
             />
           </DrawingEditHost>
+        </div>
+        {/* Tags no fim do zettel: são metadado, não disputam espaço com o título. */}
+        <div className="pb-2" data-no-pan>
+          <TagInput
+            tags={tags}
+            onChange={(t) => {
+              setTags(t);
+              schedule();
+            }}
+            suggestions={allTags}
+            dropUp
+          />
         </div>
         {isMobile && <div style={{ height: `calc(${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom))` }} />}
       </div>
