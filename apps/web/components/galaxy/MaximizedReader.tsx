@@ -13,12 +13,10 @@ import { FocusHeader, FocusList, type FocusView } from './FocusPanel';
  * (`[[link]]`, lista do foco) só troca `meta` e não empilha nada. Fecha pelo
  * voltar do sistema; "← Galáxia", `Esc` e "Editar" fazem `history.back()` e a
  * ação seguinte só roda depois do `popstate` (senão o editor em tela cheia
- * empilharia a sua entrada antes de a nossa sair). `hidden` esconde a leitura
- * durante o voo da galáxia sem desmontar (o histórico continua o mesmo).
+ * empilharia a sua entrada antes de a nossa sair).
  */
 export function MaximizedReader({
   meta,
-  hidden = false,
   focus,
   onClose,
   onEdit,
@@ -26,7 +24,6 @@ export function MaximizedReader({
   onPick,
 }: {
   meta: ZettelMeta;
-  hidden?: boolean;
   /** Presente só com o modo foco ativo. */
   focus?: FocusView;
   onClose: () => void;
@@ -69,7 +66,6 @@ export function MaximizedReader({
   closeRef.current = close;
 
   // Captura + preventDefault: o Esc da galáxia (bolha) não sai do foco junto.
-  // Continua valendo escondido: Esc durante o voo sai da leitura.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
@@ -87,11 +83,7 @@ export function MaximizedReader({
   };
 
   return (
-    <div
-      className={`dark fixed inset-0 z-50 flex h-[100dvh] flex-col bg-[#05070c] font-geist text-[#c9cfdb] ${
-        hidden ? 'invisible pointer-events-none' : ''
-      }`}
-    >
+    <div className="dark fixed inset-0 z-50 flex h-[100dvh] flex-col bg-[#05070c] font-geist text-[#c9cfdb]">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
         <button type="button" onClick={() => close()} className="text-sm text-[#c9cfdb]">
           ← Galáxia

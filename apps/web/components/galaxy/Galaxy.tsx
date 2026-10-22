@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { analyzeSubtree, subtreeDepths, type Zettel, type ZettelMeta } from '@zettelkasten/core';
 import { useGalaxyData } from './useGalaxyData';
-import { FLY_MIN_SCALE, FLY_MS, GalaxyEngine, LOD_CARDS, LOD_SILHOUETTE } from '../../lib/galaxy/engine';
+import { FLY_MIN_SCALE, GalaxyEngine, LOD_CARDS, LOD_SILHOUETTE } from '../../lib/galaxy/engine';
 import { loadCamera, type Camera } from '../../lib/galaxy/camera';
 import { snapPosition } from '../../lib/galaxy/snap';
 import { setManualPosition } from '../../lib/positionSync';
@@ -106,9 +106,6 @@ export function Galaxy() {
   const [fullscreen, setFullscreen] = useState<{ zettel: Zettel; variant: 'card' | 'mobile' } | null>(null);
   const [exportId, setExportId] = useState<string | null>(null);
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
-  /** Leitura escondida enquanto a câmera voa até o próximo zettel. */
-  const [readerFlying, setReaderFlying] = useState(false);
-  const readerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maximizedIdRef = useRef(maximizedId);
   maximizedIdRef.current = maximizedId;
   const [autoFocusTitle, setAutoFocusTitle] = useState(false);
@@ -140,11 +137,11 @@ export function Galaxy() {
   }, []);
 
   // `minScale: 'top'` = "Aproximar": zoom máximo com o topo do card sob a barra.
-  const flyTo = useCallback((id: string, minScale: number | 'top' = FLY_MIN_SCALE) => {
+  const flyTo = useCallback((id: string, minScale: number | 'top' = FLY_MIN_SCALE, animate = true) => {
     const idx = dataRef.current.indexById.get(id);
     if (idx === undefined) return;
-    if (minScale === 'top') engineRef.current?.approach(idx);
-    else engineRef.current?.flyTo(idx, true, minScale);
+    if (minScale === 'top') engineRef.current?.approach(idx, animate);
+    else engineRef.current?.flyTo(idx, animate, minScale);
     setZParam(id);
     pushRecent(id);
     // No nível de cards o destaque do voo é o contorno do próprio card.
@@ -155,39 +152,26 @@ export function Galaxy() {
 
   // --- leitura em tela cheia ---
 
-  // Com card na galáxia (e, em foco, no conjunto): esconde a leitura, voa e
-  // reabre no fim do voo. Sem card (sem lugar, oculto, fora do foco): só troca.
+  // Troca na hora, sem animação. Com card na galáxia (e, em foco, no
+  // conjunto) a câmera pula para ele por baixo da leitura, para fechar já no
+  // último lido. Sem card (sem lugar, oculto, fora do foco): câmera parada.
   const navigateReader = useCallback(
     (id: string) => {
       const idx = dataRef.current.indexById.get(id);
       const f = focusRef.current;
       const hasCard = idx !== undefined && (!f || f.idxSet.has(idx));
       setMaximizedId(id);
-      if (readerTimer.current) clearTimeout(readerTimer.current);
-      if (!hasCard) {
-        pushRecent(id);
-        readerTimer.current = null;
-        setReaderFlying(false);
-        return;
-      }
-      setReaderFlying(true);
-      flyTo(id);
-      readerTimer.current = setTimeout(() => setReaderFlying(false), FLY_MS + 120);
+      if (hasCard) flyTo(id, FLY_MIN_SCALE, false);
+      else pushRecent(id);
     },
     [flyTo],
   );
 
   const closeReader = useCallback(() => {
-    if (readerTimer.current) clearTimeout(readerTimer.current);
-    readerTimer.current = null;
-    setReaderFlying(false);
     // O popstate restaurou o ?z= de quando a leitura abriu.
     const id = maximizedIdRef.current;
     if (id && dataRef.current.indexById.has(id)) setZParam(id);
     setMaximizedId(null);
-  }, []);
-  useEffect(() => () => {
-    if (readerTimer.current) clearTimeout(readerTimer.current);
   }, []);
 
   // Mesma regra do findByTitle: primeiro os posicionados, depois o índice todo.
@@ -748,7 +732,6 @@ export function Galaxy() {
       {maximizedMeta && (
         <MaximizedReader
           meta={maximizedMeta}
-          hidden={readerFlying}
           focus={
             focus && focusRootMeta
               ? {
