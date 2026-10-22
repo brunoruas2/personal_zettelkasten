@@ -75,7 +75,7 @@ const NEBULA_RADIUS = 1400;
 const NEBULA_AGG_SCALE = 0.12;
 const LABEL_CELL = 48;
 
-function isTypingTarget(t: EventTarget | null): boolean {
+export function isTypingTarget(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   return t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT';
 }

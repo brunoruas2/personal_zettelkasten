@@ -95,7 +95,7 @@ export function GalaxyTopBar({
           <button
             type="button"
             onClick={onBack}
-            title={backTitle ? `Voltar para «${backTitle}»` : 'Voltar à vista anterior'}
+            title={backTitle ? `Voltar para «${backTitle}» (X)` : 'Voltar à vista anterior (X)'}
             className="rounded-xl border border-white/10 bg-[#0e121a]/90 px-3 py-2 text-sm text-[#e6e9f0] shadow-lg hover:bg-[#141925]"
           >
             ← <span className="hidden sm:inline">Voltar</span>

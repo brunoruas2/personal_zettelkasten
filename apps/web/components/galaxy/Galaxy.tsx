@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { analyzeSubtree, subtreeDepths, type Zettel, type ZettelMeta } from '@zettelkasten/core';
 import { useGalaxyData } from './useGalaxyData';
-import { FLY_MIN_SCALE, GalaxyEngine, LOD_CARDS, LOD_SILHOUETTE } from '../../lib/galaxy/engine';
+import { FLY_MIN_SCALE, GalaxyEngine, LOD_CARDS, LOD_SILHOUETTE, isTypingTarget } from '../../lib/galaxy/engine';
 import { loadCamera, type Camera } from '../../lib/galaxy/camera';
 import { BackStack } from '../../lib/galaxy/backStack';
 import { snapPosition } from '../../lib/galaxy/snap';
@@ -637,6 +637,20 @@ export function Galaxy() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [exitEdit, exitFocus, overlayOpen]);
+
+  // `X` = "← Voltar". Com overlay aberto (leitura incluída) não age aqui; a
+  // leitura trata o seu.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyX' || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (overlayOpen || editingIdRef.current || isTypingTarget(e.target)) return;
+      if (!backStackRef.current.size) return;
+      e.preventDefault();
+      void goBack();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [goBack, overlayOpen]);
 
   // Atalhos da galáxia. `e.code` pelo mesmo motivo do Alt+T/Alt+B: onde o Alt
   // compõe caractere (Option no macOS) a comparação por caractere falharia.

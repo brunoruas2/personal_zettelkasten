@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ZettelMeta } from '@zettelkasten/core';
 import { useZettelBody } from '../../hooks/useZettelBody';
 import { MarkdownRenderer } from '../MarkdownRenderer';
+import { isTypingTarget } from '../../lib/galaxy/engine';
 import { FocusHeader, FocusList, type FocusView } from './FocusPanel';
 
 /**
@@ -68,9 +69,19 @@ export function MaximizedReader({
   const closeRef = useRef(close);
   closeRef.current = close;
 
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
+
   // Captura + preventDefault: o Esc da galáxia (bolha) não sai do foco junto.
+  // `X` = "← Voltar" da leitura.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'KeyX' && !e.repeat && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !isTypingTarget(e.target)) {
+        if (!onBackRef.current) return;
+        e.preventDefault();
+        onBackRef.current();
+        return;
+      }
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       e.preventDefault();
       e.stopPropagation();
@@ -96,6 +107,7 @@ export function MaximizedReader({
             <button
               type="button"
               onClick={onBack}
+              title="Voltar ao zettel anterior (X)"
               className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-[#c9cfdb] hover:bg-white/5"
             >
               ← Voltar
