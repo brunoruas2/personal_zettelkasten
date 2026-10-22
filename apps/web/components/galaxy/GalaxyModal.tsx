@@ -49,7 +49,7 @@ export function GalaxyModal({
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
         className={`dark flex w-full flex-col overflow-hidden border-white/10 bg-[#0e121a] text-[#e6e9f0] shadow-2xl lg:max-h-[85vh] lg:rounded-2xl lg:border ${
-          wide ? 'lg:max-w-5xl' : 'lg:max-w-3xl'
+          wide ? 'lg:max-w-6xl xl:max-w-7xl' : 'lg:max-w-3xl'
         }`}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3">

@@ -256,7 +256,7 @@ export function GalaxySearch({
         </button>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,24rem)_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[22rem_minmax(0,1fr)]">
         <div ref={listRef} className="min-h-0 overflow-y-auto overscroll-contain border-white/10 lg:border-r">
           {results.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-[#6f7787]">{loading ? 'Buscando…' : 'Nenhum resultado.'}</p>
@@ -291,7 +291,7 @@ export function GalaxySearch({
             })
           )}
         </div>
-        <div className="hidden min-h-0 lg:block">
+        <div className="hidden min-h-0 min-w-0 lg:block">
           {previewId && byId.get(previewId) ? (
             <Preview
               meta={byId.get(previewId)!}
