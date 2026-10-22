@@ -469,6 +469,11 @@ export function Galaxy() {
       const idx = dataRef.current.indexById.get(id);
       if (idx !== undefined) setDeleteMeta(dataRef.current.metas[idx]);
     },
+    onCopyId: (id) => {
+      Promise.resolve()
+        .then(() => navigator.clipboard.writeText(id))
+        .then(() => showToast('ID copiado'), () => showToast('Não foi possível copiar o ID'));
+    },
     onStatus,
     onCreateLink: createLink,
     onMoved: (id, dx, dy) => void onMoved(id, dx, dy),
@@ -487,6 +492,7 @@ export function Galaxy() {
       onRequestEdit: (id) => actionsRef.current!.onRequestEdit(id),
       onFocus: (id) => actionsRef.current!.onFocus(id),
       onDelete: (id) => actionsRef.current!.onDelete(id),
+      onCopyId: (id) => actionsRef.current!.onCopyId(id),
       onStatus: (s) => actionsRef.current!.onStatus(s),
       onCreateLink: (t) => actionsRef.current!.onCreateLink(t),
       onMoved: (id, dx, dy) => actionsRef.current!.onMoved(id, dx, dy),

@@ -23,6 +23,8 @@ export interface CardActions {
   onRequestEdit: (id: string) => void;
   onFocus: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Copia o id do zettel para a área de transferência. */
+  onCopyId: (id: string) => void;
   onStatus: (s: SaveStatus) => void;
   onCreateLink: (title: string) => void | Promise<void>;
   /** Fim do arraste pela alça: deslocamento em unidades de mundo. */
@@ -345,6 +347,7 @@ export const GalaxyCard = memo(function GalaxyCard({
         >
           <MenuItem label="Focar" onClick={() => { closeMenu(); actions.onFocus(meta.id); }} />
           <MenuItem label="Exportar PDF" onClick={() => { closeMenu(); actions.onExport(meta.id); }} />
+          <MenuItem label="Copiar ID" onClick={() => { closeMenu(); actions.onCopyId(meta.id); }} />
           <MenuItem label="Apagar" danger onClick={() => { closeMenu(); actions.onDelete(meta.id); }} />
         </div>
       )}
