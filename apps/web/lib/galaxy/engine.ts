@@ -407,6 +407,12 @@ export class GalaxyEngine {
     this.highlight = { idx, until: performance.now() + (animate ? FLY_MS : 0) + HIGHLIGHT_MS };
   }
 
+  /** "← Voltar": voa até uma câmera guardada; `idx ≥ 0` destaca o ponto. */
+  flyToCamera(to: Camera, idx = -1, animate = true): void {
+    this.animateTo({ ...to, scale: clampScale(to.scale, this.minScale) }, animate);
+    if (idx >= 0) this.highlight = { idx, until: performance.now() + (animate ? FLY_MS : 0) + HIGHLIGHT_MS };
+  }
+
   /** Posição de tela de um ponto (para ancorar o mini card). */
   screenOf(idx: number): [number, number] | null {
     if (!this.data || idx < 0 || idx >= this.data.count) return null;

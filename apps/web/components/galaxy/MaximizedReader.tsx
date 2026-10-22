@@ -22,6 +22,7 @@ export function MaximizedReader({
   onEdit,
   onNavigate,
   onPick,
+  onBack,
 }: {
   meta: ZettelMeta;
   /** Presente só com o modo foco ativo. */
@@ -32,6 +33,8 @@ export function MaximizedReader({
   onNavigate: (title: string) => void;
   /** Item da lista do foco escolhido. */
   onPick: (id: string) => void;
+  /** "← Voltar" para o zettel anterior; ausente sem saltos a desfazer. */
+  onBack?: () => void;
 }) {
   const { body, status } = useZettelBody(meta.id);
   const afterCloseRef = useRef<(() => void) | null>(null);
@@ -85,9 +88,20 @@ export function MaximizedReader({
   return (
     <div className="dark fixed inset-0 z-50 flex h-[100dvh] flex-col bg-[#05070c] font-geist text-[#c9cfdb]">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
-        <button type="button" onClick={() => close()} className="text-sm text-[#c9cfdb]">
-          ← Galáxia
-        </button>
+        <div className="flex items-center gap-4">
+          <button type="button" onClick={() => close()} className="text-sm text-[#c9cfdb]">
+            ← Galáxia
+          </button>
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-[#c9cfdb] hover:bg-white/5"
+            >
+              ← Voltar
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {focus && (
             <button

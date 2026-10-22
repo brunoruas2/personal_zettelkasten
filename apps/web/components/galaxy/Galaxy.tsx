@@ -5,6 +5,7 @@ import { analyzeSubtree, subtreeDepths, type Zettel, type ZettelMeta } from '@ze
 import { useGalaxyData } from './useGalaxyData';
 import { FLY_MIN_SCALE, GalaxyEngine, LOD_CARDS, LOD_SILHOUETTE } from '../../lib/galaxy/engine';
 import { loadCamera, type Camera } from '../../lib/galaxy/camera';
+import { BackStack } from '../../lib/galaxy/backStack';
 import { snapPosition } from '../../lib/galaxy/snap';
 import { setManualPosition } from '../../lib/positionSync';
 import { loadZettel } from '../../lib/bodySync';
@@ -125,6 +126,13 @@ export function Galaxy() {
   /** Zettel recém-criado esperando entrar no índice para voar/editar. */
   const pendingNewRef = useRef<{ zettel: Zettel; mobile: boolean } | null>(null);
 
+  // "← Voltar": pilha de saltos (link, busca, lista do foco, leitura).
+  const backStackRef = useRef(new BackStack());
+  /** Último zettel para onde a câmera voou (o "atual" de um salto). */
+  const currentIdRef = useRef<string | null>(null);
+  const [backTop, setBackTop] = useState<{ title: string | null } | null>(null);
+  const [readerCanBack, setReaderCanBack] = useState(false);
+
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast((t) => (t === msg ? null : t)), 3500);
@@ -142,20 +150,76 @@ export function Galaxy() {
     if (idx === undefined) return;
     if (minScale === 'top') engineRef.current?.approach(idx, animate);
     else engineRef.current?.flyTo(idx, animate, minScale);
+    currentIdRef.current = id;
     setZParam(id);
     pushRecent(id);
-    // No nível de cards o destaque do voo é o contorno do próprio card.
+    highlightCard(id);
+  }, []);
+
+  // No nível de cards o destaque do voo é o contorno do próprio card.
+  const highlightCard = (id: string) => {
     setHighlightId(id);
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => setHighlightId(null), HIGHLIGHT_MS);
+  };
+
+  // --- voltar ---
+
+  const metaExists = (id: string) =>
+    dataRef.current.indexById.has(id) || useZettelStore.getState().zettels.some((z) => z.id === id);
+
+  const titleOf = (id: string) => {
+    const idx = dataRef.current.indexById.get(id);
+    return idx !== undefined
+      ? dataRef.current.metas[idx].title
+      : useZettelStore.getState().zettels.find((z) => z.id === id)?.title ?? null;
+  };
+
+  const syncBack = useCallback(() => {
+    const stack = backStackRef.current;
+    const top = stack.peek();
+    setBackTop(top ? { title: top.id ? titleOf(top.id) : null } : null);
+    setReaderCanBack(stack.some((e) => e.id !== null && metaExists(e.id)));
   }, []);
+
+  /** Empilha de onde se salta: o zettel atual, se ainda está na tela, e a câmera. */
+  const pushBack = useCallback(
+    (fromId: string | null) => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      backStackRef.current.push({ id: fromId, camera: engine.getCamera() });
+      syncBack();
+    },
+    [syncBack],
+  );
+
+  /** O zettel atual só conta como origem se o ponto dele ainda está na tela. */
+  const currentInView = (): string | null => {
+    const id = currentIdRef.current;
+    const idx = id ? dataRef.current.indexById.get(id) : undefined;
+    const el = containerRef.current;
+    if (!id || idx === undefined || !el) return null;
+    const p = engineRef.current?.screenOf(idx);
+    return p && p[0] >= 0 && p[1] >= 0 && p[0] <= el.clientWidth && p[1] <= el.clientHeight ? id : null;
+  };
+
+  /** Salto intencional (link, busca, lista do foco): entra na pilha do "← Voltar". */
+  const jumpTo = useCallback(
+    (id: string, minScale: number | 'top' = FLY_MIN_SCALE) => {
+      if (!dataRef.current.indexById.has(id)) return;
+      const from = currentInView();
+      if (from !== id) pushBack(from);
+      flyTo(id, minScale);
+    },
+    [flyTo, pushBack],
+  );
 
   // --- leitura em tela cheia ---
 
   // Troca na hora, sem animação. Com card na galáxia (e, em foco, no
   // conjunto) a câmera pula para ele por baixo da leitura, para fechar já no
   // último lido. Sem card (sem lugar, oculto, fora do foco): câmera parada.
-  const navigateReader = useCallback(
+  const showInReader = useCallback(
     (id: string) => {
       const idx = dataRef.current.indexById.get(id);
       const f = focusRef.current;
@@ -166,6 +230,23 @@ export function Galaxy() {
     },
     [flyTo],
   );
+
+  const navigateReader = useCallback(
+    (id: string) => {
+      const from = maximizedIdRef.current;
+      if (from === id) return;
+      pushBack(from);
+      showInReader(id);
+    },
+    [pushBack, showInReader],
+  );
+
+  /** "← Voltar" da leitura: pula entradas sem zettel ou com zettel apagado. */
+  const goBackInReader = useCallback(() => {
+    const e = backStackRef.current.popUntil((x) => x.id !== null && metaExists(x.id));
+    syncBack();
+    if (e?.id) showInReader(e.id);
+  }, [showInReader, syncBack]);
 
   const closeReader = useCallback(() => {
     // O popstate restaurou o ?z= de quando a leitura abriu.
@@ -195,6 +276,21 @@ export function Galaxy() {
     setEditingZettel(null);
     setAutoFocusTitle(false);
   }, []);
+
+  /** "← Voltar" da galáxia: restaura a câmera de onde se saltou. */
+  const goBack = useCallback(async () => {
+    const e = backStackRef.current.pop();
+    syncBack();
+    if (!e) return;
+    await exitEdit();
+    const idx = e.id ? dataRef.current.indexById.get(e.id) : undefined;
+    engineRef.current?.flyToCamera(e.camera, idx ?? -1);
+    currentIdRef.current = idx !== undefined ? e.id : null;
+    if (e.id && idx !== undefined) {
+      setZParam(e.id);
+      highlightCard(e.id);
+    }
+  }, [exitEdit, syncBack]);
 
   const startEdit = useCallback(
     async (zettel: Zettel, opts: { titleFocus?: boolean; mobile?: boolean } = {}) => {
@@ -363,7 +459,7 @@ export function Galaxy() {
   actionsRef.current = {
     onLink: (title) => {
       const id = idByTitleRef.current.get(title.trim().toLowerCase());
-      if (id) flyTo(id);
+      if (id) jumpTo(id);
     },
     onExport: (id) => setExportId(id),
     onHover: (idx) => engineRef.current?.setHoverFromCard(idx),
@@ -503,6 +599,7 @@ export function Galaxy() {
     if (idx !== undefined) {
       engine.setCamera({ x: data.xs[idx], y: data.ys[idx], scale: Math.max(saved?.scale ?? 0, FLY_MIN_SCALE) });
       engine.flyTo(idx, false);
+      currentIdRef.current = z;
     } else if (saved) {
       engine.setCamera(saved);
     } else {
@@ -647,6 +744,8 @@ export function Galaxy() {
         onSearch={() => setSearch({})}
         onUnplaced={() => setSearch({ unplacedOnly: true })}
         onMenu={onMenu}
+        onBack={backTop ? () => void goBack() : undefined}
+        backTitle={backTop?.title ?? null}
       />
 
       <ZoomControls
@@ -675,7 +774,7 @@ export function Galaxy() {
           depth={focus.depth}
           maxDepth={focus.maxDepth}
           onDepthChange={setFocusDepth}
-          onPick={(id) => flyTo(id)}
+          onPick={(id) => jumpTo(id)}
           onExit={exitFocus}
         />
       )}
@@ -705,7 +804,7 @@ export function Galaxy() {
             onClose={() => setSearch(null)}
             onFly={(id) => {
               setSearch(null);
-              flyTo(id);
+              jumpTo(id, 'top');
             }}
             onOpen={(id) => {
               setSearch(null);
@@ -748,6 +847,7 @@ export function Galaxy() {
           onEdit={(id) => void openFullscreen(id)}
           onNavigate={navigateReaderByTitle}
           onPick={navigateReader}
+          onBack={readerCanBack ? goBackInReader : undefined}
         />
       )}
 

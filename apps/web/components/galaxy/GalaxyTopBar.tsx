@@ -47,6 +47,8 @@ export function GalaxyTopBar({
   onSearch,
   onUnplaced,
   onMenu,
+  onBack,
+  backTitle,
 }: {
   unplaced: number;
   /** Estado do autosave da edição; enquanto houver, substitui o do sync. */
@@ -54,13 +56,17 @@ export function GalaxyTopBar({
   onSearch: () => void;
   onUnplaced: () => void;
   onMenu: (action: MenuAction) => void;
+  /** Presente só com a pilha de saltos não vazia. */
+  onBack?: () => void;
+  /** Título do zettel de onde se saltou; `null` = só a vista anterior. */
+  backTitle?: string | null;
 }) {
   const status = useSyncStore((s) => s.status);
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div data-galaxy-topbar className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-3 p-3 font-geist lg:p-4">
-      <div className="pointer-events-auto relative">
+      <div className="pointer-events-auto relative flex shrink-0 gap-2">
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
@@ -84,6 +90,16 @@ export function GalaxyTopBar({
               onMenu(a);
             }}
           />
+        )}
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            title={backTitle ? `Voltar para «${backTitle}»` : 'Voltar à vista anterior'}
+            className="rounded-xl border border-white/10 bg-[#0e121a]/90 px-3 py-2 text-sm text-[#e6e9f0] shadow-lg hover:bg-[#141925]"
+          >
+            ← <span className="hidden sm:inline">Voltar</span>
+          </button>
         )}
       </div>
 
