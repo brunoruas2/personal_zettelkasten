@@ -354,6 +354,8 @@ export function Galaxy() {
       }
       setFocusDepth(1);
       setFocusRootId(id);
+      // No celular o card a 150% lê mal: abre direto a leitura, com a lista do foco.
+      if (isMobileDevice()) setMaximizedId(id);
     },
     [showToast],
   );
