@@ -21,6 +21,7 @@ com os mesmos nomes (útil para não deixar a chave no código):
   ZETTEL_BACKUP_DIR  — pasta onde os arquivos serão salvos
   ZETTEL_BACKUP_KEEP — quantos arquivos manter (padrão: 30)
   ZETTEL_BACKUP_FORMAT — 'zip' (padrão, completo), 'sqlite' (banco .db) ou 'json' (só texto)
+  ZETTEL_BACKUP_DB_TARGET — banco da API local substituído por --db-target
 
 Uso
 ---
@@ -29,6 +30,10 @@ Uso
 
   # Executa em loop a cada N minutos (ex: a cada 60 minutos)
   python backup.py --loop 60
+
+  # Baixa o .db e substitui o banco de uma API local (pare a API antes)
+  python backup.py --db-target                      # caminho do .env
+  python backup.py --db-target C:/repo/apps/api/zettelkasten.db
 
 Agendamento no Windows (Task Scheduler)
 ----------------------------------------
@@ -85,6 +90,7 @@ DIR = str(
 )
 KEEP = int(os.environ.get("ZETTEL_BACKUP_KEEP", "30"))   # nº de arquivos a manter
 FORMAT = os.environ.get("ZETTEL_BACKUP_FORMAT", "zip").lower()  # zip (completo), sqlite ou json
+DB_TARGET = os.environ.get("ZETTEL_BACKUP_DB_TARGET", "")       # usado só com --db-target
 # ---------------------------------------------------------------------------
 
 logging.basicConfig(
@@ -110,6 +116,18 @@ def run_backup() -> bool:
     filename = f"zettelkasten-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.{ext}"
     out_path = out_dir / filename
 
+    if not download(endpoint, out_path):
+        return False
+
+    size_kb = out_path.stat().st_size / 1024
+    log.info("Salvo: %s  (%.1f KB)", out_path, size_kb)
+
+    prune(out_dir, ext)
+    return True
+
+
+def download(endpoint: str, out_path: Path) -> bool:
+    """Baixa endpoint para out_path. Em falha, remove o arquivo parcial."""
     log.info("Conectando em %s ...", URL)
     try:
         req = urllib.request.Request(endpoint, headers={"User-Agent": "zettel-backup/1.0"})
@@ -122,6 +140,7 @@ def run_backup() -> bool:
             with open(out_path, "wb") as fh:
                 shutil.copyfileobj(resp, fh, length=64 * 1024)
     except urllib.error.HTTPError as e:
+        out_path.unlink(missing_ok=True)
         log.error("HTTP %s — %s", e.code, e.reason)
         if e.code == 401:
             log.error("Chave inválida ou revogada. Gere uma nova em Configurações > Chave de backup.")
@@ -129,16 +148,57 @@ def run_backup() -> bool:
             log.error("Já há um export do banco em andamento no servidor; tenta de novo no próximo ciclo.")
         return False
     except urllib.error.URLError as e:
+        out_path.unlink(missing_ok=True)
         log.error("Falha de rede: %s", e.reason)
         return False
     except Exception as e:
+        out_path.unlink(missing_ok=True)
         log.error("Erro inesperado: %s", e)
         return False
+    return True
 
-    size_kb = out_path.stat().st_size / 1024
-    log.info("Salvo: %s  (%.1f KB)", out_path, size_kb)
 
-    prune(out_dir, ext)
+def replace_db(target: str) -> bool:
+    """Baixa o snapshot .db e o põe no lugar do banco de uma API local.
+
+    Baixa num .tmp ao lado e só troca se o download completar. O banco atual vira
+    .old (sobrescreve o .old anterior); -wal/-shm são apagados, senão o SQLite
+    tentaria aplicar o WAL do banco antigo sobre o novo. A API precisa estar
+    parada: no Windows o arquivo aberto não pode ser renomeado.
+    """
+    if not KEY:
+        log.error("ZETTEL_BACKUP_KEY não configurada. Edite o script ou defina a variável de ambiente.")
+        return False
+    if not target:
+        log.error("Informe o caminho: --db-target <arquivo.db> ou ZETTEL_BACKUP_DB_TARGET no .env.")
+        return False
+
+    db = Path(target)
+    if not db.parent.is_dir():
+        log.error("Pasta não existe: %s", db.parent)
+        return False
+
+    tmp = db.with_name(db.name + ".tmp")
+    endpoint = f"{URL.rstrip('/')}/api/backup/export?key={KEY}&format=sqlite"
+    if not download(endpoint, tmp):
+        return False
+
+    old = db.with_name(db.name + ".old")
+    try:
+        if db.exists():
+            os.replace(db, old)
+        for suffix in ("-wal", "-shm"):
+            db.with_name(db.name + suffix).unlink(missing_ok=True)
+        os.replace(tmp, db)
+    except OSError as e:
+        log.error("Não foi possível trocar o banco (a API está rodando?): %s", e)
+        if not db.exists() and old.exists():
+            os.replace(old, db)
+        tmp.unlink(missing_ok=True)
+        return False
+
+    size_kb = db.stat().st_size / 1024
+    log.info("Banco substituído: %s  (%.1f KB; anterior em %s)", db, size_kb, old.name)
     return True
 
 
@@ -164,7 +224,14 @@ def main() -> None:
         "--loop", type=int, metavar="MINUTOS",
         help="Executa em loop a cada N minutos (omitir = executa uma vez e sai)"
     )
+    parser.add_argument(
+        "--db-target", nargs="?", const=DB_TARGET, metavar="ARQUIVO.db",
+        help="Baixa o .db e substitui este banco da API local (sem valor = ZETTEL_BACKUP_DB_TARGET)"
+    )
     args = parser.parse_args()
+
+    if args.db_target is not None:
+        sys.exit(0 if replace_db(args.db_target) else 1)
 
     if args.loop:
         log.info("Modo loop: backup a cada %d minuto(s). Ctrl+C para parar.", args.loop)

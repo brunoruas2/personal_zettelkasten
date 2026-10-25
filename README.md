@@ -188,7 +188,12 @@ Under Settings → **Backup key**, generate a 256-bit key (shown exactly once). 
 cp scripts/.env.example scripts/.env   # fill in ZETTEL_BACKUP_URL and ZETTEL_BACKUP_KEY
 python scripts/backup.py               # run once
 python scripts/backup.py --loop 60     # every 60 minutes
+python scripts/backup.py --db-target   # replace a local API's database with the .db snapshot
 ```
+
+`--db-target` downloads the SQLite snapshot and puts it in place of the database at
+`ZETTEL_BACKUP_DB_TARGET` (or the path passed after the flag): the current file becomes `.old`
+and its `-wal`/`-shm` are removed. Stop that API first. See `RESTORE.md`.
 
 Or straight from cron:
 
@@ -400,7 +405,12 @@ Depois:
 cp scripts/.env.example scripts/.env   # preencha ZETTEL_BACKUP_URL e ZETTEL_BACKUP_KEY
 python scripts/backup.py               # uma vez
 python scripts/backup.py --loop 60     # a cada 60 minutos
+python scripts/backup.py --db-target   # substitui o banco de uma API local pelo snapshot .db
 ```
+
+`--db-target` baixa o snapshot SQLite e o põe no lugar do banco em `ZETTEL_BACKUP_DB_TARGET`
+(ou do caminho passado depois da flag): o atual vira `.old` e o `-wal`/`-shm` dele são
+apagados. Pare essa API antes. Ver `RESTORE.md`.
 
 Ou direto no cron:
 
