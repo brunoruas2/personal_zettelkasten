@@ -11,6 +11,7 @@ import { setManualPosition } from '../../lib/positionSync';
 import { loadZettel } from '../../lib/bodySync';
 import { api } from '../../lib/api';
 import { useZettelStore } from '../../store/useZettelStore';
+import { useDrawingFocusStore } from '../../store/useDrawingFocusStore';
 import { HoverCard } from './HoverCard';
 import { CardLayer } from './CardLayer';
 import type { CardActions } from './GalaxyCard';
@@ -562,6 +563,12 @@ export function Galaxy() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Modo desenho: motor parado e camadas fora da composição (sem desmontar).
+  const drawing = useDrawingFocusStore((s) => s.active);
+  useEffect(() => {
+    engineRef.current?.setSuspended(drawing);
+  }, [drawing]);
+
   // Base da barra do topo (px do contêiner): o foco põe o topo do raiz abaixo dela.
   useEffect(() => {
     const root = containerRef.current?.parentElement;
@@ -716,7 +723,7 @@ export function Galaxy() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#05070c]">
-      <div ref={containerRef} className="absolute inset-0">
+      <div ref={containerRef} className={drawing ? 'invisible absolute inset-0' : 'absolute inset-0'}>
         <CardLayer
           ref={cardLayerRef}
           data={data}

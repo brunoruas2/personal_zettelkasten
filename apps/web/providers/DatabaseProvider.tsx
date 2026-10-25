@@ -19,6 +19,7 @@ import {
 import { repo, controller } from '../lib/repo';
 import { downloadBodies } from '../lib/bodySync';
 import { invalidateBody } from '../lib/bodyCache';
+import { deferIfDrawing } from '../lib/drawingFocus';
 
 // Pull zettels from server + sync links table from server. Devolve se o pull
 // de posições falou com o servidor — o congelamento do layout depende disso.
@@ -141,7 +142,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         void downloadBodies().catch(() => {});
 
         // Register manual sync trigger for UI button
-        setSyncNow(async () => {
+        const runSync = async () => {
           try {
             const pulled = await pullAll();
             await loadAll();
@@ -151,7 +152,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
           } catch {
             // Network/auth errors are non-fatal — AuthError already redirects to /login
           }
-        });
+        };
+        // Com o editor de desenho aberto, adia para o fechamento (modo desenho).
+        setSyncNow(async () => deferIfDrawing('sync-now', () => void runSync()));
       } catch {
         // Network/auth errors during init are non-fatal — AuthError already redirects to /login
         // Other errors (e.g. server down) will be retried on next visibility change
@@ -160,19 +163,23 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
     // Reconnect handler: drain queue when coming back online
     const onOnline = () => {
-      if (isAuthenticated) {
+      if (!isAuthenticated) return;
+      // Modo desenho: espera o editor de desenho fechar.
+      deferIfDrawing('online-cycle', () => {
         syncService.drainQueue().then(() => loadAll()).catch(() => {});
         void uploadPending();
         void uploadPendingDrawings();
         void pushPendingPositions().catch(() => {});
         void downloadBodies().catch(() => {});
-      }
+      });
     };
     window.addEventListener('online', onOnline);
 
     // Visibility handler: pull when user returns to the app (cross-device sync)
     const onVisible = () => {
-      if (isAuthenticated && document.visibilityState === 'visible') {
+      if (!isAuthenticated || document.visibilityState !== 'visible') return;
+      // Modo desenho: espera o editor de desenho fechar.
+      deferIfDrawing('visible-cycle', () => {
         pullAll()
           .then(async (pulled) => {
             await loadAll();
@@ -181,7 +188,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             void downloadBodies().catch(() => {});
           })
           .catch(() => {});
-      }
+      });
     };
     document.addEventListener('visibilitychange', onVisible);
 

@@ -137,6 +137,7 @@ export class GalaxyEngine {
   private pinch: { dist: number; cx: number; cy: number } | null = null;
   private keys = new Set<string>();
   private inputEnabled = true;
+  private suspended = false;
   /** Último ponto do mouse sobre o contêiner (âncora do `Z`); null fora dele. */
   private lastPointer: [number, number] | null = null;
 
@@ -247,6 +248,29 @@ export class GalaxyEngine {
   setInputEnabled(enabled: boolean): void {
     this.inputEnabled = enabled;
     if (!enabled) this.keys.clear();
+  }
+
+  /**
+   * Modo desenho: sem rAF e sem entrada até retomar. O voo em andamento não é
+   * cancelado — o primeiro frame depois de retomar já o completa.
+   */
+  setSuspended(on: boolean): void {
+    if (on === this.suspended) return;
+    this.suspended = on;
+    if (on) {
+      cancelAnimationFrame(this.raf);
+      this.raf = 0;
+      this.keys.clear();
+      this.pointers.clear();
+      this.down = null;
+      this.pinch = null;
+      this.pendingMove = null;
+      this.clearHover();
+      return;
+    }
+    this.lastFrame = 0;
+    this.markScene();
+    this.raf = requestAnimationFrame(this.frame);
   }
 
   /**
@@ -530,6 +554,7 @@ export class GalaxyEngine {
   // --- entrada ---
 
   private onPointerDown = (e: PointerEvent): void => {
+    if (this.suspended) return;
     const target = e.target instanceof Element ? e.target : null;
     // Links/botões/campos dos cards (e qualquer [data-no-pan]) são do card.
     if (target?.closest('a, button, input, textarea, select, [data-no-pan]')) return;
@@ -563,6 +588,7 @@ export class GalaxyEngine {
   }
 
   private onPointerMove = (e: PointerEvent): void => {
+    if (this.suspended) return;
     const [x, y] = this.localPoint(e);
     if (e.pointerType === 'mouse') this.lastPointer = [x, y];
     const p = this.pointers.get(e.pointerId);
@@ -660,6 +686,7 @@ export class GalaxyEngine {
   };
 
   private onWheel = (e: WheelEvent): void => {
+    if (this.suspended) return;
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.h : 1;
     const pinch = e.ctrlKey || e.metaKey;
     // Card com overflow: o gesto é dele. Com espaço na direção, o navegador
@@ -706,7 +733,7 @@ export class GalaxyEngine {
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (!this.inputEnabled || e.altKey || e.ctrlKey || e.metaKey || isTypingTarget(e.target)) return;
+    if (!this.inputEnabled || this.suspended || e.altKey || e.ctrlKey || e.metaKey || isTypingTarget(e.target)) return;
     if (e.key.startsWith('Arrow')) {
       e.preventDefault();
       this.keys.add(e.key);

@@ -22,6 +22,7 @@ import {
   type SketchTool,
 } from './SketchCanvas'
 import { sceneToSvg } from '../lib/sketchRender'
+import { useDrawingFocusStore } from '../store/useDrawingFocusStore'
 import {
   drawingStore,
   saveDrawing,
@@ -132,6 +133,14 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   savingRef.current = saving
   const fullscreenRef = React.useRef(false)
   fullscreenRef.current = fullscreen
+
+  // Modo desenho: galáxia suspensa e sync de background adiado enquanto o modal existe.
+  // Layout effect: liga antes da primeira pintura do canvas.
+  React.useLayoutEffect(() => {
+    const { enter, exit } = useDrawingFocusStore.getState()
+    enter()
+    return exit
+  }, [])
 
   // Scroll-lock do body (position: fixed + offset salvo), o padrão do LinkPickerModal.
   React.useEffect(() => {
