@@ -42,6 +42,11 @@ type Handler struct {
 	drawingQuota int64
 	// Posições na galáxia: opcionais (ver WithPositions em positions.go).
 	positions *positions.Repository
+	// Snapshot SQLite: opcional (ver WithSnapshot em sqlite.go). snapshotTmp
+	// vazio = os.TempDir().
+	snapshotDB  string
+	snapshotSem chan struct{}
+	snapshotTmp string
 }
 
 func NewHandler(repo *zettel.Repository, userLookup UserLookup, imageRepo *images.Repository) *Handler {
@@ -53,6 +58,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/export/json", h.exportJSON)
 	r.Get("/export/markdown", h.exportMarkdown)
 	r.Get("/export/zip", h.exportZip)
+	r.Get("/export/sqlite", h.exportSQLite)
 	r.Post("/import/json", h.importJSON)
 	r.Post("/import/zip", h.importZip)
 	return r
@@ -97,8 +103,12 @@ func (h *Handler) BackupExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.URL.Query().Get("format") == "zip" {
+	switch r.URL.Query().Get("format") {
+	case "zip":
 		h.exportZipForUser(w, user.ID)
+		return
+	case "sqlite":
+		h.exportSQLiteForUser(w, r, user.ID)
 		return
 	}
 	h.exportJSONForUser(w, user.ID)

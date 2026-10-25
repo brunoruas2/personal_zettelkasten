@@ -6,6 +6,8 @@ Bate no endpoint /api/backup/export e salva o backup localmente.
 Por padrão baixa o formato .zip, que é o único backup completo: leva os zettels
 e os bytes das imagens. O .json leva apenas texto e metadados das imagens —
 embutir os bytes em base64 inflaria o arquivo a ponto de não ser importável.
+O .db é o próprio banco SQLite do servidor com só os seus dados: em caso de
+falha crítica, a API roda localmente sobre ele (ver RESTORE.md na raiz).
 
 Mantém os N backups mais recentes e descarta os mais antigos.
 
@@ -18,7 +20,7 @@ com os mesmos nomes (útil para não deixar a chave no código):
   ZETTEL_BACKUP_KEY  — chave de 64 hex gerada em Configurações > Chave de backup
   ZETTEL_BACKUP_DIR  — pasta onde os arquivos serão salvos
   ZETTEL_BACKUP_KEEP — quantos arquivos manter (padrão: 30)
-  ZETTEL_BACKUP_FORMAT — 'zip' (padrão, completo) ou 'json' (só texto)
+  ZETTEL_BACKUP_FORMAT — 'zip' (padrão, completo), 'sqlite' (banco .db) ou 'json' (só texto)
 
 Uso
 ---
@@ -82,7 +84,7 @@ DIR = str(
     else Path(__file__).parent / _dir_env
 )
 KEEP = int(os.environ.get("ZETTEL_BACKUP_KEEP", "30"))   # nº de arquivos a manter
-FORMAT = os.environ.get("ZETTEL_BACKUP_FORMAT", "zip").lower()  # zip (completo) ou json
+FORMAT = os.environ.get("ZETTEL_BACKUP_FORMAT", "zip").lower()  # zip (completo), sqlite ou json
 # ---------------------------------------------------------------------------
 
 logging.basicConfig(
@@ -99,8 +101,9 @@ def run_backup() -> bool:
         log.error("ZETTEL_BACKUP_KEY não configurada. Edite o script ou defina a variável de ambiente.")
         return False
 
-    ext = "zip" if FORMAT == "zip" else "json"
-    endpoint = f"{URL.rstrip('/')}/api/backup/export?key={KEY}&format={ext}"
+    fmt = FORMAT if FORMAT in ("zip", "sqlite") else "json"
+    ext = "db" if fmt == "sqlite" else fmt
+    endpoint = f"{URL.rstrip('/')}/api/backup/export?key={KEY}&format={fmt}"
     out_dir  = Path(DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,6 +125,8 @@ def run_backup() -> bool:
         log.error("HTTP %s — %s", e.code, e.reason)
         if e.code == 401:
             log.error("Chave inválida ou revogada. Gere uma nova em Configurações > Chave de backup.")
+        elif e.code == 429:
+            log.error("Já há um export do banco em andamento no servidor; tenta de novo no próximo ciclo.")
         return False
     except urllib.error.URLError as e:
         log.error("Falha de rede: %s", e.reason)
@@ -133,14 +138,17 @@ def run_backup() -> bool:
     size_kb = out_path.stat().st_size / 1024
     log.info("Salvo: %s  (%.1f KB)", out_path, size_kb)
 
-    prune(out_dir)
+    prune(out_dir, ext)
     return True
 
 
-def prune(out_dir: Path) -> None:
-    """Remove backups mais antigos, mantendo os KEEP mais recentes."""
+def prune(out_dir: Path, ext: str) -> None:
+    """Remove backups mais antigos do mesmo formato, mantendo os KEEP mais recentes.
+
+    Por formato: trocar de zip para sqlite não pode apagar os .zip antigos.
+    """
     files = sorted(
-        [f for f in out_dir.glob("zettelkasten-*") if f.suffix in (".json", ".zip")],
+        [f for f in out_dir.glob("zettelkasten-*") if f.suffix == f".{ext}"],
         key=lambda f: f.stat().st_mtime,
         reverse=True,
     )

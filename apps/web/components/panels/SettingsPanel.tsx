@@ -33,14 +33,19 @@ type ImportState =
   | { status: 'importing'; current: number; total: number }
   | { status: 'done'; imported: number; skipped: number; errors: string[] }
 
+class ExportBusyError extends Error {}
+
 async function downloadFile(path: string, filename: string) {
   const res = await api.get(path)
+  if (res.status === 429) throw new ExportBusyError()
   if (!res.ok) throw new Error('Falha ao exportar')
+  // O snapshot .db leva o username no nome: o servidor decide.
+  const served = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = filename
+  a.download = served ?? filename
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -74,7 +79,7 @@ function formatKeyDate(ms: number): string {
 export function SettingsPanel({ onBack, embedded = false }: { onBack?: () => void; embedded?: boolean }) {
   const router = useRouter()
   const offlineRouter = useOfflineRouter()
-  const [exporting, setExporting] = useState<'json' | 'markdown' | 'zip' | null>(null)
+  const [exporting, setExporting] = useState<'json' | 'markdown' | 'zip' | 'sqlite' | null>(null)
   const [imagePrefetch, setImagePrefetch] = useState(true)
   const [compressionLevel, setCompressionLevel] = useState<CompressionLevel>('strong')
   const [exportError, setExportError] = useState<string | null>(null)
@@ -393,6 +398,20 @@ export function SettingsPanel({ onBack, embedded = false }: { onBack?: () => voi
       await downloadFile('/api/export/zip', `zettelkasten-backup-${today()}.zip`)
     } catch {
       setExportError('Erro ao exportar. Tente novamente.')
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  async function handleExportSQLite() {
+    setExporting('sqlite')
+    setExportError(null)
+    try {
+      await downloadFile('/api/export/sqlite', `zettelkasten-${today()}.db`)
+    } catch (err) {
+      setExportError(err instanceof ExportBusyError
+        ? 'Já há um export do banco em andamento. Tente de novo em um minuto.'
+        : 'Erro ao exportar. Tente novamente.')
     } finally {
       setExporting(null)
     }
@@ -1234,11 +1253,20 @@ export function SettingsPanel({ onBack, embedded = false }: { onBack?: () => voi
               >
                 {exporting === 'zip' ? 'Gerando...' : 'Backup completo (.zip)'}
               </button>
+              <button
+                onClick={handleExportSQLite}
+                disabled={exporting !== null}
+                className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {exporting === 'sqlite' ? 'Gerando...' : 'Baixar banco (.db)'}
+              </button>
             </div>
             <p className="mb-4 text-xs text-zinc-500">
               O backup <strong>.zip</strong> é o único que inclui as imagens. O <strong>.json</strong> leva
               apenas o texto e os metadados das imagens — embutir os bytes em base64 inflaria o arquivo
-              a ponto de não ser importável de volta.
+              a ponto de não ser importável de volta. O <strong>.db</strong> é o próprio banco do servidor
+              com só os seus dados: em caso de falha do servidor, a API roda localmente sobre ele e você
+              entra com a mesma senha (ver <code>RESTORE.md</code> no repositório).
             </p>
             <div className="flex flex-wrap gap-3">
               <button

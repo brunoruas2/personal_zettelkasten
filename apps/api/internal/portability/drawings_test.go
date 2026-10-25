@@ -35,6 +35,7 @@ type env struct {
 	srv     http.Handler
 	dRepo   *drawings.Repository
 	posRepo *positions.Repository
+	dbPath  string
 	userA   string
 	userB   string
 	tokenA  string
@@ -43,7 +44,8 @@ type env struct {
 
 func newEnv(t *testing.T, quota int64) *env {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "t.db"))
+	dbPath := filepath.Join(t.TempDir(), "t.db")
+	database, err := db.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,9 +68,11 @@ func newEnv(t *testing.T, quota int64) *env {
 	zHandler := zettel.NewHandler(zRepo, images.NewRepository(database)).WithDrawings(dRepo)
 	pHandler := portability.NewHandler(zRepo, authRepo, images.NewRepository(database)).
 		WithDrawings(dRepo, quota).
-		WithPositions(posRepo)
+		WithPositions(posRepo).
+		WithSnapshot(dbPath)
 
 	r := chi.NewRouter()
+	r.Get("/api/backup/export", pHandler.BackupExport)
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireAuthOrKey(jwtSecret, authRepo))
 		r.Mount("/api/zettels", zHandler.Routes())
@@ -77,7 +81,7 @@ func newEnv(t *testing.T, quota int64) *env {
 		r.Use(auth.RequireAuth(jwtSecret))
 		r.Mount("/api", pHandler.Routes())
 	})
-	return &env{srv: r, dRepo: dRepo, posRepo: posRepo, userA: a.ID, userB: b.ID, tokenA: token(a.ID), tokenB: token(b.ID)}
+	return &env{srv: r, dbPath: dbPath, dRepo: dRepo, posRepo: posRepo, userA: a.ID, userB: b.ID, tokenA: token(a.ID), tokenB: token(b.ID)}
 }
 
 func (e *env) do(method, path, token string, body io.Reader) *httptest.ResponseRecorder {

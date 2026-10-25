@@ -62,7 +62,8 @@ func main() {
 
 	portabilityHandler := portability.NewHandler(zettelRepo, authRepo, imageRepo).
 		WithDrawings(drawingRepo, drawingQuota).
-		WithPositions(positionRepo)
+		WithPositions(positionRepo).
+		WithSnapshot(dbPath)
 
 	startOrphanPurge(imageRepo, drawingRepo)
 
