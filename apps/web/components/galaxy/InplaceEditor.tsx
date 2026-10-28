@@ -13,6 +13,7 @@ import { ChordKeypad, KEYPAD_HEIGHT } from '../ChordKeypad';
 import { LinkPickerModal } from '../LinkPickerModal';
 import { MarkdownCheatsheet } from '../MarkdownCheatsheet';
 import { MarkdownRenderer } from '../MarkdownRenderer';
+import { LinksFooter } from './LinksFooter';
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'offline' | 'error';
 
@@ -37,8 +38,10 @@ export const InplaceEditor = forwardRef<
     autoFocusTitle?: boolean;
     onStatus: (s: SaveStatus) => void;
     onCreateLink: (title: string) => void | Promise<void>;
+    /** Chip do rodapé de links: navega até o zettel (o editor grava antes). */
+    onNavigateLink?: (id: string) => void;
   }
->(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink }, ref) {
+>(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink }, ref) {
   const updateZettel = useZettelStore((s) => s.updateZettel);
   const zettels = useZettelStore((s) => s.zettels);
   const allTags = useMemo(() => [...new Set(zettels.flatMap((z) => z.tags))].sort(), [zettels]);
@@ -144,6 +147,21 @@ export const InplaceEditor = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Chip do rodapé: grava o que está pendente antes de sair do zettel.
+  const flushAndNavigate = useCallback(
+    (id: string) => {
+      void (async () => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = null;
+        await savingRef.current;
+        await saveContent();
+        await saveTitle();
+        onNavigateLink?.(id);
+      })();
+    },
+    [onNavigateLink, saveContent, saveTitle],
+  );
+
   const mark = (cmd: 'bold' | 'italic' | 'strike' | 'code') => {
     if (!editor) return;
     const chain = editor.chain().focus();
@@ -224,8 +242,11 @@ export const InplaceEditor = forwardRef<
             dropUp
           />
         </div>
+        {/* Celular: o rodapé rola com o conteúdo e termina acima da barra fixa. */}
+        {isMobile && onNavigateLink && <LinksFooter id={zettel.id} onNavigate={flushAndNavigate} compact className="-mx-5" />}
         {isMobile && <div style={{ height: `calc(${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom))` }} />}
       </div>
+      {!isMobile && onNavigateLink && <LinksFooter id={zettel.id} onNavigate={flushAndNavigate} compact className="shrink-0" />}
 
       {!isMobile && (
         <div className="flex shrink-0 items-center gap-1 border-t border-white/10 px-4 py-1.5" data-no-pan>

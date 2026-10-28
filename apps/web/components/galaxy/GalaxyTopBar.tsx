@@ -5,6 +5,7 @@ import { useSyncStore } from '../../store/useSyncStore';
 import { useAuth } from '../../providers/AuthProvider';
 import type { SyncStatus } from '../../lib/sync';
 import type { SaveStatus } from './InplaceEditor';
+import { hintOf, keysOf } from '../../lib/galaxy/shortcuts';
 
 const SAVE_LABEL: Record<SaveStatus, string> = {
   idle: '',
@@ -38,7 +39,17 @@ const SYNC_DOT: Record<SyncStatus, string> = {
   error: 'bg-red-400',
 };
 
-export type MenuAction = 'new' | 'search' | 'tags' | 'settings' | 'passkeys';
+export type MenuAction = 'new' | 'search' | 'tags' | 'settings' | 'passkeys' | 'palette' | 'help';
+
+/** Parada da trilha do Voltar. `fromTop === null`: o zettel atual (ou o "…" de paradas mais antigas). */
+export interface TrailItem {
+  key: string;
+  fromTop: number | null;
+  label: string;
+  /** Zettel apagado: continua navegável como vista. */
+  deleted: boolean;
+  more?: boolean;
+}
 
 /** Barra flutuante: menu + marca + sync à esquerda, busca no centro, "sem lugar". */
 export function GalaxyTopBar({
@@ -49,7 +60,22 @@ export function GalaxyTopBar({
   onMenu,
   onBack,
   backTitle,
+  onForward,
+  forwardTitle,
+  trail = [],
+  onTrail,
+  tagFilter,
+  onClearTag,
 }: {
+  /** Presente só com algo a avançar (depois de um Voltar). */
+  onForward?: () => void;
+  forwardTitle?: string | null;
+  /** Últimas paradas do Voltar até o zettel atual (só a partir de `lg`). */
+  trail?: TrailItem[];
+  onTrail?: (fromTop: number) => void;
+  /** Filtro de tag ativo (tag e quantos zettels visíveis a têm). */
+  tagFilter?: { tag: string; count: number } | null;
+  onClearTag?: () => void;
   unplaced: number;
   /** Estado do autosave da edição; enquanto houver, substitui o do sync. */
   saveStatus: SaveStatus;
@@ -95,11 +121,37 @@ export function GalaxyTopBar({
           <button
             type="button"
             onClick={onBack}
-            title={backTitle ? `Voltar para «${backTitle}» (X)` : 'Voltar à vista anterior (X)'}
+            title={`${backTitle ? `Voltar para «${backTitle}»` : 'Voltar à vista anterior'}${hintOf('back')}`}
             className="rounded-xl border border-white/10 bg-[#0e121a]/90 px-3 py-2 text-sm text-[#e6e9f0] shadow-lg hover:bg-[#141925]"
           >
             ← <span className="hidden sm:inline">Voltar</span>
           </button>
+        )}
+        {onForward && (
+          <button
+            type="button"
+            onClick={onForward}
+            title={forwardTitle ? `Avançar para «${forwardTitle}»` : 'Avançar à vista seguinte'}
+            className="rounded-xl border border-white/10 bg-[#0e121a]/90 px-3 py-2 text-sm text-[#e6e9f0] shadow-lg hover:bg-[#141925]"
+          >
+            <span className="hidden sm:inline">Avançar</span> →
+          </button>
+        )}
+        {tagFilter && (
+          <div className="flex items-center gap-1 rounded-xl border border-brand/40 bg-[#0e121a]/90 py-1 pl-3 pr-1 text-sm text-[#e6e9f0] shadow-lg">
+            <span className="max-w-[10rem] truncate">
+              #{tagFilter.tag} <span className="text-xs text-[#8b93a3]">· {tagFilter.count}</span>
+            </span>
+            <button
+              type="button"
+              onClick={onClearTag}
+              aria-label={`Limpar o filtro da tag ${tagFilter.tag} (Esc)`}
+              title="Limpar o filtro (Esc)"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#c9cfdb] hover:bg-white/10"
+            >
+              ×
+            </button>
+          </div>
         )}
       </div>
 
@@ -110,8 +162,37 @@ export function GalaxyTopBar({
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <span className="min-w-0 flex-1 truncate">Buscar na galáxia</span>
-        <kbd className="hidden rounded border border-white/10 px-1.5 text-[11px] lg:inline">Alt B</kbd>
+        <kbd className="hidden rounded border border-white/10 px-1.5 text-[11px] lg:inline">{keysOf("search")}</kbd>
       </button>
+
+      {trail.length > 0 && (
+        <nav
+          aria-label="Trilha de zettels visitados"
+          className="pointer-events-auto absolute left-4 top-[4.25rem] hidden max-w-[calc(100%-2rem)] items-center gap-1 overflow-hidden rounded-lg border border-white/10 bg-[#0e121a]/90 px-2 py-1 text-xs shadow-lg lg:flex"
+        >
+          {trail.map((it, i) => (
+            <span key={it.key} className="flex min-w-0 items-center gap-1">
+              {i > 0 && <span aria-hidden="true" className="text-[#6f7787]">›</span>}
+              {it.fromTop !== null && onTrail ? (
+                <button
+                  type="button"
+                  onClick={() => onTrail(it.fromTop!)}
+                  className={`max-w-[10rem] truncate rounded px-1.5 py-0.5 hover:bg-white/10 ${it.deleted ? 'italic text-[#8b93a3]' : 'text-[#c9cfdb]'}`}
+                >
+                  {it.deleted ? '(apagado)' : it.label}
+                </button>
+              ) : (
+                <span
+                  aria-current={it.more ? undefined : 'location'}
+                  className={`max-w-[10rem] truncate px-1.5 py-0.5 ${it.more ? 'text-[#8b93a3]' : 'font-medium text-[#f5f3ff]'}`}
+                >
+                  {it.label}
+                </span>
+              )}
+            </span>
+          ))}
+        </nav>
+      )}
 
       <div className="pointer-events-auto hidden w-[9.5rem] justify-end lg:flex">
         {unplaced > 0 && (
@@ -164,10 +245,12 @@ function GalaxyMenu({
     // Temporário: até a criação no lugar (duplo clique na galáxia), o novo
     // zettel nasce na página antiga.
     { action: 'new', label: 'Novo zettel' },
-    { action: 'search', label: 'Buscar', hint: 'Alt B' },
+    { action: 'palette', label: 'Paleta de comandos', hint: keysOf('palette') },
+    { action: 'search', label: 'Buscar', hint: keysOf('search') },
     { action: 'tags', label: 'Tags' },
-    { action: 'settings', label: 'Configurações', hint: 'Alt ,' },
+    { action: 'settings', label: 'Configurações', hint: keysOf('settings') },
     { action: 'passkeys', label: 'Passkeys' },
+    { action: 'help', label: 'Atalhos', hint: keysOf('help') },
   ];
 
   return (
@@ -241,14 +324,14 @@ export function ZoomControls({
   return (
     <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2 font-geist">
       <div className="flex items-center overflow-hidden rounded-xl border border-white/10 bg-[#0e121a]/90 shadow-lg">
-        <button type="button" onClick={onZoomOut} className={btn} title="Afastar (−)">−</button>
+        <button type="button" onClick={onZoomOut} className={btn} title={`Afastar${hintOf('zoom-out')}`}>−</button>
         <span className="min-w-[3.5rem] text-center text-xs tabular-nums text-[#8b93a3]">{formatScale(scale)}</span>
-        <button type="button" onClick={onZoomIn} className={btn} title="Aproximar (+)">+</button>
+        <button type="button" onClick={onZoomIn} className={btn} title={`Aproximar${hintOf('zoom-in')}`}>+</button>
       </div>
       <button
         type="button"
         onClick={onFit}
-        title="Ver tudo (0) · Z alterna entre 150% e Ver tudo"
+        title={`Ver tudo${hintOf('fit')} · ${keysOf('zoom-max')} alterna entre 150% e Ver tudo`}
         className="rounded-xl border border-white/10 bg-[#0e121a]/90 px-3 py-1.5 text-sm text-[#c9cfdb] shadow-lg hover:bg-white/5"
       >
         Ver tudo

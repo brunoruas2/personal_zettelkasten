@@ -21,6 +21,8 @@ export const CardLayer = memo(forwardRef<
     ids: string[];
     heavy: boolean;
     highlightId: string | null;
+    /** Tag do filtro ativo (marca o chip nos cards). */
+    activeTag: string | null;
     editingId: string | null;
     draggingId: string | null;
     editingZettel: Zettel | null;
@@ -29,7 +31,7 @@ export const CardLayer = memo(forwardRef<
     actions: CardActions;
   }
 >(function CardLayer(
-  { data, ids, heavy, highlightId, editingId, draggingId, editingZettel, autoFocusTitle, editorRef, actions },
+  { data, ids, heavy, highlightId, activeTag, editingId, draggingId, editingZettel, autoFocusTitle, editorRef, actions },
   ref,
 ) {
   const all = [...ids];
@@ -49,6 +51,7 @@ export const CardLayer = memo(forwardRef<
               y={data.ys[idx]}
               heavy={heavy}
               highlighted={highlightId === id}
+              activeTag={activeTag}
               editing={editing}
               editingZettel={editing ? editingZettel : null}
               autoFocusTitle={editing && autoFocusTitle}

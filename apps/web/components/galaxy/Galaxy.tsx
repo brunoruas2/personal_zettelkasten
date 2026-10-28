@@ -1,7 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { analyzeSubtree, subtreeDepths, type Zettel, type ZettelMeta } from '@zettelkasten/core';
+import {
+  analyzeSubtree,
+  firstLine,
+  relatedZettels,
+  subtreeDepths,
+  type Zettel,
+  type ZettelMeta,
+} from '@zettelkasten/core';
+import { getCachedBody } from '../../lib/bodyCache';
+import { useLinkIndex } from '../../hooks/useLinkIndex';
+import { spatialNeighborIds } from '../../lib/galaxy/spatial';
+import { describeRelated, type RelatedItem } from '../../lib/galaxy/related';
 import { useGalaxyData } from './useGalaxyData';
 import { FLY_MIN_SCALE, GalaxyEngine, LOD_CARDS, LOD_SILHOUETTE, isTypingTarget } from '../../lib/galaxy/engine';
 import { loadCamera, type Camera } from '../../lib/galaxy/camera';
@@ -22,8 +33,13 @@ import { ExportScopeModal } from '../ExportScopeModal';
 import { pushRecent } from '../../lib/recentZettels';
 import { DeleteZettelModal } from './DeleteZettelModal';
 import { FocusPanel, type FocusItem } from './FocusPanel';
-import { GalaxyTopBar, ZoomControls, type MenuAction } from './GalaxyTopBar';
+import { GalaxyTopBar, ZoomControls, type MenuAction, type TrailItem } from './GalaxyTopBar';
 import { GalaxyModal } from './GalaxyModal';
+import { CommandPalette, type PaletteAction } from './CommandPalette';
+import { Minimap } from './Minimap';
+import { ShortcutsHelp } from './ShortcutsHelp';
+import { keysOf } from '../../lib/galaxy/shortcuts';
+import { useSyncStore } from '../../store/useSyncStore';
 import { GalaxySearch, type SearchFilters } from './GalaxySearch';
 import { SettingsPanel } from '../panels/SettingsPanel';
 import { TagsPanel } from '../panels/TagsPanel';
@@ -32,6 +48,8 @@ import { PasskeysPanel } from '../panels/PasskeysPanel';
 type Modal = 'settings' | 'tags' | 'passkeys' | null;
 
 const CARD_HIDE_DELAY_MS = 150;
+/** Paradas mostradas na trilha do Voltar. */
+const TRAIL_MAX = 5;
 const HIGHLIGHT_MS = 2000;
 /** Zoom a partir do qual os cards podem renderizar diagramas (câmera parada). */
 const HEAVY_MIN_SCALE = 0.6;
@@ -75,11 +93,16 @@ export function Galaxy() {
   const dataRef = useRef(data);
   dataRef.current = data;
   const links = useZettelStore((s) => s.links);
+  const linkIndex = useLinkIndex();
+  const linkIndexRef = useRef(linkIndex);
+  linkIndexRef.current = linkIndex;
   const createZettel = useZettelStore((s) => s.createZettel);
   const deleteZettel = useZettelStore((s) => s.deleteZettel);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GalaxyEngine | null>(null);
+  // Mesma instância, como estado: o minimapa só monta depois que o motor existe.
+  const [engineInst, setEngineInst] = useState<GalaxyEngine | null>(null);
   const cardLayerRef = useRef<HTMLDivElement>(null);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [settled, setSettled] = useState(false);
@@ -94,7 +117,18 @@ export function Galaxy() {
   const overCardRef = useRef(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Filtro de tag: esmaece na câmera o que não tem a tag (não filtra o índice).
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const tagFilterRef = useRef<string | null>(null);
+  tagFilterRef.current = tagFilter;
+  // 1ª linha do corpo das silhuetas: só corpos já em cache ou no Dexie local.
+  const linesRef = useRef(new Map<string, string>());
+  const linesAtRef = useRef(new Map<string, number>());
+  const linesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [modal, setModal] = useState<Modal>(null);
+  const [palette, setPalette] = useState(false);
+  const [help, setHelp] = useState(false);
   const [search, setSearch] = useState<SearchFilters | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [mobile, setMobile] = useState(false);
@@ -132,7 +166,11 @@ export function Galaxy() {
   /** Último zettel para onde a câmera voou (o "atual" de um salto). */
   const currentIdRef = useRef<string | null>(null);
   const [backTop, setBackTop] = useState<{ title: string | null } | null>(null);
+  const [forwardTop, setForwardTop] = useState<{ title: string | null } | null>(null);
+  const [trail, setTrail] = useState<TrailItem[]>([]);
   const [readerCanBack, setReaderCanBack] = useState(false);
+  const syncBackRef = useRef<() => void>(() => {});
+  const [readerCanForward, setReaderCanForward] = useState(false);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -155,6 +193,8 @@ export function Galaxy() {
     setZParam(id);
     pushRecent(id);
     highlightCard(id);
+    // O "atual" da trilha mudou.
+    syncBackRef.current();
   }, []);
 
   // No nível de cards o destaque do voo é o contorno do próprio card.
@@ -181,7 +221,24 @@ export function Galaxy() {
     const top = stack.peek();
     setBackTop(top ? { title: top.id ? titleOf(top.id) : null } : null);
     setReaderCanBack(stack.some((e) => e.id !== null && metaExists(e.id)));
+    const next = stack.peekForward();
+    setForwardTop(next ? { title: next.id ? titleOf(next.id) : null } : null);
+    setReaderCanForward(stack.forwardSize > 0);
+    // Trilha: últimas paradas (da mais antiga) + o zettel atual.
+    const recent = stack.recent(TRAIL_MAX);
+    const items: TrailItem[] = recent.map((e, j) => ({
+      key: `${j}-${e.id ?? 'view'}`,
+      fromTop: recent.length - 1 - j,
+      label: e.id === null ? 'Vista' : (titleOf(e.id) ?? '(apagado)') || 'Sem título',
+      deleted: e.id !== null && !metaExists(e.id),
+    }));
+    const cur = currentIdRef.current;
+    if (items.length > 0 && cur && metaExists(cur)) {
+      items.push({ key: `cur-${cur}`, fromTop: null, label: titleOf(cur) || 'Sem título', deleted: false });
+    }
+    setTrail(stack.size > TRAIL_MAX ? [{ key: 'more', fromTop: null, label: '…', deleted: false, more: true }, ...items] : items);
   }, []);
+  syncBackRef.current = syncBack;
 
   /** Empilha de onde se salta: o zettel atual, se ainda está na tela, e a câmera. */
   const pushBack = useCallback(
@@ -242,11 +299,28 @@ export function Galaxy() {
     [pushBack, showInReader],
   );
 
+  /** Estado de agora para o Avançar: zettel na leitura e câmera. */
+  const readerState = () => ({ id: maximizedIdRef.current, camera: engineRef.current?.getCamera() ?? { x: 0, y: 0, scale: 1 } });
+
   /** "← Voltar" da leitura: pula entradas sem zettel ou com zettel apagado. */
   const goBackInReader = useCallback(() => {
+    const now = readerState();
     const e = backStackRef.current.popUntil((x) => x.id !== null && metaExists(x.id));
+    if (e?.id) backStackRef.current.pushForward(now);
     syncBack();
     if (e?.id) showInReader(e.id);
+  }, [showInReader, syncBack]);
+
+  /** "Avançar →" da leitura: troca na hora, sem animação, como o Voltar. */
+  const goForwardInReader = useCallback(() => {
+    const stack = backStackRef.current;
+    let f = stack.popForward();
+    while (f && !(f.id !== null && metaExists(f.id))) f = stack.popForward();
+    if (f?.id) {
+      stack.pushFromForward(readerState());
+      syncBack();
+      showInReader(f.id);
+    } else syncBack();
   }, [showInReader, syncBack]);
 
   const closeReader = useCallback(() => {
@@ -278,12 +352,8 @@ export function Galaxy() {
     setAutoFocusTitle(false);
   }, []);
 
-  /** "← Voltar" da galáxia: restaura a câmera de onde se saltou. */
-  const goBack = useCallback(async () => {
-    const e = backStackRef.current.pop();
-    syncBack();
-    if (!e) return;
-    await exitEdit();
+  /** Restaura uma entrada da pilha: câmera guardada e, se o zettel existe, `?z=` e destaque. */
+  const restoreEntry = useCallback((e: { id: string | null; camera: Camera }) => {
     const idx = e.id ? dataRef.current.indexById.get(e.id) : undefined;
     engineRef.current?.flyToCamera(e.camera, idx ?? -1);
     currentIdRef.current = idx !== undefined ? e.id : null;
@@ -291,7 +361,52 @@ export function Galaxy() {
       setZParam(e.id);
       highlightCard(e.id);
     }
-  }, [exitEdit, syncBack]);
+    syncBack();
+  }, [syncBack]);
+
+  /** De onde se parte ao voltar/avançar: o zettel atual (se na tela) e a câmera de agora. */
+  const currentState = (): { id: string | null; camera: Camera } => ({
+    id: currentInView(),
+    camera: engineRef.current?.getCamera() ?? { x: 0, y: 0, scale: 1 },
+  });
+
+  /** "← Voltar" da galáxia: restaura a câmera de onde se saltou; o atual vai para o avançar. */
+  const goBack = useCallback(async () => {
+    const now = currentState();
+    const e = backStackRef.current.pop();
+    if (e) backStackRef.current.pushForward(now);
+    syncBack();
+    if (!e) return;
+    await exitEdit();
+    restoreEntry(e);
+  }, [exitEdit, restoreEntry, syncBack]);
+
+  /** "Avançar →": desfaz o último Voltar; o atual volta para a pilha do Voltar. */
+  const goForward = useCallback(async () => {
+    const now = currentState();
+    const f = backStackRef.current.popForward();
+    if (!f) return;
+    backStackRef.current.pushFromForward(now);
+    syncBack();
+    await exitEdit();
+    restoreEntry(f);
+  }, [exitEdit, restoreEntry, syncBack]);
+
+  /** Parada da trilha: volta até ela (`fromTop` = posições abaixo do topo); o que ficou à frente vai para o avançar. */
+  const goBackTo = useCallback(
+    async (fromTop: number) => {
+      const stack = backStackRef.current;
+      const now = currentState();
+      const r = stack.popBack(fromTop);
+      if (!r) return;
+      stack.pushForward(now);
+      for (let i = r.skipped.length - 1; i >= 0; i--) stack.pushForward(r.skipped[i]);
+      syncBack();
+      await exitEdit();
+      restoreEntry(r.reached);
+    },
+    [exitEdit, restoreEntry, syncBack],
+  );
 
   const startEdit = useCallback(
     async (zettel: Zettel, opts: { titleFocus?: boolean; mobile?: boolean } = {}) => {
@@ -456,6 +571,109 @@ export function Galaxy() {
     await setManualPosition(id, target.x, target.y);
   }, []);
 
+  /**
+   * Chip do rodapé de links (card e editor): voa até o zettel, empilhando no
+   * Voltar. Sem lugar na galáxia (ou oculto) não há card: abre em tela cheia.
+   * O editor já gravou o que estava pendente antes de chamar.
+   */
+  const navigateToId = useCallback(
+    async (id: string) => {
+      if (dataRef.current.indexById.has(id)) {
+        await exitEdit();
+        jumpTo(id);
+      } else {
+        await openFullscreen(id);
+      }
+    },
+    [exitEdit, jumpTo, openFullscreen],
+  );
+
+  /** Relacionados de um zettel (tags, 2º grau, proximidade), sob demanda. */
+  const relatedOf = useCallback((id: string): RelatedItem[] => {
+    const store = useZettelStore.getState();
+    const metas = dataRef.current.metas;
+    const byId = dataRef.current.indexById;
+    const list = relatedZettels({
+      id,
+      metas,
+      neighborsOf: (x) => linkIndexRef.current.neighbors(x).filter((n) => byId.has(n)),
+      spatialNeighbors: spatialNeighborIds(dataRef.current, id),
+      excludedTags: store.graphExcludedTags,
+    });
+    return list.map((r) => describeRelated(r, metas[byId.get(r.id)!]?.title ?? ''));
+  }, []);
+
+  /** Chip de tag: liga o filtro; clicar na tag ativa desliga. Uma tag por vez. */
+  const toggleTag = useCallback((tag: string) => {
+    setTagFilter((cur) => (cur === tag ? null : tag));
+  }, []);
+
+  /**
+   * Carrega, em lote e sem rede, a 1ª linha das silhuetas na tela (as 60 mais
+   * próximas do centro). Debounce de 150 ms: pan contínuo não dispara uma
+   * carga por frame. O texto vem do cache LRU ou do Dexie local; `updatedAt`
+   * decide se a linha guardada ainda vale.
+   */
+  const loadSilhouetteLines = useCallback((ids: string[]) => {
+    if (linesTimer.current) clearTimeout(linesTimer.current);
+    if (ids.length === 0) return;
+    linesTimer.current = setTimeout(() => {
+      linesTimer.current = null;
+      const d = dataRef.current;
+      const lines = linesRef.current;
+      const at = linesAtRef.current;
+      const need: string[] = [];
+      let changed = false;
+      for (const id of ids) {
+        const idx = d.indexById.get(id);
+        if (idx === undefined) continue;
+        const meta = d.metas[idx];
+        if (at.get(id) === meta.updatedAt) continue;
+        const cached = getCachedBody(id);
+        if (cached !== undefined) {
+          lines.set(id, firstLine(cached, meta.title));
+          at.set(id, meta.updatedAt);
+          changed = true;
+        } else if (meta.bodyAt !== null) {
+          need.push(id);
+        }
+      }
+      const publish = () => {
+        // Teto de memória: descarta as linhas mais antigas.
+        while (lines.size > 3000) {
+          const oldest = lines.keys().next().value as string;
+          lines.delete(oldest);
+          at.delete(oldest);
+        }
+        engineRef.current?.setFirstLines(lines);
+      };
+      if (need.length === 0) {
+        if (changed) publish();
+        return;
+      }
+      const controller = useZettelStore.getState().controller;
+      if (!controller) {
+        if (changed) publish();
+        return;
+      }
+      void controller
+        .getBodies(need)
+        .then((bodies) => {
+          const cur = dataRef.current;
+          for (const [id, body] of bodies) {
+            const idx = cur.indexById.get(id);
+            if (idx === undefined) continue;
+            lines.set(id, firstLine(body, cur.metas[idx].title));
+            at.set(id, cur.metas[idx].updatedAt);
+          }
+          publish();
+        })
+        .catch(() => {
+          if (changed) publish();
+        });
+    }, 150);
+  }, []);
+
   // Ações dos cards: objeto estável (o CardLayer é memo), as funções reais
   // ficam numa ref atualizada a cada render.
   const actionsRef = useRef<CardActions | null>(null);
@@ -464,6 +682,8 @@ export function Galaxy() {
       const id = idByTitleRef.current.get(title.trim().toLowerCase());
       if (id) jumpTo(id);
     },
+    onNavigateId: (id) => void navigateToId(id),
+    onTag: toggleTag,
     onExport: (id) => setExportId(id),
     onHover: (idx) => engineRef.current?.setHoverFromCard(idx),
     onRequestEdit: (id) => void requestEdit(id),
@@ -490,6 +710,8 @@ export function Galaxy() {
   const actions = useMemo<CardActions>(
     () => ({
       onLink: (t) => actionsRef.current!.onLink(t),
+      onNavigateId: (id) => actionsRef.current!.onNavigateId(id),
+      onTag: (t) => actionsRef.current!.onTag(t),
       onExport: (id) => actionsRef.current!.onExport(id),
       onHover: (i) => actionsRef.current!.onHover(i),
       onRequestEdit: (id) => actionsRef.current!.onRequestEdit(id),
@@ -551,14 +773,17 @@ export function Galaxy() {
         if (cam.scale < LOD_CARDS && editingIdRef.current) void engineHandlersRef.current.exitEdit();
       },
       onVisibleCards: (ids) => setVisibleIds(ids),
+      onVisibleSilhouettes: (ids) => loadSilhouetteLines(ids),
       onCameraSettled: (s) => setSettled(s),
       onDoubleClickEmpty: (wx, wy) => void engineHandlersRef.current.createAt({ x: wx, y: wy }),
     });
     engine.setCardLayer(cardLayerRef.current);
     engineRef.current = engine;
+    setEngineInst(engine);
     return () => {
       engine.destroy();
       engineRef.current = null;
+      setEngineInst(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -593,6 +818,40 @@ export function Galaxy() {
     setPinnedIdx(-1);
     setHoverIdx(-1);
   }, [data]);
+
+  // Depois do setData (que zera seleção e máscara, porque os índices mudam).
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    engine.setFirstLines(linesRef.current);
+    engine.setSelected(editingId ? (data.indexById.get(editingId) ?? -1) : -1);
+  }, [data, editingId]);
+
+  // Filtro de tag: máscara por índice. A tag que some de todos os zettels
+  // visíveis limpa o filtro.
+  const tagFilterCount = useMemo(() => {
+    if (!tagFilter) return 0;
+    let n = 0;
+    for (const m of data.metas) if (m.tags.includes(tagFilter)) n++;
+    return n;
+  }, [tagFilter, data.metas]);
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (!tagFilter) {
+      engine.setTagMask(null);
+      return;
+    }
+    if (!data.ready) return;
+    if (tagFilterCount === 0) {
+      setTagFilter(null);
+      engine.setTagMask(null);
+      return;
+    }
+    const mask = new Uint8Array(data.count);
+    for (let i = 0; i < data.count; i++) if (data.metas[i].tags.includes(tagFilter)) mask[i] = 1;
+    engine.setTagMask(mask);
+  }, [tagFilter, tagFilterCount, data]);
 
   useEffect(() => {
     const update = () => setMobile(isMobileDevice());
@@ -631,10 +890,40 @@ export function Galaxy() {
   }, [data, showToast]);
 
   // Overlays desligam pan por teclado/atalhos do canvas.
-  const overlayOpen = modal !== null || search !== null || deleteMeta !== null || fullscreen !== null || exportId !== null || maximizedId !== null;
+  const overlayOpen = palette || help || modal !== null || search !== null || deleteMeta !== null || fullscreen !== null || exportId !== null || maximizedId !== null;
   useEffect(() => {
     engineRef.current?.setInputEnabled(!overlayOpen);
   }, [overlayOpen]);
+  const overlayOpenRef = useRef(overlayOpen);
+  overlayOpenRef.current = overlayOpen;
+  const paletteRef = useRef(palette);
+  paletteRef.current = palette;
+
+  // Ctrl/⌘+K abre/fecha a paleta; `?` abre a ajuda. Nenhum dos dois age com o
+  // foco em campo de texto, edição no lugar ou outro overlay (a paleta aberta
+  // se fecha com o próprio Ctrl+K, mesmo com o foco no campo dela).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyK') {
+        if (paletteRef.current) {
+          e.preventDefault();
+          setPalette(false);
+          return;
+        }
+        if (overlayOpenRef.current || editingIdRef.current || isTypingTarget(e.target)) return;
+        e.preventDefault();
+        setPalette(true);
+        return;
+      }
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (overlayOpenRef.current || editingIdRef.current || isTypingTarget(e.target)) return;
+        e.preventDefault();
+        setHelp(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Esc (bolha, depois dos popups do editor — que marcam defaultPrevented):
   // primeiro encerra a edição, depois o foco.
@@ -647,6 +936,9 @@ export function Galaxy() {
       } else if (focusRootRef.current) {
         e.preventDefault();
         exitFocus();
+      } else if (tagFilterRef.current) {
+        e.preventDefault();
+        setTagFilter(null);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -688,6 +980,8 @@ export function Galaxy() {
 
   const onMenu = (action: MenuAction) => {
     if (action === 'new') createAtCenter();
+    else if (action === 'palette') setPalette(true);
+    else if (action === 'help') setHelp(true);
     else if (action === 'search') setSearch({});
     else setModal(action);
   };
@@ -707,10 +1001,42 @@ export function Galaxy() {
   const idByTitleRef = useRef(idByTitle);
   idByTitleRef.current = idByTitle;
 
+  // Ações da paleta: só as disponíveis agora (a lista é refeita a cada render com a paleta aberta).
+  const paletteActions: PaletteAction[] = [];
+  if (palette) {
+    paletteActions.push({ id: 'new', label: 'Novo zettel', run: createAtCenter });
+    paletteActions.push({ id: 'search', label: 'Buscar com filtros e prévia', keys: keysOf('search'), run: () => setSearch({}) });
+    if (backTop) paletteActions.push({ id: 'back', label: 'Voltar ao zettel anterior', keys: keysOf('back'), run: () => void goBack() });
+    if (forwardTop) paletteActions.push({ id: 'forward', label: 'Avançar', run: () => void goForward() });
+    const currentId = currentIdRef.current;
+    if (currentId && data.indexById.has(currentId)) {
+      paletteActions.push({ id: 'focus', label: 'Focar no zettel atual', keys: keysOf('focus-search'), run: () => enterFocus(currentId) });
+    }
+    paletteActions.push({ id: 'fit', label: 'Ver tudo', keys: keysOf('fit'), run: () => engineRef.current?.fit() });
+    if (tagFilter) paletteActions.push({ id: 'clear-tag', label: `Limpar o filtro #${tagFilter}`, keys: keysOf('escape'), run: () => setTagFilter(null) });
+    paletteActions.push({ id: 'sync', label: 'Sincronizar agora', run: () => void useSyncStore.getState().syncNow?.() });
+    paletteActions.push({ id: 'tags', label: 'Abrir tags', run: () => setModal('tags') });
+    paletteActions.push({ id: 'settings', label: 'Abrir configurações', keys: keysOf('settings'), run: () => setModal('settings') });
+    paletteActions.push({ id: 'help', label: 'Mostrar os atalhos', keys: keysOf('help'), run: () => setHelp(true) });
+  }
+
   const cardIdx = pinnedIdx >= 0 ? pinnedIdx : hoverIdx;
   const cardPos = cardIdx >= 0 ? engineRef.current?.screenOf(cardIdx) ?? null : null;
   const cardMeta = cardIdx >= 0 ? data.metas[cardIdx] : undefined;
   const focusRootMeta = focusRootId ? data.metas[data.indexById.get(focusRootId) ?? -1] : undefined;
+
+  // Relacionados do mini card: calculados depois do primeiro render do card
+  // (não atrasam o aparecimento) e só no desktop — o celular não tem espaço.
+  const [hoverRelated, setHoverRelated] = useState<RelatedItem[]>([]);
+  const hoverRelatedId = cardMeta?.id ?? null;
+  useEffect(() => {
+    if (!hoverRelatedId || mobile) {
+      setHoverRelated([]);
+      return;
+    }
+    const t = setTimeout(() => setHoverRelated(relatedOf(hoverRelatedId)), 0);
+    return () => clearTimeout(t);
+  }, [hoverRelatedId, mobile, data, linkIndex, relatedOf]);
   // Zettel sem card (sem lugar/oculto) vem do índice inteiro; só varre com a leitura aberta nele.
   const unplacedMaximized = useZettelStore((s) =>
     maximizedId && !data.indexById.has(maximizedId) ? s.zettels.find((z) => z.id === maximizedId) : undefined,
@@ -730,6 +1056,7 @@ export function Galaxy() {
           ids={visibleIds}
           heavy={settled && scale >= HEAVY_MIN_SCALE}
           highlightId={highlightId}
+          activeTag={tagFilter}
           editingId={editingId}
           draggingId={draggingId}
           editingZettel={editingZettel}
@@ -745,6 +1072,14 @@ export function Galaxy() {
           degree={data.degree[cardIdx]}
           x={cardPos[0]}
           y={cardPos[1]}
+          onTag={toggleTag}
+          activeTag={tagFilter}
+          related={hoverRelated.slice(0, 3)}
+          onRelated={(id) => {
+            setHoverIdx(-1);
+            setPinnedIdx(-1);
+            jumpTo(id);
+          }}
           onPointerEnter={() => {
             overCardRef.current = true;
             if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -775,6 +1110,12 @@ export function Galaxy() {
         onMenu={onMenu}
         onBack={backTop ? () => void goBack() : undefined}
         backTitle={backTop?.title ?? null}
+        onForward={forwardTop ? () => void goForward() : undefined}
+        forwardTitle={forwardTop?.title ?? null}
+        trail={trail}
+        onTrail={(fromTop) => void goBackTo(fromTop)}
+        tagFilter={tagFilter ? { tag: tagFilter, count: tagFilterCount } : null}
+        onClearTag={() => setTagFilter(null)}
       />
 
       <ZoomControls
@@ -783,6 +1124,8 @@ export function Galaxy() {
         onZoomOut={() => engineRef.current?.zoomBy(1 / 1.4)}
         onFit={() => engineRef.current?.fit()}
       />
+
+      {!focus && !drawing && data.count > 0 && <Minimap data={data} engine={engineInst} />}
 
       {mobile && (
         <button
@@ -843,6 +1186,11 @@ export function Galaxy() {
               setSearch(null);
               enterFocus(id);
             }}
+            onTag={(tag) => {
+              setSearch(null);
+              setTagFilter(tag);
+            }}
+            relatedOf={relatedOf}
           />
         </GalaxyModal>
       )}
@@ -877,6 +1225,9 @@ export function Galaxy() {
           onNavigate={navigateReaderByTitle}
           onPick={navigateReader}
           onBack={readerCanBack ? goBackInReader : undefined}
+          onForward={readerCanForward ? goForwardInReader : undefined}
+          onTag={toggleTag}
+          activeTag={tagFilter}
         />
       )}
 
@@ -888,11 +1239,29 @@ export function Galaxy() {
           autoFocusTitle={autoFocusTitle}
           onStatus={onStatus}
           onCreateLink={createLink}
+          onNavigateLink={(id) => void navigateToId(id)}
           onClose={() => {
             setFullscreen(null);
             setAutoFocusTitle(false);
           }}
         />
+      )}
+
+      {palette && (
+        <GalaxyModal title="Paleta de comandos" onClose={() => setPalette(false)}>
+          <CommandPalette
+            actions={paletteActions}
+            onClose={() => setPalette(false)}
+            onZettel={(id) => (data.indexById.has(id) ? jumpTo(id, 'top') : void openFullscreen(id))}
+            onZettelFocus={enterFocus}
+            onTag={setTagFilter}
+          />
+        </GalaxyModal>
+      )}
+      {help && (
+        <GalaxyModal title="Atalhos" onClose={() => setHelp(false)}>
+          <ShortcutsHelp />
+        </GalaxyModal>
       )}
 
       {modal === 'settings' && (

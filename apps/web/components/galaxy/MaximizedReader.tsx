@@ -6,6 +6,8 @@ import { useZettelBody } from '../../hooks/useZettelBody';
 import { MarkdownRenderer } from '../MarkdownRenderer';
 import { isTypingTarget } from '../../lib/galaxy/engine';
 import { FocusHeader, FocusList, type FocusView } from './FocusPanel';
+import { LinksFooter } from './LinksFooter';
+import { TagChip } from './TagChip';
 
 /**
  * Leitura em tela cheia (botão Maximizar do card). Só leitura: não monta o
@@ -24,8 +26,16 @@ export function MaximizedReader({
   onNavigate,
   onPick,
   onBack,
+  onForward,
+  onTag,
+  activeTag = null,
 }: {
+  /** "Avançar →" depois de um Voltar da leitura; ausente sem avanço. */
+  onForward?: () => void;
   meta: ZettelMeta;
+  /** Chip de tag: fecha a leitura e liga o filtro de tag da galáxia. */
+  onTag?: (tag: string) => void;
+  activeTag?: string | null;
   /** Presente só com o modo foco ativo. */
   focus?: FocusView;
   onClose: () => void;
@@ -113,6 +123,16 @@ export function MaximizedReader({
               ← Voltar
             </button>
           )}
+          {onForward && (
+            <button
+              type="button"
+              onClick={onForward}
+              title="Avançar ao zettel seguinte"
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-[#c9cfdb] hover:bg-white/5"
+            >
+              Avançar →
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {focus && (
@@ -135,6 +155,7 @@ export function MaximizedReader({
         </div>
       </div>
       <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
           <article className="mx-auto w-full max-w-4xl px-6 pb-16 pt-8 text-[15px] leading-relaxed">
             <h1 className="mb-6 font-newsreader text-[32px] font-medium leading-tight text-[#f5f3ff]">
@@ -159,13 +180,20 @@ export function MaximizedReader({
             {meta.tags.length > 0 && (
               <div className="mt-8 flex flex-wrap gap-1.5">
                 {meta.tags.map((t) => (
-                  <span key={t} className="rounded-md bg-white/5 px-2 py-0.5 text-xs text-[#8b93a3]">
-                    {t}
-                  </span>
+                  <TagChip
+                    key={t}
+                    tag={t}
+                    active={activeTag === t}
+                    // Fecha a leitura e só então liga o filtro, para ele ficar à vista.
+                    onTag={onTag ? (tag) => close(() => onTag(tag)) : undefined}
+                    className="rounded-md bg-white/5 px-2 py-0.5 text-xs text-[#8b93a3]"
+                  />
                 ))}
               </div>
             )}
           </article>
+        </div>
+        <LinksFooter id={meta.id} onNavigate={onPick} className="mx-auto w-full max-w-4xl shrink-0" />
         </div>
         {focus && (
           <aside className="hidden w-72 shrink-0 flex-col border-l border-white/10 bg-[#0e121a] text-[#e6e9f0] lg:flex">

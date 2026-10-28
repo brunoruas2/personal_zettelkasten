@@ -7,6 +7,8 @@ import { searchZettels } from '../../lib/searchZettels';
 import { getRecentIds } from '../../lib/recentZettels';
 import { useZettelBody } from '../../hooks/useZettelBody';
 import { MarkdownRenderer } from '../MarkdownRenderer';
+import { TagChip } from './TagChip';
+import type { RelatedItem } from '../../lib/galaxy/related';
 
 const DEBOUNCE_MS = 200;
 const PREVIEW_DEBOUNCE_MS = 150;
@@ -33,6 +35,8 @@ export function GalaxySearch({
   onFly,
   onOpen,
   onFocus,
+  onTag,
+  relatedOf,
 }: {
   initial: SearchFilters;
   canFly: (id: string) => boolean;
@@ -40,6 +44,10 @@ export function GalaxySearch({
   onClose: () => void;
   onFly: (id: string) => void;
   onOpen: (id: string) => void;
+  /** Tag da prévia: fecha a busca e liga o filtro de tag da galáxia. */
+  onTag?: (tag: string) => void;
+  /** Relacionados do zettel da prévia (tags, 2º grau, proximidade). */
+  relatedOf?: (id: string) => RelatedItem[];
   /** Ctrl+Enter: modo foco no resultado. */
   onFocus: (id: string) => void;
 }) {
@@ -59,6 +67,12 @@ export function GalaxySearch({
   const [tagMenu, setTagMenu] = useState(false);
   const [selected, setSelected] = useState(0);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // Já debounced pela troca de `previewId`; recalcula se o índice ou os links mudam.
+  const related = useMemo(
+    () => (previewId && relatedOf ? relatedOf(previewId) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [previewId, relatedOf, zettels, links],
+  );
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -299,6 +313,9 @@ export function GalaxySearch({
               canFly={canFly(previewId)}
               onFly={() => onFly(previewId)}
               onOpen={() => onOpen(previewId)}
+              onTag={onTag}
+              related={related}
+              onRelated={(id) => (canFly(id) ? onFly(id) : onOpen(id))}
             />
           ) : (
             <p className="px-6 py-10 text-center text-sm text-[#6f7787]">Nenhum zettel selecionado.</p>
@@ -335,12 +352,18 @@ function Preview({
   canFly,
   onFly,
   onOpen,
+  onTag,
+  related,
+  onRelated,
 }: {
   meta: ZettelMeta;
   near: string[];
   canFly: boolean;
   onFly: () => void;
   onOpen: () => void;
+  onTag?: (tag: string) => void;
+  related: RelatedItem[];
+  onRelated?: (id: string) => void;
 }) {
   const { body, status } = useZettelBody(meta.id);
   const nearText =
@@ -363,7 +386,13 @@ function Preview({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <h3 className="font-newsreader text-2xl font-medium text-[#f5f3ff]">{meta.title || 'Sem título'}</h3>
-        {meta.tags.length > 0 && <div className="mt-1 text-xs text-brand-light">{meta.tags.map((t) => `#${t}`).join(' ')}</div>}
+        {meta.tags.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-brand-light">
+            {meta.tags.map((t) => (
+              <TagChip key={t} tag={t} label={`#${t}`} onTag={onTag} className="rounded-md px-1 py-0.5" />
+            ))}
+          </div>
+        )}
         <div className="mt-4 text-sm">
           {status === 'loading' ? (
             <p className="text-[#6f7787]">Carregando…</p>
@@ -375,6 +404,25 @@ function Preview({
             <p className="italic text-[#6f7787]">Sem conteúdo.</p>
           )}
         </div>
+        {related.length > 0 && (
+          <div className="mt-6 border-t border-white/10 pt-3">
+            <div className="text-xs uppercase tracking-wide text-[#6f7787]">Relacionados</div>
+            <ul className="mt-2 flex flex-col gap-1">
+              {related.map((r) => (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => onRelated?.(r.id)}
+                    className="flex w-full items-baseline justify-between gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-white/5"
+                  >
+                    <span className="min-w-0 truncate font-newsreader text-[15px] text-[#e6e9f0]">{r.title || 'Sem título'}</span>
+                    <span className="shrink-0 text-[11px] text-[#8b93a3]">{r.reason}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {nearText && <p className="mt-6 border-t border-white/10 pt-3 text-xs text-[#8b93a3]">Mora perto de {nearText}</p>}
       </div>
     </div>

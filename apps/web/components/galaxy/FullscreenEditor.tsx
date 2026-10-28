@@ -25,6 +25,7 @@ export function FullscreenEditor({
   autoFocusTitle,
   onStatus,
   onCreateLink,
+  onNavigateLink,
   onClose,
 }: {
   zettel: Zettel;
@@ -33,19 +34,25 @@ export function FullscreenEditor({
   autoFocusTitle: boolean;
   onStatus: (s: SaveStatus) => void;
   onCreateLink: (title: string) => void | Promise<void>;
+  /** Chip do rodapé de links: fecha o editor (gravando) e depois navega. */
+  onNavigateLink?: (id: string) => void;
   onClose: () => void;
 }) {
   const editorRef = useRef<InplaceEditorHandle>(null);
   const closingRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const afterCloseRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     window.history.pushState({ galaxyEditor: zettel.id }, '', window.location.href);
     const onPop = () => {
       if (closingRef.current) return;
       closingRef.current = true;
-      void editorRef.current?.flush().finally(() => onCloseRef.current());
+      void editorRef.current?.flush().finally(() => {
+        onCloseRef.current();
+        afterCloseRef.current?.();
+      });
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -73,6 +80,15 @@ export function FullscreenEditor({
           autoFocusTitle={autoFocusTitle}
           onStatus={onStatus}
           onCreateLink={onCreateLink}
+          onNavigateLink={
+            onNavigateLink
+              ? (id) => {
+                  // A navegação só roda depois do popstate que fecha o editor.
+                  afterCloseRef.current = () => onNavigateLink(id);
+                  back();
+                }
+              : undefined
+          }
         />
       </div>
     </div>

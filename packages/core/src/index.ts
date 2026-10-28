@@ -19,4 +19,7 @@ export * from './models/GalaxyPosition';
 export * from './services/GalaxyPlacement';
 export * from './services/GalaxyLayout';
 export * from './services/ChordWrap';
+export * from './services/FirstLine';
+export * from './services/RelatedZettels';
+export * from './services/BackStack';
 export * from './services/FocusGate';

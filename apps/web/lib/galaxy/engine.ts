@@ -37,6 +37,8 @@ export interface GalaxyCallbacks {
   onCameraSettled(settled: boolean): void;
   /** Duplo clique de mouse no vazio (sem ponto, silhueta ou card): criar ali. */
   onDoubleClickEmpty(wx: number, wy: number): void;
+  /** Silhuetas na tela (até `MAX_SILHOUETTE_IDS`, as mais próximas do centro); só muda com o conjunto. */
+  onVisibleSilhouettes?(ids: string[]): void;
 }
 
 export type Lod = 'points' | 'silhouettes' | 'cards';
@@ -46,6 +48,12 @@ export const LOD_SILHOUETTE = 0.18;
 /** A partir daqui: cards de leitura (DOM). */
 export const LOD_CARDS = 0.42;
 export const MAX_CARDS = 36;
+/** Teto de silhuetas informadas ao React (as mais próximas do centro). */
+export const MAX_SILHOUETTE_IDS = 60;
+/** A 1ª linha do corpo só aparece na silhueta a partir deste zoom. */
+const SILHOUETTE_TEXT_MIN_SCALE = 0.25;
+/** Alfa do que não faz parte do filtro de tag / destaque. */
+const DIM_ALPHA = 0.25;
 
 export function lodFor(scale: number): Lod {
   return scale < LOD_SILHOUETTE ? 'points' : scale < LOD_CARDS ? 'silhouettes' : 'cards';
@@ -119,6 +127,16 @@ export class GalaxyEngine {
   private topInset = 72;
   private hoverIdx = -1;
   private pinnedIdx = -1;
+  /** Seleção fixa (card em edição): vence o hover no destaque dos vizinhos. */
+  private selectedIdx = -1;
+  /** Filtro de tag: 1 = tem a tag (null = sem filtro). Alinhado a `data`. */
+  private tagMask: Uint8Array | null = null;
+  /** 1ª linha do corpo por id, para a silhueta (só corpos já em cache). */
+  private firstLines = new Map<string, string>();
+  private cameraListeners = new Set<(cam: Camera) => void>();
+  private silhouetteKey = '';
+  private dimKey = '';
+  private dimActive = false;
   /** Card DOM sob o cursor (vem do React): arestas sem mini card. */
   private cardHoverIdx = -1;
   private cardLayer: HTMLElement | null = null;
@@ -146,6 +164,7 @@ export class GalaxyEngine {
 
   private accent = '#7c3aed';
   private fontTitle = 'Georgia, serif';
+  private fontUi = 'system-ui, sans-serif';
   private ro: ResizeObserver;
 
   constructor(
@@ -171,6 +190,7 @@ export class GalaxyEngine {
 
     this.accent = rgbVarToHex('--color-brand', '#7c3aed');
     this.fontTitle = `${readCssVar('--font-newsreader', '')}, Georgia, serif`.replace(/^, /, '');
+    this.fontUi = `${readCssVar('--font-geist', '')}, system-ui, sans-serif`.replace(/^, /, '');
     // A fonte do título chega depois do primeiro desenho; repinta quando carregar.
     void document.fonts?.ready.then(() => this.markScene());
 
@@ -218,7 +238,45 @@ export class GalaxyEngine {
     this.cam = { ...this.cam, scale: clampScale(this.cam.scale, this.minScale) };
     this.hoverIdx = prevId ? (data.indexById.get(prevId) ?? -1) : -1;
     this.pinnedIdx = -1;
+    // Índices mudaram: seleção e máscara são reenviadas pelo React logo depois.
+    this.selectedIdx = -1;
+    this.tagMask = null;
+    this.dimKey = '';
     this.markScene();
+  }
+
+  /** Seleção fixa (card em edição): destaca os vizinhos e vence o hover. -1 limpa. */
+  setSelected(idx: number): void {
+    if (this.selectedIdx === idx) return;
+    this.selectedIdx = idx;
+    this.markScene();
+  }
+
+  /** Filtro de tag como máscara por índice (1 = tem a tag); `null` limpa. */
+  setTagMask(mask: Uint8Array | null): void {
+    this.tagMask = mask;
+    this.dimKey = '';
+    this.markScene();
+  }
+
+  /** 1ª linha do corpo por id (silhueta); só repinta quando algo mudou. */
+  setFirstLines(lines: Map<string, string>): void {
+    this.firstLines = lines;
+    this.markScene();
+  }
+
+  /**
+   * Ouve toda mudança de câmera (pan, zoom, voo), sem debounce — o minimapa
+   * redesenha só o retângulo do recorte. Devolve a função que cancela.
+   */
+  addCameraListener(fn: (cam: Camera) => void): () => void {
+    this.cameraListeners.add(fn);
+    return () => this.cameraListeners.delete(fn);
+  }
+
+  /** Centraliza a câmera sem animação e sem mexer no zoom (minimapa). */
+  setCameraCenter(x: number, y: number): void {
+    this.setCamera({ ...this.cam, x, y });
   }
 
   setCamera(cam: Camera): void {
@@ -463,6 +521,7 @@ export class GalaxyEngine {
     saveCamera(this.cam);
     this.applyLayerTransform();
     this.cb.onCameraChange({ ...this.cam });
+    for (const fn of this.cameraListeners) fn(this.cam);
     this.clearHover();
     if (this.settled) {
       this.settled = false;
@@ -844,8 +903,17 @@ export class GalaxyEngine {
     this.drawNebulas(ctx, d, minX, minY, maxX, maxY, toSx, toSy);
 
     const lod = lodFor(scale);
-    const focus = this.hoverIdx >= 0 ? this.hoverIdx : this.cardHoverIdx >= 0 ? this.cardHoverIdx : this.pinnedIdx;
+    // Seleção fixa (card em edição) vence o hover; sem ela, hover > card > toque.
+    const focus =
+      this.selectedIdx >= 0
+        ? this.selectedIdx
+        : this.hoverIdx >= 0
+          ? this.hoverIdx
+          : this.cardHoverIdx >= 0
+            ? this.cardHoverIdx
+            : this.pinnedIdx;
     const neighbors = focus >= 0 ? new Set(d.adjacency[focus].filter((n) => this.inFocus(n))) : null;
+    const mask = this.tagMask;
 
     // Arestas: só do ponto em foco.
     if (focus >= 0) {
@@ -860,28 +928,52 @@ export class GalaxyEngine {
         ctx.lineTo(toSx(d.xs[n]), toSy(this.anchorY(d, n, lod)));
       }
       ctx.stroke();
+
+      // Ligações entre os próprios vizinhos: pontilhadas e mais fracas.
+      if (neighbors!.size <= 200) {
+        ctx.strokeStyle = '#6b7488';
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        for (const n of neighbors!) {
+          for (const m of d.adjacency[n]) {
+            if (m <= n || !neighbors!.has(m)) continue;
+            ctx.moveTo(toSx(d.xs[n]), toSy(this.anchorY(d, n, lod)));
+            ctx.lineTo(toSx(d.xs[m]), toSy(this.anchorY(d, m, lod)));
+          }
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       ctx.globalAlpha = 1;
     }
+
+    this.applyCardDim(d, focus, neighbors);
 
     if (lod !== 'points') {
       this.drawCardsLevel(ctx, d, lod, minX, minY, maxX, maxY, toSx, toSy, focus, neighbors, now);
       return;
     }
     this.emitVisibleCards([]);
+    this.emitVisibleSilhouettes(d, []);
 
     const visible = d.grid.query(minX - 20 / scale, minY - 20 / scale, maxX + 20 / scale, maxY + 20 / scale, []);
 
-    // Pontos agrupados por cor: um fill por cor.
+    // Pontos agrupados por cor: um fill por cor. Os fora do filtro de tag vão
+    // para um segundo conjunto, mais esmaecido.
     const paths = new Map<string, Path2D>();
+    const dimPaths = new Map<string, Path2D>();
     for (const i of visible) {
       if (!this.inFocus(i) || i === focus || (neighbors && neighbors.has(i))) continue;
       const r = pointRadius(d.degree[i], scale);
       const sx = toSx(d.xs[i]);
       const sy = toSy(d.ys[i]);
-      let p = paths.get(d.color[i]);
+      const target = mask && mask[i] === 0 ? dimPaths : paths;
+      let p = target.get(d.color[i]);
       if (!p) {
         p = new Path2D();
-        paths.set(d.color[i], p);
+        target.set(d.color[i], p);
       }
       if (r < 2) p.rect(sx - r, sy - r, r * 2, r * 2);
       else {
@@ -889,8 +981,14 @@ export class GalaxyEngine {
         p.arc(sx, sy, r, 0, Math.PI * 2);
       }
     }
-    ctx.globalAlpha = focus >= 0 ? 0.25 : 0.8;
+    const baseAlpha = focus >= 0 ? 0.25 : 0.8;
+    ctx.globalAlpha = baseAlpha;
     for (const [c, p] of paths) {
+      ctx.fillStyle = c;
+      ctx.fill(p);
+    }
+    ctx.globalAlpha = Math.min(baseAlpha, DIM_ALPHA);
+    for (const [c, p] of dimPaths) {
       ctx.fillStyle = c;
       ctx.fill(p);
     }
@@ -932,6 +1030,52 @@ export class GalaxyEngine {
     if (key === this.visibleKey) return;
     this.visibleKey = key;
     this.cb.onVisibleCards(ids);
+    // Os cards novos só existem no DOM depois do render do React: reaplica o
+    // esmaecimento no frame seguinte.
+    if (this.dimActive) {
+      requestAnimationFrame(() => {
+        this.dimKey = '';
+        this.sceneDirty = true;
+      });
+    }
+  }
+
+  /** As silhuetas na tela (≤ 60, mais próximas do centro); só emite quando o conjunto muda. */
+  private emitVisibleSilhouettes(d: GalaxyData, onScreen: number[]): void {
+    if (!this.cb.onVisibleSilhouettes) return;
+    onScreen.sort(
+      (a, b) =>
+        (d.xs[a] - this.cam.x) ** 2 + (d.ys[a] - this.cam.y) ** 2 - ((d.xs[b] - this.cam.x) ** 2 + (d.ys[b] - this.cam.y) ** 2),
+    );
+    const ids = onScreen.slice(0, MAX_SILHOUETTE_IDS).map((i) => d.ids[i]);
+    const key = ids.join(',');
+    if (key === this.silhouetteKey) return;
+    this.silhouetteKey = key;
+    this.cb.onVisibleSilhouettes(ids);
+  }
+
+  /**
+   * Esmaece, direto no DOM (sem React), os cards fora do destaque dos vizinhos
+   * ou do filtro de tag. O destaque vence o filtro. Só roda quando o conjunto
+   * de entrada muda (`dimKey`).
+   */
+  private applyCardDim(d: GalaxyData, focus: number, neighbors: Set<number> | null): void {
+    this.dimActive = focus >= 0 || this.tagMask !== null;
+    const layer = this.cardLayer;
+    if (!layer) return;
+    const key = `${focus}|${this.visibleKey}|${this.tagMask ? 1 : 0}`;
+    if (key === this.dimKey) return;
+    this.dimKey = key;
+    const mask = this.tagMask;
+    for (const el of layer.querySelectorAll<HTMLElement>('article[data-galaxy-card][data-zid]')) {
+      const idx = d.indexById.get(el.dataset.zid ?? '');
+      let dim = false;
+      if (idx !== undefined) {
+        if (focus >= 0) dim = idx !== focus && !(neighbors?.has(idx) ?? false);
+        else if (mask) dim = mask[idx] === 0;
+      }
+      el.style.opacity = dim ? '0.35' : '';
+    }
   }
 
   /**
@@ -978,17 +1122,22 @@ export class GalaxyEngine {
       [],
     );
     const titleSize = 24 * scale;
+    const bodySize = 14 * scale;
+    const mask = this.tagMask;
+    const onScreen: number[] = [];
     for (const i of visible) {
       if (cards.has(i) || !this.inFocus(i)) continue;
       const left = toSx(d.xs[i] - CARD_WIDTH / 2);
       const top = toSy(d.ys[i] - CARD_MAX_HEIGHT / 2);
       const w = CARD_WIDTH * scale;
       const h = silhouetteHeight(d.metas[i].bodyLen) * scale;
+      if (left < this.w && left + w > 0 && top < this.h && top + h > 0) onScreen.push(i);
       const emphasis = i === focus || (neighbors?.has(i) ?? false);
+      const tagDim = !emphasis && !!mask && mask[i] === 0;
       ctx.beginPath();
       ctx.roundRect(left, top, w, h, 12 * scale);
       ctx.fillStyle = '#0e121a';
-      ctx.globalAlpha = focus >= 0 && !emphasis ? 0.55 : 0.95;
+      ctx.globalAlpha = tagDim ? 0.4 : focus >= 0 && !emphasis ? 0.55 : 0.95;
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.strokeStyle = emphasis ? this.accent : 'rgba(255,255,255,0.08)';
@@ -997,17 +1146,35 @@ export class GalaxyEngine {
       if (titleSize >= 5) {
         const title = d.metas[i].title || 'Sem título';
         const pad = 20 * scale;
-        const maxChars = Math.max(4, Math.floor((w - pad * 2) / (titleSize * 0.5)));
+        // Ponto da cor do cluster antes do título.
+        const dotR = 4.5 * scale;
+        const textLeft = left + pad + dotR * 2 + 6 * scale;
+        const textAlpha = tagDim ? 0.3 : focus >= 0 && !emphasis ? 0.5 : 0.95;
+        ctx.globalAlpha = textAlpha;
+        ctx.fillStyle = d.color[i];
+        ctx.beginPath();
+        ctx.arc(left + pad + dotR, top + pad + titleSize * 0.55, dotR, 0, Math.PI * 2);
+        ctx.fill();
+        const maxChars = Math.max(4, Math.floor((w - (textLeft - left) - pad) / (titleSize * 0.5)));
         const text = title.length > maxChars ? title.slice(0, maxChars - 1) + '…' : title;
         ctx.font = `500 ${titleSize}px ${this.fontTitle}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillStyle = '#e6e9f0';
-        ctx.globalAlpha = focus >= 0 && !emphasis ? 0.5 : 0.95;
-        ctx.fillText(text, left + pad, top + pad);
+        ctx.fillText(text, textLeft, top + pad);
+        // 1ª linha do corpo (só de corpo já em cache; sem corpo, só título e ponto).
+        const first = scale >= SILHOUETTE_TEXT_MIN_SCALE ? this.firstLines.get(d.ids[i]) : undefined;
+        if (first) {
+          const maxBody = Math.max(4, Math.floor((w - pad * 2) / (bodySize * 0.5)));
+          const line = first.length > maxBody ? first.slice(0, maxBody - 1) + '…' : first;
+          ctx.font = `400 ${bodySize}px ${this.fontUi}`;
+          ctx.fillStyle = '#8b93a3';
+          ctx.fillText(line, left + pad, top + pad + titleSize * 1.5);
+        }
         ctx.globalAlpha = 1;
       }
     }
+    this.emitVisibleSilhouettes(d, onScreen);
 
     // Destaque do voo: contorno pulsante na silhueta. No card (DOM opaco por
     // cima) quem destaca é o próprio card.
@@ -1126,7 +1293,10 @@ export class GalaxyEngine {
       if (!strong && !fits(...box)) return false;
       claim(...box);
       ctx.fillStyle = '#e6e9f0';
-      ctx.globalAlpha = strong ? 1 : root ? 0.95 : focus >= 0 ? 0.3 : 0.62;
+      const base = strong ? 1 : root ? 0.95 : focus >= 0 ? 0.3 : 0.62;
+      // Fora do filtro de tag (e fora do destaque): rótulo esmaecido.
+      const tagDim = !strong && !!this.tagMask && this.tagMask[i] === 0 && i !== focus && !(neighbors?.has(i) ?? false);
+      ctx.globalAlpha = tagDim ? Math.min(base, DIM_ALPHA) : base;
       ctx.fillText(text, sx, sy);
       ctx.globalAlpha = 1;
       return true;

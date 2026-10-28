@@ -1,6 +1,8 @@
 'use client';
 
 import type { ZettelMeta } from '@zettelkasten/core';
+import { TagChip } from './TagChip';
+import type { RelatedItem } from '../../lib/galaxy/related';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -36,11 +38,21 @@ export function HoverCard({
   onFocus,
   onPointerEnter,
   onPointerLeave,
+  onTag,
+  activeTag = null,
+  related = [],
+  onRelated,
 }: {
+  /** Até 3 relacionados (desktop); vazio no celular. */
+  related?: RelatedItem[];
+  onRelated?: (id: string) => void;
   meta: ZettelMeta;
   degree: number;
   x: number;
   y: number;
+  /** Chip de tag: liga/desliga o filtro de tag da galáxia. */
+  onTag?: (tag: string) => void;
+  activeTag?: string | null;
   onApproach: () => void;
   onEdit: () => void;
   onFocus: () => void;
@@ -59,15 +71,37 @@ export function HoverCard({
       {meta.tags.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
           {meta.tags.map((t) => (
-            <span key={t} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]">
-              {t}
-            </span>
+            <TagChip
+              key={t}
+              tag={t}
+              active={activeTag === t}
+              onTag={onTag}
+              className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]"
+            />
           ))}
         </div>
       )}
       <div className="mt-2 text-xs text-[#6f7787]">
         {degree === 0 ? 'avulso' : `${degree} ${degree === 1 ? 'conexão' : 'conexões'}`} · {editedAgo(meta.updatedAt)}
       </div>
+      {related.length > 0 && (
+        <div className="mt-2.5">
+          <div className="text-[11px] text-[#9aa3b2]">Relacionados</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {related.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                title={r.reason}
+                onClick={() => onRelated?.(r.id)}
+                className="max-w-full truncate rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[11px] text-[#c9cfdb] hover:bg-white/10"
+              >
+                {r.title || 'Sem título'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="mt-3 flex gap-2">
         <button
           type="button"

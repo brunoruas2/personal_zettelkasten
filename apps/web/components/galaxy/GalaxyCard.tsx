@@ -5,6 +5,8 @@ import { CARD_MAX_HEIGHT, CARD_WIDTH, type Zettel, type ZettelMeta } from '@zett
 import { useZettelBody } from '../../hooks/useZettelBody';
 import { MarkdownRenderer } from '../MarkdownRenderer';
 import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from './InplaceEditor';
+import { LinksFooter } from './LinksFooter';
+import { TagChip } from './TagChip';
 
 /** Altura do cabeçalho (título de até 2 linhas; as tags ficam no fim do corpo)
  *  que sai da altura máxima do corpo. */
@@ -16,6 +18,10 @@ const EDGE_SPEED = 1200;
 
 export interface CardActions {
   onLink: (title: string) => void;
+  /** Chip do rodapé "Liga a / Referenciado por": navega até o zettel. */
+  onNavigateId: (id: string) => void;
+  /** Chip de tag: liga/desliga o filtro de tag da galáxia. */
+  onTag: (tag: string) => void;
   /** Exportar PDF (só o zettel ou com a subárvore). */
   onExport: (id: string) => void;
   onHover: (idx: number) => void;
@@ -57,6 +63,7 @@ export const GalaxyCard = memo(function GalaxyCard({
   y,
   heavy,
   highlighted,
+  activeTag,
   editing,
   editingZettel,
   autoFocusTitle,
@@ -70,6 +77,8 @@ export const GalaxyCard = memo(function GalaxyCard({
   /** Câmera parada com zoom ≥ 60%: pode renderizar diagramas. */
   heavy: boolean;
   highlighted: boolean;
+  /** Tag do filtro ativo da galáxia (marca o chip correspondente). */
+  activeTag: string | null;
   editing: boolean;
   /** Zettel completo carregado para a edição (null fora dela). */
   editingZettel: Zettel | null;
@@ -222,6 +231,7 @@ export const GalaxyCard = memo(function GalaxyCard({
       <article
         ref={cardRef}
         data-galaxy-card
+        data-zid={meta.id}
         onPointerEnter={() => actions.onHover(idx)}
         onPointerLeave={() => actions.onHover(-1)}
         className={`dark absolute flex flex-col overflow-hidden rounded-xl border bg-[#0e121a] font-geist text-[#c9cfdb] shadow-2xl ${border}`}
@@ -246,6 +256,7 @@ export const GalaxyCard = memo(function GalaxyCard({
               autoFocusTitle={autoFocusTitle}
               onStatus={actions.onStatus}
               onCreateLink={actions.onCreateLink}
+              onNavigateLink={actions.onNavigateId}
             />
           </>
         ) : (
@@ -320,13 +331,18 @@ export const GalaxyCard = memo(function GalaxyCard({
               {meta.tags.length > 0 && (
                 <div className="mt-4 flex flex-wrap gap-1">
                   {meta.tags.map((t) => (
-                    <span key={t} className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]">
-                      {t}
-                    </span>
+                    <TagChip
+                      key={t}
+                      tag={t}
+                      active={activeTag === t}
+                      onTag={actions.onTag}
+                      className="rounded-md bg-white/5 px-1.5 py-0.5 text-[11px] text-[#8b93a3]"
+                    />
                   ))}
                 </div>
               )}
             </div>
+            <LinksFooter id={meta.id} onNavigate={actions.onNavigateId} className="shrink-0" />
           </>
         )}
       </article>
