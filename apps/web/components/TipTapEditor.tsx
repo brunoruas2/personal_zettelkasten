@@ -30,7 +30,7 @@ import Suggestion, {
   type SuggestionProps,
 } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
-import type { Slice } from '@tiptap/pm/model';
+import type { Node as PMNode, Slice } from '@tiptap/pm/model';
 import { generateId, type ZettelMeta as Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
 import { MermaidBlock } from './MermaidBlock';
@@ -404,6 +404,38 @@ function isCodeOnlySlice(slice: Slice): boolean {
     if (node.type.name !== 'codeBlock') codeOnly = false;
   });
   return codeOnly;
+}
+
+// Same trap for tables: a slice taken from inside a cell is a headerless table, which
+// tiptap-markdown cannot serialize with html: false — it writes the literal "[table]".
+// Slices that touch a table are copied as plain text instead (cells by tab, rows by newline).
+function sliceHasTable(slice: Slice): boolean {
+  let found = false;
+  slice.content.descendants((node) => {
+    if (node.type.name === 'table') found = true;
+    return !found;
+  });
+  return found;
+}
+
+function tableToText(table: PMNode): string {
+  const rows: string[] = [];
+  table.forEach((row) => {
+    const cells: string[] = [];
+    row.forEach((cell) => cells.push(cell.textBetween(0, cell.content.size, ' ')));
+    rows.push(cells.join('\t'));
+  });
+  return rows.join('\n');
+}
+
+function tableSliceToText(slice: Slice): string {
+  const parts: string[] = [];
+  slice.content.forEach((node) => {
+    parts.push(
+      node.type.name === 'table' ? tableToText(node) : node.textBetween(0, node.content.size, '\n'),
+    );
+  });
+  return parts.join('\n');
 }
 
 const FENCE_OPEN_RE = /^```[\w-]*\s*$/;
@@ -1111,11 +1143,14 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         },
         // View-level props win over plugin props in EditorView.someProp, so this
         // runs before tiptap-markdown's serializer. Returning '' is falsy, so
-        // non-code slices fall through to it and still copy as Markdown.
+        // non-code slices fall through to it and still copy as Markdown. Slices
+        // touching a table are copied as plain text (it would write "[table]").
         clipboardTextSerializer: (slice) =>
           isCodeOnlySlice(slice)
             ? slice.content.textBetween(0, slice.content.size, '\n')
-            : '',
+            : sliceHasTable(slice)
+              ? tableSliceToText(slice)
+              : '',
         // Safety net for text copied from outside the app that arrives fenced.
         handlePaste: (view, event) => {
           const inCode = view.state.selection.$from.parent.type.spec.code;
