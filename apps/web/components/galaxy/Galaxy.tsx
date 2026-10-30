@@ -25,6 +25,7 @@ import { api } from '../../lib/api';
 import { useZettelStore } from '../../store/useZettelStore';
 import { useDrawingFocusStore } from '../../store/useDrawingFocusStore';
 import { HoverCard } from './HoverCard';
+import { NodeSheet } from './NodeSheet';
 import { CardLayer } from './CardLayer';
 import type { CardActions } from './GalaxyCard';
 import type { InplaceEditorHandle, SaveStatus } from './InplaceEditor';
@@ -1082,23 +1083,43 @@ export function Galaxy() {
     paletteActions.push({ id: 'help', label: 'Mostrar os atalhos', keys: keysOf('help'), run: () => setHelp(true) });
   }
 
+  // Celular: o toque abre a folha inferior (task 5); os controles do rodapé saem de cena.
+  const sheetOpen = mobile && pinnedIdx >= 0;
+  const closeSheet = useCallback(() => {
+    setPinnedIdx(-1);
+    engineRef.current?.setPinned(-1);
+  }, []);
+  const [sheetH, setSheetH] = useState(0);
+  // Tira o nó selecionado de baixo da folha: só sobe a câmera, sem mexer no zoom.
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!sheetOpen || sheetH <= 0 || !engine) return;
+    const p = engine.screenOf(pinnedIdx);
+    if (!p) return;
+    const { h } = engine.getSize();
+    const limit = h - sheetH - 32;
+    if (limit < 96 || p[1] <= limit) return;
+    const cam = engine.getCamera();
+    engine.flyToCamera({ ...cam, y: cam.y + (p[1] - limit) / cam.scale });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetOpen, pinnedIdx, sheetH]);
   const cardIdx = pinnedIdx >= 0 ? pinnedIdx : hoverIdx;
   const cardPos = cardIdx >= 0 ? engineRef.current?.screenOf(cardIdx) ?? null : null;
   const cardMeta = cardIdx >= 0 ? data.metas[cardIdx] : undefined;
   const focusRootMeta = focusRootId ? data.metas[data.indexById.get(focusRootId) ?? -1] : undefined;
 
-  // Relacionados do mini card: calculados depois do primeiro render do card
-  // (não atrasam o aparecimento) e só no desktop — o celular não tem espaço.
+  // Relacionados do mini card e da folha: calculados depois do primeiro render
+  // (não atrasam o aparecimento).
   const [hoverRelated, setHoverRelated] = useState<RelatedItem[]>([]);
   const hoverRelatedId = cardMeta?.id ?? null;
   useEffect(() => {
-    if (!hoverRelatedId || mobile) {
+    if (!hoverRelatedId) {
       setHoverRelated([]);
       return;
     }
     const t = setTimeout(() => setHoverRelated(relatedOf(hoverRelatedId)), 0);
     return () => clearTimeout(t);
-  }, [hoverRelatedId, mobile, data, linkIndex, relatedOf]);
+  }, [hoverRelatedId, data, linkIndex, relatedOf]);
   // Zettel sem card (sem lugar/oculto) vem do índice inteiro; só varre com a leitura aberta nele.
   const unplacedMaximized = useZettelStore((s) =>
     maximizedId && !data.indexById.has(maximizedId) ? s.zettels.find((z) => z.id === maximizedId) : undefined,
@@ -1128,7 +1149,32 @@ export function Galaxy() {
         />
       </div>
 
-      {cardMeta && cardPos && (
+      {sheetOpen && cardMeta && (
+        <NodeSheet
+          meta={cardMeta}
+          degree={data.degree[cardIdx]}
+          related={hoverRelated.slice(0, 3)}
+          activeTag={tagFilter}
+          onTag={toggleTag}
+          onHeight={setSheetH}
+          onClose={closeSheet}
+          onNavigate={(id) => {
+            closeSheet();
+            jumpTo(id);
+          }}
+          onApproach={() => flyTo(cardMeta.id, 'top')}
+          onEdit={() => {
+            closeSheet();
+            void requestEdit(cardMeta.id);
+          }}
+          onFocus={() => {
+            closeSheet();
+            enterFocus(cardMeta.id);
+          }}
+        />
+      )}
+
+      {!sheetOpen && cardMeta && cardPos && (
         <HoverCard
           meta={cardMeta}
           degree={data.degree[cardIdx]}
@@ -1181,16 +1227,18 @@ export function Galaxy() {
         onRetry={() => void editorRef.current?.flush()}
       />
 
+      {!sheetOpen && (
       <ZoomControls
         scale={scale}
         onZoomIn={() => engineRef.current?.zoomBy(1.4)}
         onZoomOut={() => engineRef.current?.zoomBy(1 / 1.4)}
         onFit={() => engineRef.current?.fit()}
       />
+      )}
 
       {!focus && !drawing && data.count > 0 && <Minimap data={data} engine={engineInst} />}
 
-      {mobile && (
+      {mobile && !sheetOpen && (
         <button
           type="button"
           onPointerDown={() => {
@@ -1211,8 +1259,9 @@ export function Galaxy() {
             else createAtCenter();
           }}
           title="Novo zettel (segure para captura rápida)"
-          style={{ touchAction: 'manipulation' }}
-          className="absolute bottom-4 left-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brand text-2xl text-white shadow-2xl"
+          style={{ touchAction: 'manipulation', bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+          aria-label="Novo zettel"
+          className="absolute left-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-2xl text-white shadow-2xl"
         >
           +
         </button>

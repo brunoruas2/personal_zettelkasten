@@ -26,6 +26,16 @@ export interface InplaceEditorHandle {
 }
 
 const AUTOSAVE_MS = 1000;
+const TOOLBAR_KEY = 'zettel_mobile_toolbar';
+
+/** Barra do celular: compacta por padrão; a escolha é por dispositivo. */
+function loadCompact(): boolean {
+  try {
+    return localStorage.getItem(TOOLBAR_KEY) !== 'full';
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Editor da galáxia, compartilhado entre o card (desktop) e a tela cheia
@@ -59,6 +69,8 @@ export const InplaceEditor = forwardRef<
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   const [fontSize, setFontSize] = useState(16);
   const [chordKeypadOpen, setChordKeypadOpen] = useState(false);
+  const [compactBar, setCompactBar] = useState(loadCompact);
+  const tagsRef = useRef<HTMLDivElement>(null);
   // Pré-visualização (só celular): o TipTap fica montado e escondido, para não
   // perder o desfazer nem o editorRef; `body` segue sendo a fonte do autosave.
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -257,7 +269,7 @@ export const InplaceEditor = forwardRef<
           </DrawingEditHost>
         </div>
         {/* Tags no fim do zettel: são metadado, não disputam espaço com o título. */}
-        <div className="pb-2" data-no-pan>
+        <div ref={tagsRef} className="pb-2" data-no-pan>
           <TagInput
             tags={tags}
             onChange={(t) => {
@@ -269,7 +281,7 @@ export const InplaceEditor = forwardRef<
           />
         </div>
         {/* Celular: o rodapé rola com o conteúdo e termina acima da barra fixa. */}
-        {isMobile && onNavigateLink && <LinksFooter id={zettel.id} onNavigate={flushAndNavigate} compact className="-mx-5" />}
+        {isMobile && onNavigateLink && <LinksFooter id={zettel.id} onNavigate={flushAndNavigate} compact touch className="-mx-5" />}
         {isMobile && <div style={{ height: `calc(${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom))` }} />}
       </div>
       {!isMobile && onNavigateLink && <LinksFooter id={zettel.id} onNavigate={flushAndNavigate} compact className="shrink-0" />}
@@ -319,6 +331,21 @@ export const InplaceEditor = forwardRef<
           toolbarRef={toolbarRef}
           chordKeypadOpen={chordKeypadOpen}
           onToggleChordKeypad={() => setChordKeypadOpen((v) => !v)}
+          compact={compactBar}
+          onToggleCompact={() => {
+            const next = !compactBar;
+            setCompactBar(next);
+            try {
+              localStorage.setItem(TOOLBAR_KEY, next ? 'compact' : 'full');
+            } catch {
+              /* sem armazenamento: vale só nesta sessão */
+            }
+          }}
+          onFocusTags={() => {
+            const el = tagsRef.current;
+            el?.scrollIntoView({ block: 'center' });
+            el?.querySelector('input')?.focus();
+          }}
           hasHeadings={false}
           tocOpen={false}
           onToggleToc={() => {}}

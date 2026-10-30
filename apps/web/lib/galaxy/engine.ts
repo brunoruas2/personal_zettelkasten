@@ -12,6 +12,7 @@ import {
   clampScale,
   MAX_SCALE,
 } from './camera';
+import { clampLabelX } from './labels';
 import { getNebulaSprite } from './nebulaSprites';
 import { classifyWheel, type WheelMemory } from './wheel';
 
@@ -82,6 +83,8 @@ const NEBULA_RADIUS = 1400;
 /** Abaixo deste zoom, as nebulosas são agregadas por célula da grade. */
 const NEBULA_AGG_SCALE = 0.12;
 const LABEL_CELL = 48;
+/** Distância mínima entre um rótulo e a borda do viewport. */
+const LABEL_EDGE_MARGIN = 6;
 
 export function isTypingTarget(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
@@ -140,6 +143,7 @@ export class GalaxyEngine {
   /** Card DOM sob o cursor (vem do React): arestas sem mini card. */
   private cardHoverIdx = -1;
   private cardLayer: HTMLElement | null = null;
+  private invScaleWritten = 0;
   private visibleKey = '';
   private settled = false;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -422,6 +426,7 @@ export class GalaxyEngine {
    */
   setCardLayer(el: HTMLElement | null): void {
     this.cardLayer = el;
+    this.invScaleWritten = 0;
     this.applyLayerTransform();
   }
 
@@ -539,6 +544,11 @@ export class GalaxyEngine {
     if (!this.cardLayer) return;
     const s = this.cam.scale;
     this.cardLayer.style.transform = `translate(${this.w / 2 - this.cam.x * s}px, ${this.h / 2 - this.cam.y * s}px) scale(${s})`;
+    // Os cards escalam com o zoom; esta variável deixa o CSS dar 44 px de tela aos alvos de toque.
+    if (s !== this.invScaleWritten) {
+      this.invScaleWritten = s;
+      this.cardLayer.style.setProperty('--zk-inv-scale', String(1 / s));
+    }
   }
 
   private clearHover(): void {
@@ -1287,7 +1297,8 @@ export class GalaxyEngine {
       const size = root ? 18 : strong ? 14 : 12.5;
       ctx.font = `${strong || root ? 600 : 500} ${size}px ${this.fontTitle}`;
       const tw = ctx.measureText(text).width;
-      const sx = toSx(d.xs[i]);
+      // Perto da borda o rótulo desliza para dentro da tela em vez de sair cortado.
+      const sx = clampLabelX(toSx(d.xs[i]), tw / 2 + 3, this.w, LABEL_EDGE_MARGIN);
       const sy = toSy(d.ys[i]) - pointRadius(d.degree[i], scale) - 5;
       const box: [number, number, number, number] = [sx - tw / 2 - 3, sy - size - 2, sx + tw / 2 + 3, sy + 2];
       if (!strong && !fits(...box)) return false;

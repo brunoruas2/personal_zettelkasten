@@ -193,7 +193,7 @@ export function MaximizedReader({
             )}
           </article>
         </div>
-        <LinksFooter id={meta.id} onNavigate={onPick} className="mx-auto w-full max-w-4xl shrink-0" />
+        <LinksFooter id={meta.id} onNavigate={onPick} touch className="mx-auto w-full max-w-4xl shrink-0" />
         </div>
         {focus && (
           <aside className="hidden w-72 shrink-0 flex-col border-l border-white/10 bg-[#0e121a] text-[#e6e9f0] lg:flex">

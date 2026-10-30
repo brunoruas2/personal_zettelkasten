@@ -27,6 +27,11 @@ interface Props {
   hasEmbeds?: boolean;
   embedsOn?: boolean;
   onToggleEmbeds?: () => void;
+  /** Modo compacto (captura): só o essencial, cabendo em 320 px; "Mais" expande. */
+  compact?: boolean;
+  onToggleCompact?: () => void;
+  /** Botão `#`: leva o foco ao campo de tags. */
+  onFocusTags?: () => void;
 }
 
 const EmbedIcon = () => (
@@ -81,6 +86,9 @@ export function MobileFormattingToolbar({
   hasEmbeds,
   embedsOn,
   onToggleEmbeds,
+  compact = false,
+  onToggleCompact,
+  onFocusTags,
 }: Props) {
   const state = useEditorState({
     editor,
@@ -130,6 +138,53 @@ export function MobileFormattingToolbar({
       >
         {label}
       </button>
+    );
+  }
+
+  /** Bloco `/`: em linha vazia insere ali; senão abre uma linha nova para o gatilho do menu valer. */
+  const insertSlash = () => {
+    if (!editor) return;
+    const { $from } = editor.state.selection;
+    const emptyLine = $from.parent.type.name === 'paragraph' && $from.parent.content.size === 0;
+    const chain = editor.chain().focus();
+    if (emptyLine) chain.insertContent('/').run();
+    else chain.createParagraphNear().insertContent('/').run();
+  };
+
+  // Dentro de ```chords a barra completa tem o botão do teclado de cifras: o compacto cede.
+  if (compact && !previewOpen && !state?.inChordsBlock && onToggleCompact) {
+    // Botões dividem a largura (flex-1): 8 cabem em 320 px com ~39 px cada, 44 px a partir de 360.
+    const c = 'flex h-11 min-w-0 flex-1 items-center justify-center rounded-xl text-sm font-bold transition-colors';
+    const noFocusSteal = (e: React.MouseEvent) => e.preventDefault();
+    return (
+      <div ref={toolbarRef} className={wrapClass} style={wrapStyle}>
+        <div className="flex flex-1 items-center gap-0.5 px-1">
+          <button onMouseDown={noFocusSteal} onClick={() => editor?.chain().focus().toggleBold().run()} aria-label="Negrito" aria-pressed={state?.bold ?? false} className={`${c} ${state?.bold ? active : inactive}`}>
+            <span className="font-bold">B</span>
+          </button>
+          <button onMouseDown={noFocusSteal} onClick={() => editor?.chain().focus().toggleItalic().run()} aria-label="Itálico" aria-pressed={state?.italic ?? false} className={`${c} ${state?.italic ? active : inactive}`}>
+            <span className="italic">I</span>
+          </button>
+          <button onMouseDown={noFocusSteal} onClick={onInsertLink} aria-label="Inserir wiki link" className={`${c} ${inactive} text-brand text-xl leading-none`}>
+            ⟦⟧
+          </button>
+          <button onMouseDown={noFocusSteal} onClick={onFocusTags} aria-label="Ir para as tags" className={`${c} ${inactive} text-brand text-lg leading-none`}>
+            #
+          </button>
+          <button onMouseDown={noFocusSteal} onClick={onInsertDrawing} aria-label="Inserir desenho" className={`${c} ${inactive} text-brand text-xl leading-none`}>
+            ✏️
+          </button>
+          <button onMouseDown={noFocusSteal} onClick={insertSlash} aria-label="Inserir bloco" className={`${c} ${inactive} text-brand text-lg leading-none`}>
+            /
+          </button>
+          <button onMouseDown={noFocusSteal} onClick={onToggleCompact} aria-label="Mais ferramentas" aria-expanded={false} className={`${c} ${inactive} text-lg leading-none`}>
+            ⋯
+          </button>
+          <button onMouseDown={noFocusSteal} onClick={onTogglePreview} aria-label="Visualizar preview" className={`${c} ${inactive} text-brand`}>
+            <EyeIcon />
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -352,6 +407,17 @@ export function MobileFormattingToolbar({
             className={`${base} ${inactive} ${tocOpen ? 'text-brand' : ''}`}
           >
             <TocIcon />
+          </button>
+        )}
+        {onToggleCompact && (
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onToggleCompact}
+            aria-label="Menos ferramentas"
+            aria-expanded
+            className={`${base} ${active} text-lg leading-none`}
+          >
+            ⋯
           </button>
         )}
         <button

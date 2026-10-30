@@ -7,6 +7,7 @@ import { MarkdownRenderer } from '../MarkdownRenderer';
 import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from './InplaceEditor';
 import { LinksFooter } from './LinksFooter';
 import { TagChip } from './TagChip';
+import { CARD_TOUCH } from '../../lib/galaxy/touch';
 
 /** Altura do cabeçalho (título de até 2 linhas; as tags ficam no fim do corpo)
  *  que sai da altura máxima do corpo. */
@@ -139,6 +140,32 @@ export const GalaxyCard = memo(function GalaxyCard({
     return () => document.removeEventListener('pointerdown', onDown, true);
   }, [menuOpen]);
 
+  // Teclado com o menu aberto: Esc fecha (e devolve o foco ao `⋯`), ↑/↓ andam
+  // pelos itens, Tab sai. Captura, para o Esc não chegar ao handler da galáxia.
+  useEffect(() => {
+    if (!menuOpen) return;
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setMenuAt(null);
+        menuBtnRef.current?.focus({ preventScroll: true });
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+        if (!items.length) return;
+        e.preventDefault();
+        const at = items.indexOf(document.activeElement as HTMLElement);
+        const next = e.key === 'ArrowDown' ? (at + 1) % items.length : (at <= 0 ? items.length - 1 : at - 1);
+        items[next].focus({ preventScroll: true });
+      } else if (e.key === 'Tab') {
+        setMenuAt(null);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [menuOpen]);
+
   const toggleMenu = () => {
     const btn = menuBtnRef.current;
     if (menuOpen || !btn) {
@@ -148,7 +175,11 @@ export const GalaxyCard = memo(function GalaxyCard({
     // offsetParent do botão é o <article>; offsets ignoram o transform da câmera.
     setMenuAt({ top: btn.offsetTop + btn.offsetHeight + 4, right: CARD_WIDTH - (btn.offsetLeft + btn.offsetWidth) });
   };
-  const closeMenu = () => setMenuAt(null);
+  /** Fecha o menu; ao escolher um item o foco volta ao `⋯`. */
+  const closeMenu = () => {
+    setMenuAt(null);
+    menuBtnRef.current?.focus({ preventScroll: true });
+  };
 
   const onBodyClick = (e: React.MouseEvent) => {
     if (editing) return;
@@ -261,16 +292,17 @@ export const GalaxyCard = memo(function GalaxyCard({
           </>
         ) : (
           <>
-            <header className="flex shrink-0 items-start gap-2 px-6 pb-2 pt-5">
+            <header className="flex shrink-0 items-start gap-2 px-6 pb-2 pt-5 [@media(pointer:coarse)]:gap-4">
               <button
                 type="button"
                 data-no-pan
                 title="Arrastar para mover"
+                aria-label="Arrastar para mover"
                 onPointerDown={onHandleDown}
                 onPointerMove={onHandleMove}
                 onPointerUp={onHandleUp}
                 onPointerCancel={onHandleUp}
-                className="-ml-3 mt-1 shrink-0 cursor-grab touch-none rounded px-1 text-[#6f7787] hover:text-[#c9cfdb] active:cursor-grabbing"
+                className={`-ml-3 mt-1 shrink-0 cursor-grab touch-none rounded px-1 text-[#6f7787] hover:text-[#c9cfdb] active:cursor-grabbing ${CARD_TOUCH}`}
               >
                 ⋮⋮
               </button>
@@ -282,15 +314,16 @@ export const GalaxyCard = memo(function GalaxyCard({
               <button
                 type="button"
                 onClick={() => actions.onFocus(meta.id)}
-                className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
+                className={`shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-[#c9cfdb] hover:bg-white/5 ${CARD_TOUCH}`}
               >
                 Focar
               </button>
               <button
                 type="button"
                 title="Maximizar"
+                aria-label="Maximizar"
                 onClick={() => actions.onMaximize(meta.id)}
-                className="shrink-0 rounded-lg border border-white/10 px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
+                className={`shrink-0 rounded-lg border border-white/10 px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5 ${CARD_TOUCH}`}
               >
                 ⤢
               </button>
@@ -298,8 +331,11 @@ export const GalaxyCard = memo(function GalaxyCard({
                 ref={menuBtnRef}
                 type="button"
                 title="Mais ações"
+                aria-label="Mais ações"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
                 onClick={toggleMenu}
-                className="shrink-0 rounded-lg border border-white/10 px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5"
+                className={`shrink-0 rounded-lg border border-white/10 px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5 ${CARD_TOUCH}`}
               >
                 ⋯
               </button>
@@ -349,6 +385,8 @@ export const GalaxyCard = memo(function GalaxyCard({
       {menuAt && !editing && (
         <div
           ref={menuRef}
+          role="menu"
+          aria-label="Ações do zettel"
           data-galaxy-card
           className="dark absolute rounded-lg border border-white/10 bg-[#0e121a] p-1 font-geist text-sm shadow-2xl"
           style={{
@@ -359,7 +397,6 @@ export const GalaxyCard = memo(function GalaxyCard({
           }}
           onPointerEnter={() => actions.onHover(idx)}
           onPointerLeave={() => actions.onHover(-1)}
-          onMouseLeave={closeMenu}
         >
           <MenuItem label="Focar" onClick={() => { closeMenu(); actions.onFocus(meta.id); }} />
           <MenuItem label="Exportar PDF" onClick={() => { closeMenu(); actions.onExport(meta.id); }} />
@@ -375,8 +412,9 @@ function MenuItem({ label, onClick, danger }: { label: string; onClick: () => vo
   return (
     <button
       type="button"
+      role="menuitem"
       onClick={onClick}
-      className={`block w-full rounded px-2.5 py-1.5 text-left hover:bg-white/5 ${danger ? 'text-red-300' : 'text-[#c9cfdb]'}`}
+      className={`block w-full rounded px-2.5 py-1.5 text-left outline-none hover:bg-white/5 focus:bg-white/10 ${danger ? 'text-red-300' : 'text-[#c9cfdb]'}`}
     >
       {label}
     </button>
