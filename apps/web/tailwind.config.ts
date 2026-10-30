@@ -17,8 +17,24 @@ const config: Config = {
       fontFamily: {
         newsreader: ['var(--font-newsreader)', 'Georgia', 'serif'],
         geist: ['var(--font-geist)', 'system-ui', 'sans-serif'],
+        vt323: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
+        plex: ['var(--font-plex-mono)', 'ui-monospace', 'monospace'],
       },
       colors: {
+        // Tema ZK//OS (valores espelhados em app/zkos.css).
+        zk: {
+          bg: '#05070d',
+          panel: '#070b14',
+          inset: '#04060b',
+          line: '#1b4a57',
+          text: '#cfe9ee',
+          dim: '#7fb0c0',
+          cyan: '#19f2ff',
+          magenta: '#ff2bd6',
+          pink: '#ff4de0',
+          amber: '#ffb000',
+          green: '#39ff88',
+        },
         brand: 'rgb(var(--color-brand) / <alpha-value>)',
         'brand-light': 'rgb(var(--color-brand-light) / <alpha-value>)',
       },

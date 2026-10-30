@@ -230,7 +230,7 @@ export function GalaxyTopBar({
   );
 }
 
-function GalaxyMenu({
+export function GalaxyMenu({
   status,
   onClose,
   onAction,

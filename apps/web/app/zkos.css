@@ -1,0 +1,284 @@
+/* Tema ZK//OS — terminal retrô/cyberpunk. Spec: zkos-theme.
+   Tudo sai de variáveis `--zk-*`; os componentes de `components/zkos/` e
+   `components/levels/` só usam estas classes e variáveis. */
+
+:root {
+  --zk-bg: #05070d;
+  --zk-bg-panel: #070b14;
+  --zk-bg-inset: #04060b;
+  --zk-line: #1b4a57;
+  --zk-line-strong: #2a6f80;
+  --zk-text: #cfe9ee;
+  --zk-dim: #7fb0c0;
+  --zk-cyan: #19f2ff;
+  --zk-magenta: #ff2bd6;
+  --zk-pink: #ff4de0;
+  --zk-amber: #ffb000;
+  --zk-green: #39ff88;
+  --zk-black: #04060b;
+  /* Cor da janela: cada <ZkWin> sobrescreve com a cor do cluster. */
+  --zk-accent: var(--zk-cyan);
+}
+
+.zk-root {
+  background: var(--zk-bg);
+  color: var(--zk-text);
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+.zk-display {
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  letter-spacing: 0.02em;
+}
+
+/* Fundo com grade e brilho no horizonte. */
+.zk-desk {
+  background-color: var(--zk-bg);
+  background-image:
+    radial-gradient(900px 420px at 50% 112%, rgba(255, 43, 214, 0.28), transparent 70%),
+    radial-gradient(700px 400px at 8% -10%, rgba(25, 242, 255, 0.16), transparent 65%),
+    repeating-linear-gradient(0deg, rgba(25, 242, 255, 0.06) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(90deg, rgba(25, 242, 255, 0.06) 0 1px, transparent 1px 44px);
+}
+
+.zk-radar {
+  background-color: var(--zk-bg-inset);
+  background-image:
+    repeating-linear-gradient(0deg, rgba(25, 242, 255, 0.07) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(90deg, rgba(25, 242, 255, 0.07) 0 1px, transparent 1px 32px);
+}
+
+/* Janela: borda e brilho na cor do cluster, sombra dura deslocada. */
+.zk-win {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: 2px solid var(--zk-accent);
+  background: rgba(6, 10, 19, 0.96);
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 28px color-mix(in srgb, var(--zk-accent) 50%, transparent),
+    10px 10px 0 rgba(0, 0, 0, 0.65);
+}
+
+.zk-titlebar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 0 8px 0 12px;
+  background: var(--zk-accent);
+  color: var(--zk-black);
+  font-family: var(--font-vt323), monospace;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.zk-ctl {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  line-height: 15px;
+  text-align: center;
+  border: 2px solid var(--zk-black);
+  font-family: var(--font-vt323), monospace;
+  font-size: 16px;
+  margin-left: 4px;
+}
+
+.zk-statusbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-top: 1.5px solid var(--zk-line);
+  background: var(--zk-bg-panel);
+  color: var(--zk-dim);
+  font-family: var(--font-vt323), monospace;
+  font-size: 18px;
+}
+
+.zk-statusbar[data-mode='edit'] {
+  border-top-color: var(--zk-amber);
+  background: #1a1204;
+  color: var(--zk-amber);
+}
+
+.zk-glow {
+  text-shadow: 0 0 10px currentColor;
+}
+
+.zk-btn {
+  background: transparent;
+  border: 1.5px solid var(--zk-cyan);
+  color: var(--zk-cyan);
+  font-family: var(--font-vt323), monospace;
+  font-size: 21px;
+  line-height: 1;
+  padding: 0 14px;
+  min-height: 40px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.zk-btn:hover {
+  background: var(--zk-cyan);
+  color: var(--zk-black);
+}
+
+.zk-btn-hot {
+  background: var(--zk-amber);
+  border: 0;
+  color: var(--zk-black);
+  font-family: var(--font-vt323), monospace;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0 20px;
+  min-height: 40px;
+  cursor: pointer;
+  clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+}
+.zk-btn-hot:hover {
+  background: #ffd24d;
+}
+
+/* Alvos de 44 px só em toque (spec: zkos-theme / Acessibilidade). */
+@media (pointer: coarse) {
+  .zk-btn,
+  .zk-btn-hot {
+    min-height: 44px;
+  }
+}
+
+.zk-lnk {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dashed var(--zk-green);
+  padding: 0 2px;
+  font: inherit;
+  color: var(--zk-green);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.zk-lnk:hover {
+  background: var(--zk-green);
+  color: var(--zk-black);
+}
+
+.zk-tag {
+  font-family: var(--font-vt323), monospace;
+  color: var(--zk-pink);
+}
+
+.zk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1.5px solid var(--zk-line);
+  background: var(--zk-bg-inset);
+  color: var(--zk-text);
+  text-align: left;
+  cursor: pointer;
+}
+.zk-row:hover {
+  border-color: var(--zk-cyan);
+  background: #0a1626;
+}
+
+.zk-caret {
+  display: inline-block;
+  width: 9px;
+  height: 1.05em;
+  background: var(--zk-amber);
+  vertical-align: text-bottom;
+  animation: zk-blink 1s steps(1) infinite;
+}
+
+/* Scanlines estáticas + vinheta; o flicker é a animação separada. */
+.zk-scan {
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.3) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at 50% 48%, transparent 55%, rgba(0, 0, 0, 0.6) 100%);
+}
+.zk-scan[data-flicker='true'] {
+  animation: zk-flick 5s infinite;
+}
+
+/* Corpo renderizado pelo MarkdownRenderer dentro do tema: links verdes,
+   texto na cor do tema (o renderizador usa classes do accent do app). */
+.zk-md {
+  color: var(--zk-text);
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+}
+.zk-md .text-brand-light {
+  color: var(--zk-green);
+  text-decoration-style: dashed;
+}
+.zk-md .text-brand-light:hover {
+  background: var(--zk-green);
+  color: var(--zk-black);
+  opacity: 1;
+}
+
+.zk-hscroll {
+  scrollbar-width: none;
+}
+.zk-hscroll::-webkit-scrollbar {
+  display: none;
+}
+
+.zk-win-enter {
+  animation: zk-boot 0.35s ease both;
+}
+
+@keyframes zk-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes zk-flick {
+  0%,
+  100%,
+  47%,
+  49% {
+    opacity: 1;
+  }
+  48% {
+    opacity: 0.86;
+  }
+}
+@keyframes zk-boot {
+  from {
+    opacity: 0;
+    translate: 0 -10px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* Movimento reduzido: nada pisca nem desliza (as scanlines estáticas ficam). */
+@media (prefers-reduced-motion: reduce) {
+  .zk-scan[data-flicker='true'],
+  .zk-caret,
+  .zk-win-enter {
+    animation: none;
+  }
+  .zk-levels-track {
+    transition: none !important;
+  }
+}
