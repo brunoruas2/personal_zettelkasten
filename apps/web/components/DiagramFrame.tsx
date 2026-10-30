@@ -24,9 +24,15 @@ export function ZoomModal({
   const { zoomIn, zoomOut, reset } = usePinchZoom(surfaceRef, targetRef);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    // Captura + preventDefault/stopPropagation: o Esc fecha só o zoom, sem sair do foco/edição por baixo.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
   // iOS ignora overflow:hidden no body; position:fixed com o offset salvo é o que segura
