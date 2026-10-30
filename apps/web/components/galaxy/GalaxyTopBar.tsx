@@ -39,7 +39,7 @@ const SYNC_DOT: Record<SyncStatus, string> = {
   error: 'bg-red-400',
 };
 
-export type MenuAction = 'new' | 'search' | 'tags' | 'settings' | 'passkeys' | 'palette' | 'help';
+export type MenuAction = 'new' | 'capture' | 'search' | 'tags' | 'settings' | 'passkeys' | 'palette' | 'help';
 
 /** Parada da trilha do Voltar. `fromTop === null`: o zettel atual (ou o "…" de paradas mais antigas). */
 export interface TrailItem {
@@ -66,6 +66,7 @@ export function GalaxyTopBar({
   onTrail,
   tagFilter,
   onClearTag,
+  onRetry,
 }: {
   /** Presente só com algo a avançar (depois de um Voltar). */
   onForward?: () => void;
@@ -76,6 +77,8 @@ export function GalaxyTopBar({
   /** Filtro de tag ativo (tag e quantos zettels visíveis a têm). */
   tagFilter?: { tag: string; count: number } | null;
   onClearTag?: () => void;
+  /** Repete o save pendente (só aparece com o save em erro). */
+  onRetry?: () => void;
   unplaced: number;
   /** Estado do autosave da edição; enquanto houver, substitui o do sync. */
   saveStatus: SaveStatus;
@@ -102,11 +105,25 @@ export function GalaxyTopBar({
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
           <span className="font-newsreader text-base font-medium">Galáxia</span>
-          <span className="hidden items-center gap-1.5 text-xs text-[#8b93a3] sm:flex">
-            <span className={`h-1.5 w-1.5 rounded-full ${saveStatus !== 'idle' ? SAVE_DOT[saveStatus] : SYNC_DOT[status]}`} />
-            {saveStatus !== 'idle' ? SAVE_LABEL[saveStatus] : SYNC_LABEL[status]}
+          {/* Abaixo de `sm` só o ponto (o texto vai no `title`); o estado do save nunca some do celular. */}
+          <span
+            className="flex items-center gap-1.5 text-xs text-[#8b93a3]"
+            title={saveStatus !== 'idle' ? SAVE_LABEL[saveStatus] : SYNC_LABEL[status]}
+            aria-live="polite"
+          >
+            <span className={`h-2 w-2 rounded-full sm:h-1.5 sm:w-1.5 ${saveStatus !== 'idle' ? SAVE_DOT[saveStatus] : SYNC_DOT[status]}`} />
+            <span className="hidden sm:inline">{saveStatus !== 'idle' ? SAVE_LABEL[saveStatus] : SYNC_LABEL[status]}</span>
           </span>
         </button>
+        {saveStatus === 'error' && onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-xl border border-red-400/40 bg-[#0e121a]/90 px-3 py-2 text-sm text-[#e6e9f0] shadow-lg hover:bg-[#141925]"
+          >
+            Tentar de novo
+          </button>
+        )}
         {menuOpen && (
           <GalaxyMenu
             status={status}
@@ -245,6 +262,7 @@ function GalaxyMenu({
     // Temporário: até a criação no lugar (duplo clique na galáxia), o novo
     // zettel nasce na página antiga.
     { action: 'new', label: 'Novo zettel' },
+    { action: 'capture', label: 'Captura rápida', hint: keysOf('capture') },
     { action: 'palette', label: 'Paleta de comandos', hint: keysOf('palette') },
     { action: 'search', label: 'Buscar', hint: keysOf('search') },
     { action: 'tags', label: 'Tags' },

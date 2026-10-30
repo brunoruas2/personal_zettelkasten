@@ -19,6 +19,7 @@ export interface Shortcut {
 export const SHORTCUT_SCOPES: ShortcutScope[] = ['Galáxia', 'Câmera', 'Leitura', 'Edição', 'Desenho'];
 
 export const SHORTCUTS: Shortcut[] = [
+  { id: 'capture', label: 'Captura rápida', keys: 'N', scope: 'Galáxia' },
   { id: 'palette', label: 'Paleta de comandos', keys: 'Ctrl K', scope: 'Galáxia' },
   { id: 'search', label: 'Buscar na galáxia', keys: 'Alt B', scope: 'Galáxia' },
   { id: 'settings', label: 'Configurações', keys: 'Alt ,', scope: 'Galáxia' },

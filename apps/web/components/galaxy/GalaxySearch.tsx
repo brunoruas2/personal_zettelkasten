@@ -61,6 +61,7 @@ export function GalaxySearch({
   const [loading, setLoading] = useState(false);
   const [tags, setTags] = useState<string[]>(initial.tags ?? []);
   const [orphansOnly, setOrphansOnly] = useState(false);
+  const [inboxOnly, setInboxOnly] = useState(false);
   const [unplacedOnly, setUnplacedOnly] = useState(initial.unplacedOnly ?? false);
   const [includeHidden, setIncludeHidden] = useState(false);
   const [sort, setSort] = useState<Sort>('relevance');
@@ -151,11 +152,12 @@ export function GalaxySearch({
   const results = useMemo(() => {
     // Sem filtro de texto mas com filtro de tag/avulso/sem lugar: parte da base
     // inteira, não só dos recentes.
-    const filtering = tags.length > 0 || orphansOnly || unplacedOnly;
+    const filtering = tags.length > 0 || orphansOnly || unplacedOnly || inboxOnly;
     let list = found ?? (filtering ? zettels : recents);
     list = list.filter((z) => {
       if (!includeHidden && isHidden(z)) return false;
       if (tags.length && !tags.every((t) => z.tags.includes(t))) return false;
+      if (inboxOnly && !z.tags.includes('inbox')) return false;
       if (orphansOnly && (neighbors.get(z.id)?.size ?? 0) > 0) return false;
       if (unplacedOnly && !isUnplaced(z.id)) return false;
       return true;
@@ -163,7 +165,7 @@ export function GalaxySearch({
     if (sort === 'recent' || (!found && filtering)) list = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [found, zettels, recents, tags, orphansOnly, unplacedOnly, includeHidden, sort, neighbors, excluded]);
+  }, [found, zettels, recents, tags, orphansOnly, inboxOnly, unplacedOnly, includeHidden, sort, neighbors, excluded]);
 
   useEffect(() => setSelected(0), [results]);
 
@@ -252,6 +254,9 @@ export function GalaxySearch({
         </div>
         <button type="button" className={chip(orphansOnly)} onClick={() => setOrphansOnly((v) => !v)}>
           Avulsos
+        </button>
+        <button type="button" className={chip(inboxOnly)} onClick={() => setInboxOnly((v) => !v)}>
+          Inbox
         </button>
         {unplacedOnly && (
           <button type="button" className={chip(true)} onClick={() => setUnplacedOnly(false)}>

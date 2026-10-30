@@ -5,6 +5,7 @@ import {
   analyzeSubtree,
   firstLine,
   relatedZettels,
+  splitCapture,
   subtreeDepths,
   type Zettel,
   type ZettelMeta,
@@ -37,6 +38,7 @@ import { GalaxyTopBar, ZoomControls, type MenuAction, type TrailItem } from './G
 import { GalaxyModal } from './GalaxyModal';
 import { CommandPalette, type PaletteAction } from './CommandPalette';
 import { Minimap } from './Minimap';
+import { QuickCapture } from './QuickCapture';
 import { ShortcutsHelp } from './ShortcutsHelp';
 import { keysOf } from '../../lib/galaxy/shortcuts';
 import { useSyncStore } from '../../store/useSyncStore';
@@ -130,7 +132,8 @@ export function Galaxy() {
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
   const [search, setSearch] = useState<SearchFilters | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; action?: { label: string; run: () => void } } | null>(null);
+  const [capture, setCapture] = useState(false);
   const [mobile, setMobile] = useState(false);
 
   // Edição
@@ -150,6 +153,11 @@ export function Galaxy() {
   const editingIdRef = useRef<string | null>(null);
   editingIdRef.current = editingId;
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveStatusRef = useRef<SaveStatus>('idle');
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressedRef = useRef(false);
+  /** Zettels criados nesta sessão e ainda sem conteúdo confirmado: candidatos ao descarte se saírem vazios. */
+  const freshIdsRef = useRef(new Set<string>());
 
   // Apagar e foco
   const [deleteMeta, setDeleteMeta] = useState<ZettelMeta | null>(null);
@@ -172,12 +180,14 @@ export function Galaxy() {
   const syncBackRef = useRef<() => void>(() => {});
   const [readerCanForward, setReaderCanForward] = useState(false);
 
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast((t) => (t === msg ? null : t)), 3500);
+  const showToast = useCallback((msg: string, action?: { label: string; run: () => void }) => {
+    const t = { msg, action };
+    setToast(t);
+    setTimeout(() => setToast((cur) => (cur === t ? null : cur)), action ? 6000 : 3500);
   }, []);
 
   const onStatus = useCallback((s: SaveStatus) => {
+    saveStatusRef.current = s;
     setSaveStatus(s);
     if (savedTimer.current) clearTimeout(savedTimer.current);
     if (s === 'saved') savedTimer.current = setTimeout(() => setSaveStatus('idle'), SAVED_LINGER_MS);
@@ -344,13 +354,37 @@ export function Galaxy() {
 
   // --- edição ---
 
-  const exitEdit = useCallback(async () => {
-    if (!editingIdRef.current) return;
+  /** Apaga o zettel criado nesta sessão que saiu da edição vazio e sem citações; senão deixa de ser candidato. */
+  const discardIfEmpty = useCallback(
+    async (id: string, empty: boolean) => {
+      if (!freshIdsRef.current.has(id)) return;
+      const cited = useZettelStore.getState().links.some((l) => l.targetId === id && l.sourceId !== id);
+      if (!empty || cited) {
+        freshIdsRef.current.delete(id);
+        return;
+      }
+      freshIdsRef.current.delete(id);
+      await deleteZettel(id);
+    },
+    [deleteZettel],
+  );
+
+  /** Fecha a edição gravando antes. `false` = o save falhou: a edição fica aberta para o texto não se perder. */
+  const exitEdit = useCallback(async (): Promise<boolean> => {
+    const id = editingIdRef.current;
+    if (!id) return true;
     await editorRef.current?.flush();
+    if (saveStatusRef.current === 'error') {
+      showToast('Não foi possível salvar — o texto segue no editor');
+      return false;
+    }
+    const empty = editorRef.current?.isEmpty() ?? false;
     setEditingId(null);
     setEditingZettel(null);
     setAutoFocusTitle(false);
-  }, []);
+    await discardIfEmpty(id, empty);
+    return true;
+  }, [discardIfEmpty, showToast]);
 
   /** Restaura uma entrada da pilha: câmera guardada e, se o zettel existe, `?z=` e destaque. */
   const restoreEntry = useCallback((e: { id: string | null; camera: Camera }) => {
@@ -410,6 +444,9 @@ export function Galaxy() {
 
   const startEdit = useCallback(
     async (zettel: Zettel, opts: { titleFocus?: boolean; mobile?: boolean } = {}) => {
+      // Save em erro numa edição aberta: não troca de zettel (perderia o texto).
+      if (editingIdRef.current && editingIdRef.current !== zettel.id && saveStatusRef.current === 'error') return;
+      if (!editingIdRef.current && saveStatusRef.current === 'error') onStatus('idle');
       pushRecent(zettel.id);
       if (opts.mobile) {
         setAutoFocusTitle(!!opts.titleFocus);
@@ -421,7 +458,7 @@ export function Galaxy() {
       setEditingZettel(zettel);
       setEditingId(zettel.id);
     },
-    [flyTo],
+    [flyTo, onStatus],
   );
 
   const requestEdit = useCallback(
@@ -512,10 +549,11 @@ export function Galaxy() {
   const createAt = useCallback(
     async (world: { x: number; y: number }, title = '') => {
       if (focusRootRef.current) exitFocus();
-      await exitEdit();
+      if (!(await exitEdit())) return;
       const position = await snapPosition(world);
       const body = title ? '' : await loadTemplate();
       const zettel = await createZettel({ title, body, tags: [] }, { position });
+      freshIdsRef.current.add(zettel.id);
       pendingNewRef.current = { zettel, mobile: isMobileDevice() };
     },
     [createZettel, exitEdit, exitFocus],
@@ -531,7 +569,7 @@ export function Galaxy() {
     const pending = pendingNewRef.current;
     if (!pending || !data.indexById.has(pending.zettel.id)) return;
     pendingNewRef.current = null;
-    void startEdit(pending.zettel, { titleFocus: true, mobile: pending.mobile });
+    void startEdit(pending.zettel, { titleFocus: false, mobile: pending.mobile });
   }, [data, startEdit]);
 
   /** `[[novo]]` no editor: cria ao lado do card em edição, sem mudar a edição. */
@@ -545,6 +583,22 @@ export function Galaxy() {
       await createZettel({ title, body: '', tags: [] }, { position });
     },
     [createZettel, fullscreen],
+  );
+
+  /** Captura rápida: grava na caixa de entrada perto do zettel atual, sem mover a câmera nem abrir o editor. */
+  const captureNote = useCallback(
+    async (text: string) => {
+      const { title, body } = splitCapture(text);
+      if (!title && !body) return;
+      const currentId = currentIdRef.current;
+      const idx = currentId ? dataRef.current.indexById.get(currentId) : undefined;
+      const cam = engineRef.current?.getCamera();
+      const anchor = idx !== undefined ? { x: dataRef.current.xs[idx], y: dataRef.current.ys[idx] } : cam ? { x: cam.x, y: cam.y } : { x: 0, y: 0 };
+      const position = await snapPosition(anchor);
+      const zettel = await createZettel({ title, body, tags: ['inbox'] }, { position });
+      showToast('Capturado', { label: 'Abrir', run: () => jumpTo(zettel.id, FLY_MIN_SCALE) });
+    },
+    [createZettel, jumpTo, showToast],
   );
 
   // --- apagar ---
@@ -890,7 +944,7 @@ export function Galaxy() {
   }, [data, showToast]);
 
   // Overlays desligam pan por teclado/atalhos do canvas.
-  const overlayOpen = palette || help || modal !== null || search !== null || deleteMeta !== null || fullscreen !== null || exportId !== null || maximizedId !== null;
+  const overlayOpen = capture || palette || help || modal !== null || search !== null || deleteMeta !== null || fullscreen !== null || exportId !== null || maximizedId !== null;
   useEffect(() => {
     engineRef.current?.setInputEnabled(!overlayOpen);
   }, [overlayOpen]);
@@ -913,6 +967,12 @@ export function Galaxy() {
         if (overlayOpenRef.current || editingIdRef.current || isTypingTarget(e.target)) return;
         e.preventDefault();
         setPalette(true);
+        return;
+      }
+      if (e.code === 'KeyN' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.repeat) {
+        if (overlayOpenRef.current || editingIdRef.current || isTypingTarget(e.target)) return;
+        e.preventDefault();
+        setCapture(true);
         return;
       }
       if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -980,6 +1040,7 @@ export function Galaxy() {
 
   const onMenu = (action: MenuAction) => {
     if (action === 'new') createAtCenter();
+    else if (action === 'capture') setCapture(true);
     else if (action === 'palette') setPalette(true);
     else if (action === 'help') setHelp(true);
     else if (action === 'search') setSearch({});
@@ -1005,6 +1066,7 @@ export function Galaxy() {
   const paletteActions: PaletteAction[] = [];
   if (palette) {
     paletteActions.push({ id: 'new', label: 'Novo zettel', run: createAtCenter });
+    paletteActions.push({ id: 'capture', label: 'Captura rápida', keys: keysOf('capture'), run: () => setCapture(true) });
     paletteActions.push({ id: 'search', label: 'Buscar com filtros e prévia', keys: keysOf('search'), run: () => setSearch({}) });
     if (backTop) paletteActions.push({ id: 'back', label: 'Voltar ao zettel anterior', keys: keysOf('back'), run: () => void goBack() });
     if (forwardTop) paletteActions.push({ id: 'forward', label: 'Avançar', run: () => void goForward() });
@@ -1116,6 +1178,7 @@ export function Galaxy() {
         onTrail={(fromTop) => void goBackTo(fromTop)}
         tagFilter={tagFilter ? { tag: tagFilter, count: tagFilterCount } : null}
         onClearTag={() => setTagFilter(null)}
+        onRetry={() => void editorRef.current?.flush()}
       />
 
       <ZoomControls
@@ -1130,8 +1193,25 @@ export function Galaxy() {
       {mobile && (
         <button
           type="button"
-          onClick={createAtCenter}
-          title="Novo zettel"
+          onPointerDown={() => {
+            // Toque longo = captura rápida; toque curto segue criando e editando.
+            longPressedRef.current = false;
+            if (longPressTimer.current) clearTimeout(longPressTimer.current);
+            longPressTimer.current = setTimeout(() => {
+              longPressedRef.current = true;
+              setCapture(true);
+            }, 500);
+          }}
+          onPointerUp={() => longPressTimer.current && clearTimeout(longPressTimer.current)}
+          onPointerLeave={() => longPressTimer.current && clearTimeout(longPressTimer.current)}
+          onPointerCancel={() => longPressTimer.current && clearTimeout(longPressTimer.current)}
+          onContextMenu={(e) => e.preventDefault()}
+          onClick={() => {
+            if (longPressedRef.current) longPressedRef.current = false;
+            else createAtCenter();
+          }}
+          title="Novo zettel (segure para captura rápida)"
+          style={{ touchAction: 'manipulation' }}
           className="absolute bottom-4 left-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brand text-2xl text-white shadow-2xl"
         >
           +
@@ -1162,8 +1242,24 @@ export function Galaxy() {
       )}
 
       {toast && (
-        <div className="absolute bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-white/10 bg-[#0e121a] px-4 py-2 font-geist text-sm text-[#e6e9f0] shadow-2xl">
-          {toast}
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-white/10 bg-[#0e121a] px-4 py-2 font-geist text-sm text-[#e6e9f0] shadow-2xl"
+        >
+          {toast.msg}
+          {toast.action && (
+            <button
+              type="button"
+              onClick={() => {
+                toast.action?.run();
+                setToast(null);
+              }}
+              className="rounded-md px-2 py-0.5 font-medium text-brand-light hover:bg-white/5"
+            >
+              {toast.action.label}
+            </button>
+          )}
         </div>
       )}
 
@@ -1240,13 +1336,25 @@ export function Galaxy() {
           onStatus={onStatus}
           onCreateLink={createLink}
           onNavigateLink={(id) => void navigateToId(id)}
-          onClose={() => {
+          onClose={({ empty }) => {
+            const id = fullscreen.zettel.id;
             setFullscreen(null);
             setAutoFocusTitle(false);
+            void discardIfEmpty(id, empty);
           }}
         />
       )}
 
+      {capture && (
+        <GalaxyModal title="Captura rápida" onClose={() => setCapture(false)}>
+          <QuickCapture
+            onSubmit={(text) => {
+              setCapture(false);
+              void captureNote(text);
+            }}
+          />
+        </GalaxyModal>
+      )}
       {palette && (
         <GalaxyModal title="Paleta de comandos" onClose={() => setPalette(false)}>
           <CommandPalette

@@ -105,7 +105,8 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     const zettel = await controller.update(id, data);
     setCachedBody(zettel.id, zettel.body, zettel.bodyLen);
     syncService.push({ op: 'update', payload: zettel }).catch(() => {});
-    if (data.title !== undefined && existing && data.title !== existing.title) {
+    // Título anterior vazio (zettel recém-criado): nenhum `[[ ]]` aponta para ele.
+    if (data.title !== undefined && existing && existing.title.trim() !== '' && data.title !== existing.title) {
       // Corpos desatualizados não são reescritos (apagaria a versão de outro
       // aparelho): com rede, baixa-os antes para a reescrita alcançar todos.
       if (navigator.onLine) await downloadBodies().catch(() => {});

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Zettel } from '@zettelkasten/core';
 import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from './InplaceEditor';
 
@@ -36,9 +36,11 @@ export function FullscreenEditor({
   onCreateLink: (title: string) => void | Promise<void>;
   /** Chip do rodapé de links: fecha o editor (gravando) e depois navega. */
   onNavigateLink?: (id: string) => void;
-  onClose: () => void;
+  /** `empty`: título, corpo e tags vazios ao fechar (a galáxia decide se descarta). */
+  onClose: (info: { empty: boolean }) => void;
 }) {
   const editorRef = useRef<InplaceEditorHandle>(null);
+  const [pending, setPending] = useState(0);
   const closingRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -50,7 +52,7 @@ export function FullscreenEditor({
       if (closingRef.current) return;
       closingRef.current = true;
       void editorRef.current?.flush().finally(() => {
-        onCloseRef.current();
+        onCloseRef.current({ empty: editorRef.current?.isEmpty() ?? false });
         afterCloseRef.current?.();
       });
     };
@@ -70,7 +72,23 @@ export function FullscreenEditor({
         <button type="button" onClick={back} className="text-sm text-[#c9cfdb]">
           ← Galáxia
         </button>
-        <span className="text-xs text-[#8b93a3]">{STATUS_LABEL[status]}</span>
+        <span className="flex items-center gap-2 text-xs text-[#8b93a3]" aria-live="polite">
+          {pending > 0 && (
+            <span>
+              Aguardando {pending} anexo{pending > 1 ? 's' : ''}…
+            </span>
+          )}
+          {STATUS_LABEL[status]}
+          {status === 'error' && (
+            <button
+              type="button"
+              onClick={() => void editorRef.current?.flush()}
+              className="rounded-md border border-white/15 px-2 py-0.5 text-[#e6e9f0] hover:bg-white/5"
+            >
+              Tentar de novo
+            </button>
+          )}
+        </span>
       </div>
       <div className={`min-h-0 flex-1 ${variant === 'card' ? 'mx-auto w-full max-w-3xl' : ''}`}>
         <InplaceEditor
@@ -80,6 +98,7 @@ export function FullscreenEditor({
           autoFocusTitle={autoFocusTitle}
           onStatus={onStatus}
           onCreateLink={onCreateLink}
+          onPending={setPending}
           onNavigateLink={
             onNavigateLink
               ? (id) => {

@@ -2,7 +2,7 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { type Editor, useEditorState } from '@tiptap/react';
-import type { Zettel } from '@zettelkasten/core';
+import { firstLine, type Zettel } from '@zettelkasten/core';
 import { useZettelStore } from '../../store/useZettelStore';
 import { TipTapEditor, type TipTapEditorHandle } from '../TipTapEditor';
 import { TagInput } from '../TagInput';
@@ -21,6 +21,8 @@ export interface InplaceEditorHandle {
   /** Salva na hora o que estiver pendente (corpo, tags e título). */
   flush: () => Promise<void>;
   focusTitle: () => void;
+  /** Título, corpo e tags vazios agora (estado do editor, não do índice). */
+  isEmpty: () => boolean;
 }
 
 const AUTOSAVE_MS = 1000;
@@ -40,8 +42,10 @@ export const InplaceEditor = forwardRef<
     onCreateLink: (title: string) => void | Promise<void>;
     /** Chip do rodapé de links: navega até o zettel (o editor grava antes). */
     onNavigateLink?: (id: string) => void;
+    /** Anexos aguardando (para o cabeçalho do editor em tela cheia). */
+    onPending?: (n: number) => void;
   }
->(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink }, ref) {
+>(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink, onPending }, ref) {
   const updateZettel = useZettelStore((s) => s.updateZettel);
   const zettels = useZettelStore((s) => s.zettels);
   const allTags = useMemo(() => [...new Set(zettels.flatMap((z) => z.tags))].sort(), [zettels]);
@@ -87,13 +91,17 @@ export const InplaceEditor = forwardRef<
   /** Corpo e tags. Espera os anexos (o corpo não pode citar bytes que o servidor não tem). */
   const saveContent = useCallback(async () => {
     if (pendingImagesRef.current > 0) return;
-    const { body: b, tags: t } = latestRef.current;
+    const { title: cur, body: b, tags: t } = latestRef.current;
     const saved = savedRef.current;
-    if (b === saved.body && JSON.stringify(t) === JSON.stringify(saved.tags)) return;
+    // Título vazio com corpo: deriva da 1ª linha. Digitado nunca é sobrescrito.
+    const derived = cur.trim() === '' && b.trim() !== '' ? firstLine(b) : '';
+    const needsTitle = derived !== '' && derived !== saved.title;
+    if (!needsTitle && b === saved.body && JSON.stringify(t) === JSON.stringify(saved.tags)) return;
     onStatus('saving');
     try {
-      await updateZettel(zettel.id, { body: b, tags: t });
-      savedRef.current = { ...savedRef.current, body: b, tags: t };
+      await updateZettel(zettel.id, needsTitle ? { body: b, tags: t, title: derived } : { body: b, tags: t });
+      savedRef.current = { ...savedRef.current, body: b, tags: t, ...(needsTitle ? { title: derived } : {}) };
+      if (needsTitle) setTitle((now) => (now.trim() === '' ? derived : now));
       report(true);
     } catch {
       report(false);
@@ -125,6 +133,9 @@ export const InplaceEditor = forwardRef<
   useEffect(() => {
     if (pendingImages === 0) schedule();
   }, [pendingImages, schedule]);
+  useEffect(() => {
+    onPending?.(pendingImages);
+  }, [pendingImages, onPending]);
 
   useImperativeHandle(
     ref,
@@ -137,6 +148,10 @@ export const InplaceEditor = forwardRef<
         await saveTitle();
       },
       focusTitle: () => titleRef.current?.focus(),
+      isEmpty: () => {
+        const { title: t, body: b, tags: tg } = latestRef.current;
+        return t.trim() === '' && b.trim() === '' && tg.length === 0;
+      },
     }),
     [saveContent, saveTitle],
   );
@@ -212,7 +227,18 @@ export const InplaceEditor = forwardRef<
             )}
           </div>
         )}
-        <div data-card-body className={previewOpen ? 'hidden' : undefined}>
+        <div
+          data-card-body
+          className={previewOpen ? 'hidden' : undefined}
+          onKeyDownCapture={(e) => {
+            // Shift+Tab no início do corpo (fora de lista) volta ao título.
+            if (e.key !== 'Tab' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || !editor) return;
+            const sel = editor.state.selection;
+            if (!sel.empty || sel.from > 1 || editor.isActive('listItem') || editor.isActive('taskItem')) return;
+            e.preventDefault();
+            titleRef.current?.focus();
+          }}
+        >
           <DrawingEditHost>
             <TipTapEditor
               ref={editorRef}
