@@ -39,6 +39,8 @@ export interface ZettelWindowProps {
   onFinished?: (info: { empty: boolean }) => void;
   /** `[[link]]` do corpo. */
   onOpenLink: (id: string) => void;
+  /** Volta ao zettel anterior da trilha (Foco); sem ele, não há botão. */
+  onBack?: () => void;
   linkCount: number;
   /** Sufixo da barra de título, ex.: "LEITURA". */
   titleSuffix?: string;
@@ -66,6 +68,7 @@ export function ZettelWindow({
   onStopEdit,
   onFinished,
   onOpenLink,
+  onBack,
   linkCount,
   titleSuffix,
   actions,
@@ -188,6 +191,11 @@ export function ZettelWindow({
                     ))}
                   </div>
                   <div className="flex flex-none gap-2">
+                    {onBack && (
+                      <NeonButton onClick={onBack} aria-label="Voltar ao zettel anterior">
+                        {compact ? '←' : '← VOLTAR'}
+                      </NeonButton>
+                    )}
                     <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
                       EDITAR
                     </NeonButton>
@@ -238,12 +246,7 @@ export function ZettelWindow({
           {editing && (
             <>
               <div className={`flex flex-none items-center justify-between gap-2 border-b border-zk-line py-2 ${isMobile ? 'px-3' : 'px-10'}`}>
-                <div className="flex items-center gap-3">
-                  <NeonButton onClick={() => void finish()} aria-label="Voltar para a leitura">
-                    {isMobile ? '←' : '← VOLTAR'}
-                  </NeonButton>
-                  <span className="zk-display text-xl text-zk-amber">EDITANDO</span>
-                </div>
+                <span className="zk-display text-xl text-zk-amber">EDITANDO</span>
                 <NeonButton variant="hot" onClick={() => void finish()}>
                   {isMobile ? 'OK' : 'CONCLUIR [ESC]'}
                 </NeonButton>

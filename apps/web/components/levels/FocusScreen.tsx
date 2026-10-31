@@ -22,7 +22,10 @@ export function FocusScreen() {
   const actions = useLevelActions();
   const index = useLinkIndex();
 
+  const trail = useLevelsStore((s) => s.trail);
   const linkCount = useMemo(() => (focusId ? index.neighbors(focusId).length : 0), [index, focusId]);
+  // O foco atual é sempre o último da trilha; o anterior é para onde "Voltar" vai.
+  const prevId = trail.length > 1 ? trail[trail.length - 2] : null;
 
   if (!focusId) {
     return (
@@ -44,6 +47,7 @@ export function FocusScreen() {
         onStopEdit={stopEdit}
         onFinished={({ empty }) => void discardIfEmpty(focusId, empty)}
         onOpenLink={(id) => void actions.focus(id)}
+        onBack={prevId ? () => void actions.focus(prevId) : undefined}
         linkCount={linkCount}
         compact={isMobile}
         className="min-h-0 flex-1"
