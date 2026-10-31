@@ -34,6 +34,7 @@ import type { Node as PMNode, Slice } from '@tiptap/pm/model';
 import { generateId, type ZettelMeta as Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
 import { MermaidBlock } from './MermaidBlock';
+import { Chords } from './Chords';
 import { useDiagramLayout } from '../lib/diagramLayout';
 import { isImageFile, ImageCompressError } from '../lib/imageCompress';
 import { importImage, ImageUploadError } from '../lib/imageSync';
@@ -530,7 +531,8 @@ function CodeBlockNodeView({ node, updateAttributes }: {
 }) {
   const language = node.attrs.language ?? '';
   const isMermaid = language === 'mermaid';
-  const isDiagram = language === 'plantuml' || isMermaid;
+  const isChords = language === 'chords';
+  const isDiagram = language === 'plantuml' || isMermaid || isChords;
 
   // Chamado sempre, mesmo para blocos que não são diagrama: o early return abaixo não
   // pode ficar antes de um hook.
@@ -600,7 +602,13 @@ function CodeBlockNodeView({ node, updateAttributes }: {
     <NodeViewWrapper as="div" className={wrapperClass}>
       <div className={codeColClass}>{codeArea}</div>
       <div contentEditable={false} className={previewColClass}>
-        {isMermaid ? <MermaidBlock source={debouncedSource} /> : <PlantUmlBlock source={debouncedSource} />}
+        {isChords ? (
+          <Chords source={debouncedSource} />
+        ) : isMermaid ? (
+          <MermaidBlock source={debouncedSource} />
+        ) : (
+          <PlantUmlBlock source={debouncedSource} />
+        )}
       </div>
     </NodeViewWrapper>
   );
