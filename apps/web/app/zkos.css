@@ -462,6 +462,11 @@
   color: var(--zk-text);
   font-family: var(--font-vt323), ui-monospace, monospace;
 }
+.zk-md .font-mono {
+  font-size: 19px; /* VT323 é pequena: cifra e código ganham corpo */
+  line-height: 1.25;
+}
+
 .zk-md .text-brand-light {
   color: var(--zk-green);
   text-decoration-style: dashed;

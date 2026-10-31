@@ -19,6 +19,7 @@ const config: Config = {
         geist: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
         vt323: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
         plex: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
+        mono: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
       },
       colors: {
         // Tema ZK//OS (valores espelhados em app/zkos.css).
