@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { useThemeVariant } from './themeVariant';
 
 /**
  * "Página" da galáxia: modal escuro sobre o canvas, que continua visível atrás.
@@ -37,9 +38,16 @@ export function GalaxyModal({
     first?.focus({ preventScroll: true });
   }, []);
 
+  const zk = useThemeVariant() === 'zkos';
+  const width = wide ? 'lg:max-w-6xl xl:max-w-7xl' : 'lg:max-w-3xl';
+
   return (
     <div
-      className="fixed inset-0 z-40 flex items-stretch justify-center bg-[#05070c]/70 font-geist lg:items-start lg:p-6 lg:pt-[6vh]"
+      className={
+        zk
+          ? 'zk-modal-backdrop fixed inset-0 z-40 flex items-stretch justify-center lg:items-start lg:p-6 lg:pt-[6vh]'
+          : 'fixed inset-0 z-40 flex items-stretch justify-center bg-[#05070c]/70 font-geist lg:items-start lg:p-6 lg:pt-[6vh]'
+      }
       onClick={onClose}
     >
       <div
@@ -48,22 +56,33 @@ export function GalaxyModal({
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className={`dark flex w-full flex-col overflow-hidden border-white/10 bg-[#0e121a] text-[#e6e9f0] shadow-2xl lg:max-h-[85vh] lg:rounded-2xl lg:border ${
-          wide ? 'lg:max-w-6xl xl:max-w-7xl' : 'lg:max-w-3xl'
-        }`}
+        className={
+          zk
+            ? `dark zk-modal w-full lg:max-h-[85vh] ${width}`
+            : `dark flex w-full flex-col overflow-hidden border-white/10 bg-[#0e121a] text-[#e6e9f0] shadow-2xl lg:max-h-[85vh] lg:rounded-2xl lg:border ${width}`
+        }
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3">
-          <h2 className="font-newsreader text-lg font-medium">{title}</h2>
-          <button
-            type="button"
-            data-modal-close
-            onClick={onClose}
-            title="Fechar (Esc)"
-            className="rounded-lg px-2 py-1 text-sm text-[#8b93a3] hover:bg-white/5 hover:text-[#e6e9f0]"
-          >
-            Esc
-          </button>
-        </div>
+        {zk ? (
+          <div className="zk-modal-head">
+            <h2 className="m-0 text-[inherit] font-normal">{title}</h2>
+            <button type="button" data-modal-close onClick={onClose} title="Fechar (Esc)" aria-label="Fechar (Esc)">
+              ESC
+            </button>
+          </div>
+        ) : (
+          <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3">
+            <h2 className="font-newsreader text-lg font-medium">{title}</h2>
+            <button
+              type="button"
+              data-modal-close
+              onClick={onClose}
+              title="Fechar (Esc)"
+              className="rounded-lg px-2 py-1 text-sm text-[#8b93a3] hover:bg-white/5 hover:text-[#e6e9f0]"
+            >
+              Esc
+            </button>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
       </div>
     </div>

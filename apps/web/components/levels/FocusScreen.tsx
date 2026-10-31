@@ -50,6 +50,15 @@ export function FocusScreen() {
         onOpenLink={(id) => void actions.focus(id)}
         linkCount={linkCount}
         className="min-h-0 flex-1"
+        actions={
+          focusEditing ? undefined : (
+            <div className="flex flex-none justify-end gap-2 border-t border-zk-line p-2">
+              <button type="button" className="zk-btn-danger" onClick={() => void actions.requestDelete(focusId)}>
+                APAGAR
+              </button>
+            </div>
+          )
+        }
         side={isMobile ? undefined : <ConnectionsColumn id={focusId} onOpen={(id) => void actions.openInMemory(id)} />}
       />
       {isMobile && !focusEditing && (

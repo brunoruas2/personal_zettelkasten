@@ -147,12 +147,207 @@
   background: #ffd24d;
 }
 
+.zk-btn-danger {
+  background: transparent;
+  border: 1.5px solid var(--zk-magenta);
+  color: var(--zk-magenta);
+  font-family: var(--font-vt323), monospace;
+  font-size: 21px;
+  line-height: 1;
+  padding: 0 14px;
+  min-height: 40px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.zk-btn-danger:hover:not(:disabled) {
+  background: var(--zk-magenta);
+  color: var(--zk-black);
+}
+.zk-btn-danger:disabled,
+.zk-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* Alvos de 44 px só em toque (spec: zkos-theme / Acessibilidade). */
 @media (pointer: coarse) {
   .zk-btn,
-  .zk-btn-hot {
+  .zk-btn-hot,
+  .zk-btn-danger {
     min-height: 44px;
   }
+}
+
+/* Sobreposições (modal, menu, campos) no tema ZK//OS. */
+.zk-modal-backdrop {
+  background: rgba(4, 6, 11, 0.78);
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+.zk-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 2px solid var(--zk-cyan);
+  background: rgba(6, 10, 19, 0.98);
+  color: var(--zk-text);
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 28px color-mix(in srgb, var(--zk-cyan) 45%, transparent),
+    10px 10px 0 rgba(0, 0, 0, 0.65);
+}
+
+.zk-modal-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 0 8px 0 12px;
+  background: var(--zk-cyan);
+  color: var(--zk-black);
+  font-family: var(--font-vt323), monospace;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.zk-modal-head button {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 2px solid var(--zk-black);
+  background: transparent;
+  color: var(--zk-black);
+  font: inherit;
+  cursor: pointer;
+}
+.zk-modal-head button:hover {
+  background: var(--zk-black);
+  color: var(--zk-cyan);
+}
+
+/* Conteúdo compartilhado com a galáxia (busca, paleta, captura, ajuda,
+   painéis) tem cores e fontes fixas em classes Tailwind. Dentro de
+   `.zk-modal` e `.zk-menu` elas são remapeadas aqui, sem ramificar cada
+   componente; fora (a galáxia) nada muda. */
+:is(.zk-modal, .zk-menu) [class*='rounded'],
+:is(.zk-modal, .zk-menu) button,
+:is(.zk-modal, .zk-menu) input,
+:is(.zk-modal, .zk-menu) textarea,
+:is(.zk-modal, .zk-menu) select {
+  border-radius: 0;
+}
+:is(.zk-modal, .zk-menu) .font-newsreader {
+  font-family: var(--font-vt323), monospace;
+  font-size: 1.25em;
+  font-weight: 400;
+}
+:is(.zk-modal, .zk-menu) .font-geist {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+}
+/* Texto: principal, secundário e acento. */
+:is(.zk-modal, .zk-menu) [class*='text-[#e6e9f0]'],
+:is(.zk-modal, .zk-menu) [class*='text-[#f5f3ff]'],
+:is(.zk-modal, .zk-menu) [class*='text-[#c9cfdb]'] {
+  color: var(--zk-text);
+}
+:is(.zk-modal, .zk-menu) [class*='text-[#8b93a3]'],
+:is(.zk-modal, .zk-menu) [class*='text-[#6f7787]'],
+:is(.zk-modal, .zk-menu) [class*='text-[#9aa3b2]'] {
+  color: var(--zk-dim);
+}
+:is(.zk-modal, .zk-menu) .text-brand-light {
+  color: var(--zk-pink);
+}
+/* Bordas e fundos. */
+:is(.zk-modal, .zk-menu) [class*='border-white/'],
+:is(.zk-modal, .zk-menu) [class*='border-[#'] {
+  border-color: var(--zk-line);
+}
+:is(.zk-modal, .zk-menu) [class*='bg-[#05070c]'],
+:is(.zk-modal, .zk-menu) [class*='bg-[#0e121a]'] {
+  background-color: var(--zk-bg-inset);
+}
+:is(.zk-modal, .zk-menu) [class*='hover:bg-white/']:hover {
+  background-color: color-mix(in srgb, var(--zk-cyan) 18%, transparent);
+}
+:is(.zk-modal, .zk-menu) [class*='border-brand'] {
+  border-color: var(--zk-cyan);
+}
+:is(.zk-modal, .zk-menu) [class*='bg-brand/'] {
+  background-color: color-mix(in srgb, var(--zk-cyan) 18%, transparent);
+}
+:is(.zk-modal, .zk-menu) button.bg-brand,
+:is(.zk-modal, .zk-menu) a.bg-brand {
+  background-color: var(--zk-amber);
+  color: var(--zk-black);
+  font-family: var(--font-vt323), monospace;
+  font-size: 1.15em;
+}
+:is(.zk-modal, .zk-menu) kbd {
+  border-color: var(--zk-line-strong);
+  background: transparent;
+  color: var(--zk-text);
+}
+:is(.zk-modal, .zk-menu) :focus-visible {
+  outline: 2px solid var(--zk-amber);
+  outline-offset: 1px;
+}
+
+.zk-menu {
+  border: 2px solid var(--zk-cyan);
+  background: rgba(6, 10, 19, 0.98);
+  color: var(--zk-text);
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 22px color-mix(in srgb, var(--zk-cyan) 40%, transparent),
+    6px 6px 0 rgba(0, 0, 0, 0.65);
+}
+.zk-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--zk-text);
+  font-family: var(--font-vt323), monospace;
+  font-size: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+.zk-menu-item:hover:not(:disabled) {
+  background: var(--zk-cyan);
+  color: var(--zk-black);
+}
+.zk-menu-item[data-danger] {
+  color: var(--zk-magenta);
+}
+.zk-menu-item:disabled {
+  color: var(--zk-dim);
+  cursor: not-allowed;
+}
+@media (pointer: coarse) {
+  .zk-menu-item {
+    min-height: 44px;
+  }
+}
+
+.zk-field {
+  border: 1.5px solid var(--zk-line-strong);
+  border-radius: 0;
+  background: var(--zk-bg-inset);
+  color: var(--zk-text);
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+}
+.zk-field::placeholder {
+  color: var(--zk-dim);
+}
+.zk-field:focus {
+  border-color: var(--zk-cyan);
+  outline: none;
 }
 
 .zk-lnk {

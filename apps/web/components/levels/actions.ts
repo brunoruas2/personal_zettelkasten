@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import type { Level } from '@zettelkasten/core';
 import { useLevelsStore } from '../../store/useLevelsStore';
+import { useZettelStore } from '../../store/useZettelStore';
+import { useDeleteRequestStore } from '../../store/useDeleteRequestStore';
 import { flushActiveEdit } from './ZettelWindow';
 
 /**
@@ -37,6 +39,27 @@ export function useLevelActions() {
         await flushActiveEdit();
         st().go(level);
       },
+      /** Grava a edição pendente e abre a confirmação de exclusão. */
+      requestDelete: async (id: string) => {
+        await flushActiveEdit();
+        if (st().editing) st().stopEdit();
+        useDeleteRequestStore.getState().request(id);
+      },
     };
   }, []);
+}
+
+/**
+ * Apaga o zettel e ajusta os níveis: o foco apagado passa ao anterior da
+ * trilha; o de Memória sai das consultas. O resto (ids órfãos) o
+ * `useLevelsSync` poda quando o índice muda.
+ */
+export async function deleteFromLevels(id: string): Promise<void> {
+  const lv = useLevelsStore.getState();
+  if (lv.focusId === id) {
+    const prev = [...lv.trail].reverse().find((x) => x !== id);
+    if (prev) lv.setFocus(prev);
+  }
+  lv.dismiss(id);
+  await useZettelStore.getState().deleteZettel(id);
 }

@@ -97,6 +97,9 @@ export function MemoryScreen() {
           </NeonButton>
           <NeonButton onClick={() => startEdit('memory')}>EDITAR</NeonButton>
           <NeonButton onClick={() => void actions.dismiss(activeId)}>FECHAR</NeonButton>
+          <button type="button" className="zk-btn-danger" onClick={() => void actions.requestDelete(activeId)}>
+            APAGAR
+          </button>
         </div>
       }
     />

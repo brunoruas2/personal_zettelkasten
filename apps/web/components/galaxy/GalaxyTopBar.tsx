@@ -7,6 +7,7 @@ import type { SyncStatus } from '../../lib/sync';
 import type { SaveStatus } from './InplaceEditor';
 import { hintOf, keysOf } from '../../lib/galaxy/shortcuts';
 import { TOUCH_TARGET } from '../../lib/galaxy/touch';
+import { useThemeVariant } from './themeVariant';
 
 const SAVE_LABEL: Record<SaveStatus, string> = {
   idle: '',
@@ -260,7 +261,8 @@ export function GalaxyMenu({
     };
   }, [onClose]);
 
-  const item = 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-white/5';
+  const zk = useThemeVariant() === 'zkos';
+  const item = zk ? 'zk-menu-item' : 'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-white/5';
   const items: { action: MenuAction; label: string; hint?: string }[] = [
     // Temporário: até a criação no lugar (duplo clique na galáxia), o novo
     // zettel nasce na página antiga.
@@ -278,7 +280,11 @@ export function GalaxyMenu({
     <div
       ref={ref}
       role="menu"
-      className="absolute left-0 top-full mt-2 w-64 rounded-xl border border-white/10 bg-[#0e121a] p-2 text-[#e6e9f0] shadow-2xl"
+      className={
+        zk
+          ? 'zk-menu absolute left-0 top-full z-50 mt-2 w-64 p-2'
+          : 'absolute left-0 top-full mt-2 w-64 rounded-xl border border-white/10 bg-[#0e121a] p-2 text-[#e6e9f0] shadow-2xl'
+      }
     >
       <div className="flex items-center gap-3 border-b border-white/10 px-2 pb-3 pt-1">
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-sm font-semibold text-white">
@@ -296,7 +302,7 @@ export function GalaxyMenu({
             {it.hint && <span className="text-[11px] text-[#6f7787]">{it.hint}</span>}
           </button>
         ))}
-        <button type="button" role="menuitem" disabled className={`${item} cursor-not-allowed text-[#6f7787] hover:bg-transparent`}>
+        <button type="button" role="menuitem" disabled className={zk ? item : `${item} cursor-not-allowed text-[#6f7787] hover:bg-transparent`}>
           Estatísticas — em breve
         </button>
       </div>
@@ -316,7 +322,8 @@ export function GalaxyMenu({
         <button
           type="button"
           role="menuitem"
-          className={`${item} text-red-300`}
+          className={zk ? item : `${item} text-red-300`}
+          data-danger={zk ? '' : undefined}
           onClick={() => {
             onClose();
             void logout();

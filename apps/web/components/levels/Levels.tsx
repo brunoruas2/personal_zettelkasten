@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
+import { useDeleteRequestStore } from '../../store/useDeleteRequestStore';
+import { DeleteZettelModal } from '../galaxy/DeleteZettelModal';
 import { NeonButton, Vignette } from '../zkos';
 import { GalaxyModal } from '../galaxy/GalaxyModal';
 import { GalaxySearch, type SearchFilters } from '../galaxy/GalaxySearch';
 import { QuickCapture } from '../galaxy/QuickCapture';
+import { ThemeVariantContext } from '../galaxy/themeVariant';
 import { CommandPalette, type PaletteAction } from '../galaxy/CommandPalette';
 import type { MenuAction } from '../galaxy/GalaxyTopBar';
 import { SettingsPanel } from '../panels/SettingsPanel';
@@ -18,7 +21,7 @@ import { MapScreen } from './MapScreen';
 import { LevelsTopBar } from './LevelsTopBar';
 import { LevelsEnvProvider, useLevelsEnv } from './LevelsContext';
 import { useLevelsSync } from './useLevelsSync';
-import { useLevelActions } from './actions';
+import { useLevelActions, deleteFromLevels } from './actions';
 import { captureNote, createNote } from './newNote';
 
 const TRACK_TRANSITION = 'transform .8s cubic-bezier(.7,0,.2,1)';
@@ -26,9 +29,11 @@ const TRACK_TRANSITION = 'transform .8s cubic-bezier(.7,0,.2,1)';
 /** Fluxo Foco → Memória → Mapa (spec level-navigation). Desktop: duas telas empilhadas; celular: três. */
 export function Levels() {
   return (
-    <LevelsEnvProvider>
-      <LevelsInner />
-    </LevelsEnvProvider>
+    <ThemeVariantContext.Provider value="zkos">
+      <LevelsEnvProvider>
+        <LevelsInner />
+      </LevelsEnvProvider>
+    </ThemeVariantContext.Provider>
   );
 }
 
@@ -44,6 +49,12 @@ function LevelsInner() {
   const [palette, setPalette] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const focusId = useLevelsStore((s) => s.focusId);
+  const zettels = useZettelStore((s) => s.zettels);
+  const deleteId = useDeleteRequestStore((s) => s.id);
+  const clearDelete = useDeleteRequestStore((s) => s.clear);
+  const deleteMeta = useMemo(() => (deleteId ? (zettels.find((z) => z.id === deleteId) ?? null) : null), [deleteId, zettels]);
 
   const unplacedSet = useMemo(() => new Set(data.unplacedIds), [data.unplacedIds]);
 
@@ -92,6 +103,7 @@ function LevelsInner() {
     { id: 'lv-focus', label: 'Ir para o Foco', run: () => void actions.go('focus') },
     { id: 'lv-memory', label: 'Ir para a Memória', run: () => void actions.go('memory') },
     { id: 'lv-map', label: 'Ir para o Mapa', run: () => void actions.go('map') },
+    ...(focusId ? [{ id: 'delete-focus', label: 'Apagar zettel em foco', run: () => void actions.requestDelete(focusId) }] : []),
     { id: 'tags', label: 'Tags', run: () => setModal('tags') },
     { id: 'settings', label: 'Configurações', keys: 'Alt+,', run: () => setModal('settings') },
     { id: 'passkeys', label: 'Passkeys', run: () => setModal('passkeys') },
@@ -165,6 +177,16 @@ function LevelsInner() {
             onTag={(tag) => setSearch({ tags: [tag] })}
           />
         </GalaxyModal>
+      )}
+      {deleteMeta && (
+        <DeleteZettelModal
+          meta={deleteMeta}
+          onCancel={clearDelete}
+          onConfirm={() => {
+            clearDelete();
+            void deleteFromLevels(deleteMeta.id);
+          }}
+        />
       )}
       {modal === 'settings' && (
         <GalaxyModal title="Configurações" onClose={() => setModal(null)}>
