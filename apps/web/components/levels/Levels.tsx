@@ -16,7 +16,7 @@ import { SettingsPanel } from '../panels/SettingsPanel';
 import { TagsPanel } from '../panels/TagsPanel';
 import { PasskeysPanel } from '../panels/PasskeysPanel';
 import { FocusScreen } from './FocusScreen';
-import { MemoryScreen, CompactWindow } from './MemoryScreen';
+import { MemoryScreen } from './MemoryScreen';
 import { MapScreen } from './MapScreen';
 import { LevelsTopBar } from './LevelsTopBar';
 import { LevelsEnvProvider, useLevelsEnv } from './LevelsContext';
@@ -229,15 +229,8 @@ function DesktopLevels() {
       style={{ height: '200%', transform: `translateY(${second ? '-50%' : '0'})`, transition: TRACK_TRANSITION }}
     >
       <section aria-label="Foco" aria-hidden={second} className="zk-desk relative h-1/2 overflow-hidden">
-        <div className="absolute inset-x-6 bottom-[132px] top-5">
+        <div className="absolute inset-x-6 bottom-[68px] top-5">
           <FocusScreen />
-        </div>
-        <div className="absolute inset-x-0 bottom-0 flex h-[132px] items-end justify-center gap-6 overflow-hidden px-6">
-          {consulted.slice(0, 3).map((id) => (
-            <div key={id} className="relative -mb-5 w-[300px] flex-none">
-              <CompactWindow id={id} onPick={(pid) => void actions.openInMemory(pid)} />
-            </div>
-          ))}
         </div>
         <div className="absolute inset-x-0 bottom-3 flex justify-center">
           <NeonButton variant="hot" onClick={() => void actions.go('memory')} style={{ fontSize: 24, minHeight: 50, padding: '0 28px' }}>
