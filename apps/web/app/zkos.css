@@ -20,6 +20,16 @@
   --zk-accent: var(--zk-cyan);
 }
 
+/* A preferência de fonte (Configurações → Aparência) não vale no ZK//OS: tudo é VT323.
+   Sobreposições vão em portal, fora de `.zk-root`, por isso entram aqui também. */
+.zk-root,
+.zk-modal-backdrop,
+.zk-modal,
+.zk-menu,
+.zk-draw {
+  --font-body: var(--font-vt323), ui-monospace, monospace;
+}
+
 .zk-root {
   background: var(--zk-bg);
   color: var(--zk-text);
