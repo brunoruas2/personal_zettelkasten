@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useLinkIndex } from '../../hooks/useLinkIndex';
 import { useZettelStore } from '../../store/useZettelStore';
@@ -10,6 +10,8 @@ import { ZettelWindow } from './ZettelWindow';
 import { useLevelActions } from './actions';
 import { useLevelsEnv } from './LevelsContext';
 import { zkCode } from './format';
+import { ConnectionLists } from './ConnectionsColumn';
+import { editedAgo } from '../galaxy/HoverCard';
 
 /** Primeiros caracteres do corpo, sem a sintaxe de `[[link]]`. */
 function preview(body: string): string {
@@ -40,6 +42,36 @@ export function CompactWindow({ id, onPick }: { id: string; onPick: (id: string)
   );
 }
 
+/** Celular: tudo sobre as conexões do zettel em foco, recolhível. */
+function MobileConnections({ focusId, onOpen }: { focusId: string; onOpen: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const index = useLinkIndex();
+  const zettels = useZettelStore((s) => s.zettels);
+  const meta = useMemo(() => zettels.find((z) => z.id === focusId), [zettels, focusId]);
+  const count = index.neighbors(focusId).length;
+  return (
+    <div className="flex-none border border-zk-line bg-zk-panel">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="zk-display flex min-h-[44px] w-full items-center justify-between px-3 text-left text-xl text-zk-amber"
+      >
+        <span>
+          // CONEXÕES · {count}
+          {meta ? ` · ${zkCode(focusId)} · ${editedAgo(meta.updatedAt)}` : ''}
+        </span>
+        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div className="flex max-h-[40vh] flex-col gap-2 overflow-y-auto px-3 pb-3">
+          <ConnectionLists id={focusId} onOpen={onOpen} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Nível 2 · Memória: zettels consultados. Um em leitura/edição (o ativo) e os
  * demais como janelas compactas (desktop) ou abas (celular).
@@ -47,6 +79,7 @@ export function CompactWindow({ id, onPick }: { id: string; onPick: (id: string)
 export function MemoryScreen() {
   const consulted = useLevelsStore((s) => s.consulted);
   const activeId = useLevelsStore((s) => s.activeId);
+  const focusId = useLevelsStore((s) => s.focusId);
   const editing = useLevelsStore((s) => s.editing);
   const startEdit = useLevelsStore((s) => s.startEdit);
   const stopEdit = useLevelsStore((s) => s.stopEdit);
@@ -60,7 +93,7 @@ export function MemoryScreen() {
   const memEditing = editing === 'memory';
 
   const header = (
-    <div className="zk-display zk-glow flex-none px-1 text-[22px] tracking-wider text-zk-amber">
+    <div className="zk-display flex-none px-1 text-[22px] tracking-wider text-zk-amber">
       // ABERTAS NA MEMÓRIA · {consulted.length}
     </div>
   );
@@ -127,6 +160,7 @@ export function MemoryScreen() {
             );
           })}
         </div>
+        {focusId && !memEditing && <MobileConnections focusId={focusId} onOpen={(id) => void actions.consult(id)} />}
         {active}
       </div>
     );

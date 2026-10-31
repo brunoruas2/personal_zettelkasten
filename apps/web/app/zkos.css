@@ -23,7 +23,7 @@
 .zk-root {
   background: var(--zk-bg);
   color: var(--zk-text);
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-vt323), ui-monospace, monospace;
 }
 
 .zk-display {
@@ -31,12 +31,10 @@
   letter-spacing: 0.02em;
 }
 
-/* Fundo com grade e brilho no horizonte. */
+/* Fundo só com a grade. */
 .zk-desk {
   background-color: var(--zk-bg);
   background-image:
-    radial-gradient(900px 420px at 50% 112%, rgba(255, 43, 214, 0.28), transparent 70%),
-    radial-gradient(700px 400px at 8% -10%, rgba(25, 242, 255, 0.16), transparent 65%),
     repeating-linear-gradient(0deg, rgba(25, 242, 255, 0.06) 0 1px, transparent 1px 44px),
     repeating-linear-gradient(90deg, rgba(25, 242, 255, 0.06) 0 1px, transparent 1px 44px);
 }
@@ -48,7 +46,7 @@
     repeating-linear-gradient(90deg, rgba(25, 242, 255, 0.07) 0 1px, transparent 1px 32px);
 }
 
-/* Janela: borda e brilho na cor do cluster, sombra dura deslocada. */
+/* Janela: borda na cor do cluster, sombra dura deslocada. */
 .zk-win {
   display: flex;
   flex-direction: column;
@@ -57,7 +55,6 @@
   background: rgba(6, 10, 19, 0.96);
   box-shadow:
     0 0 0 1px #000,
-    0 0 28px color-mix(in srgb, var(--zk-accent) 50%, transparent),
     10px 10px 0 rgba(0, 0, 0, 0.65);
 }
 
@@ -100,8 +97,9 @@
   border-top: 1.5px solid var(--zk-line);
   background: var(--zk-bg-panel);
   color: var(--zk-dim);
-  font-family: var(--font-vt323), monospace;
-  font-size: 18px;
+  font-family: var(--font-silkscreen), var(--font-vt323), monospace;
+  font-size: 11px;
+  text-transform: uppercase;
 }
 
 .zk-statusbar[data-mode='edit'] {
@@ -111,7 +109,7 @@
 }
 
 .zk-glow {
-  text-shadow: 0 0 10px currentColor;
+  text-shadow: none; /* sem blur/brilho (spec zkos-theme) */
 }
 
 .zk-btn {
@@ -181,7 +179,7 @@
 /* Sobreposições (modal, menu, campos) no tema ZK//OS. */
 .zk-modal-backdrop {
   background: rgba(4, 6, 11, 0.78);
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-vt323), ui-monospace, monospace;
 }
 
 .zk-modal {
@@ -193,7 +191,6 @@
   color: var(--zk-text);
   box-shadow:
     0 0 0 1px #000,
-    0 0 28px color-mix(in srgb, var(--zk-cyan) 45%, transparent),
     10px 10px 0 rgba(0, 0, 0, 0.65);
 }
 
@@ -242,7 +239,7 @@
   font-weight: 400;
 }
 :is(.zk-modal, .zk-menu) .font-geist {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-vt323), ui-monospace, monospace;
 }
 /* Texto: principal, secundário e acento. */
 :is(.zk-modal, .zk-menu) [class*='text-[#e6e9f0]'],
@@ -293,14 +290,71 @@
   outline-offset: 1px;
 }
 
+/* Modal de desenho no ZK//OS: remapeia as classes zinc do editor (spec
+   drawing-editor). O canvas e as cores de traço não mudam. */
+.zk-draw {
+  background: rgba(4, 6, 11, 0.78);
+  font-family: var(--font-vt323), monospace;
+  font-size: 18px;
+}
+.zk-draw-panel {
+  border: 2px solid var(--zk-cyan);
+  background: rgba(6, 10, 19, 0.98);
+  color: var(--zk-text);
+}
+.zk-draw :is(button, input, select, img, [class*='rounded']) {
+  border-radius: 0;
+}
+.zk-draw-panel > div:first-child {
+  background: var(--zk-cyan);
+  border-color: var(--zk-black);
+  color: var(--zk-black);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.zk-draw-panel > div:first-child [class*='text-'] {
+  color: var(--zk-black);
+}
+.zk-draw button {
+  border: 1.5px solid var(--zk-black);
+  background: transparent;
+  color: var(--zk-black);
+  font-family: var(--font-vt323), monospace;
+  font-size: 18px;
+}
+.zk-draw button:hover:not(:disabled) {
+  background: var(--zk-black);
+  color: var(--zk-cyan);
+}
+.zk-draw button[aria-pressed='true'] {
+  background: var(--zk-black) !important;
+  color: var(--zk-cyan) !important;
+  border-color: var(--zk-black) !important;
+}
+.zk-draw button.bg-brand {
+  background: var(--zk-amber);
+  color: var(--zk-black);
+}
+.zk-draw-panel > div:not(:first-child) [class*='text-zinc'] {
+  color: var(--zk-dim);
+}
+.zk-draw-panel [role='alert'] {
+  border-color: var(--zk-amber);
+  background: #1a1204;
+  color: var(--zk-amber);
+}
+.zk-draw :focus-visible {
+  outline: 2px solid var(--zk-amber);
+  outline-offset: 1px;
+}
+
 .zk-menu {
   border: 2px solid var(--zk-cyan);
   background: rgba(6, 10, 19, 0.98);
   color: var(--zk-text);
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-vt323), ui-monospace, monospace;
   box-shadow:
     0 0 0 1px #000,
-    0 0 22px color-mix(in srgb, var(--zk-cyan) 40%, transparent),
     6px 6px 0 rgba(0, 0, 0, 0.65);
 }
 .zk-menu-item {
@@ -340,7 +394,7 @@
   border-radius: 0;
   background: var(--zk-bg-inset);
   color: var(--zk-text);
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-vt323), ui-monospace, monospace;
 }
 .zk-field::placeholder {
   color: var(--zk-dim);
@@ -406,7 +460,7 @@
    texto na cor do tema (o renderizador usa classes do accent do app). */
 .zk-md {
   color: var(--zk-text);
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-vt323), ui-monospace, monospace;
 }
 .zk-md .text-brand-light {
   color: var(--zk-green);

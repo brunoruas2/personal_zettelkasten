@@ -240,7 +240,7 @@ function DesktopLevels() {
           ))}
         </div>
         <div className="absolute inset-x-0 bottom-3 flex justify-center">
-          <NeonButton variant="hot" onClick={() => void actions.go('memory')} style={{ fontSize: 24, minHeight: 50, padding: '0 28px', boxShadow: '0 0 24px rgba(255,176,0,.55)' }}>
+          <NeonButton variant="hot" onClick={() => void actions.go('memory')} style={{ fontSize: 24, minHeight: 50, padding: '0 28px' }}>
             ▼ ABAIXAR PARA AS REFERÊNCIAS [{consulted.length}]
           </NeonButton>
         </div>

@@ -74,9 +74,9 @@ export function LevelsTopBar({
     <header
       data-levels-topbar
       className="relative z-30 flex h-14 flex-none items-center gap-3 border-b-2 border-zk-cyan bg-zk-panel px-3 lg:gap-4 lg:px-5"
-      style={{ boxShadow: '0 0 22px rgba(25,242,255,.4)' }}
+     
     >
-      <div className="zk-display zk-glow text-[28px] tracking-widest text-zk-magenta lg:text-[32px]">ZK//OS</div>
+      <div className="zk-display text-[28px] tracking-widest text-zk-magenta lg:text-[32px]">ZK//OS</div>
       <div className="zk-display border border-zk-cyan px-2 text-lg leading-6 text-zk-cyan lg:text-xl">{LEVEL_TAG[level]}</div>
 
       {!isMobile && (
@@ -119,7 +119,7 @@ export function LevelsTopBar({
 
       <div className="zk-display ml-auto flex items-center gap-3 text-xl" style={{ color: sync.color }} aria-live="polite">
         {!isMobile && sync.text}
-        {isMobile && <span aria-label={sync.text} className="h-2.5 w-2.5" style={{ background: sync.color, boxShadow: `0 0 8px ${sync.color}` }} />}
+        {isMobile && <span aria-label={sync.text} className="h-2.5 w-2.5" style={{ background: sync.color }} />}
         {isMobile && (
           <>
             <NeonButton aria-label="Buscar" onClick={onSearch} style={{ padding: '0 8px', minWidth: 44, fontSize: 20 }}>

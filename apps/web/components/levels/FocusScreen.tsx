@@ -3,7 +3,6 @@
 import { useMemo } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useLinkIndex } from '../../hooks/useLinkIndex';
-import { useZettelStore } from '../../store/useZettelStore';
 import { ZettelWindow } from './ZettelWindow';
 import { ConnectionsColumn } from './ConnectionsColumn';
 import { useLevelActions } from './actions';
@@ -12,21 +11,18 @@ import { discardIfEmpty } from './newNote';
 
 /**
  * Nível 1 · Foco: um zettel em janela grande, leitura e edição no mesmo lugar.
- * Desktop: coluna "Conexões" ao lado; celular: chips das notas ligadas abaixo.
+ * Desktop: coluna "Conexões" ao lado; celular: só o zettel (conexões na Memória).
  */
 export function FocusScreen() {
   const focusId = useLevelsStore((s) => s.focusId);
   const editing = useLevelsStore((s) => s.editing);
-  const consulted = useLevelsStore((s) => s.consulted);
   const startEdit = useLevelsStore((s) => s.startEdit);
   const stopEdit = useLevelsStore((s) => s.stopEdit);
   const { isMobile, accentOf } = useLevelsEnv();
   const actions = useLevelActions();
   const index = useLinkIndex();
-  const zettels = useZettelStore((s) => s.zettels);
 
   const linkCount = useMemo(() => (focusId ? index.neighbors(focusId).length : 0), [index, focusId]);
-  const titles = useMemo(() => new Map(zettels.map((z) => [z.id, z.title])), [zettels]);
 
   if (!focusId) {
     return (
@@ -49,9 +45,14 @@ export function FocusScreen() {
         onFinished={({ empty }) => void discardIfEmpty(focusId, empty)}
         onOpenLink={(id) => void actions.focus(id)}
         linkCount={linkCount}
+        compact={isMobile}
         className="min-h-0 flex-1"
         actions={
-          focusEditing ? undefined : (
+          focusEditing ? undefined : isMobile ? (
+            <button type="button" className="zk-btn-danger" onClick={() => void actions.requestDelete(focusId)}>
+              APAGAR
+            </button>
+          ) : (
             <div className="flex flex-none justify-end gap-2 border-t border-zk-line p-2">
               <button type="button" className="zk-btn-danger" onClick={() => void actions.requestDelete(focusId)}>
                 APAGAR
@@ -61,29 +62,6 @@ export function FocusScreen() {
         }
         side={isMobile ? undefined : <ConnectionsColumn id={focusId} onOpen={(id) => void actions.openInMemory(id)} />}
       />
-      {isMobile && !focusEditing && (
-        <div className="flex-none px-1">
-          <div className="zk-display px-1 text-[17px] text-zk-dim">&gt; ligadas a esta nota · toque para abrir na memória</div>
-          <div className="zk-hscroll flex gap-2 overflow-x-auto">
-            {consulted.map((id) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => void actions.openInMemory(id)}
-                className="flex min-h-[44px] max-w-[200px] flex-none items-center gap-2 border bg-zk-panel px-3 text-left text-[12.5px] text-zk-text"
-                style={{ borderColor: accentOf(id) }}
-              >
-                <span
-                  aria-hidden="true"
-                  className="h-[9px] w-[9px] flex-none"
-                  style={{ background: accentOf(id), boxShadow: `0 0 8px ${accentOf(id)}` }}
-                />
-                <span className="truncate">{titles.get(id)?.trim() || 'Sem título'}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

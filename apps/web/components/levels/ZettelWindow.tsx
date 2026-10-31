@@ -49,6 +49,8 @@ export interface ZettelWindowProps {
   className?: string;
   style?: CSSProperties;
   label?: string;
+  /** Celular no Foco: sem barra de título nem rodapé, só o zettel. */
+  compact?: boolean;
 }
 
 /**
@@ -71,6 +73,7 @@ export function ZettelWindow({
   className = '',
   style,
   label,
+  compact = false,
 }: ZettelWindowProps) {
   const { isMobile, resolveTitle, createLinked } = useLevelsEnv();
   const zettels = useZettelStore((s) => s.zettels);
@@ -154,14 +157,14 @@ export function ZettelWindow({
   const title = meta?.title.trim() ? meta.title : 'Sem título';
   const tags = meta?.tags ?? [];
   const code = zkCode(id);
-  const pad = isMobile ? 'px-4' : 'px-14';
+  const pad = isMobile ? 'px-3' : 'px-14';
   const winAccent = editing ? EDIT_ACCENT : accent;
 
   const header = `${code} — ${title.toUpperCase()}${editing ? ' · EDITANDO' : titleSuffix ? ` · ${titleSuffix}` : ''}`;
 
   return (
     <Win accent={winAccent} label={label ?? title} className={className} style={style}>
-      <TitleBar>{header}</TitleBar>
+      {!(compact && !editing) && <TitleBar>{header}</TitleBar>}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {!editing && (
@@ -173,13 +176,16 @@ export function ZettelWindow({
                       <span key={t}>[{t}]</span>
                     ))}
                   </div>
-                  <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
-                    EDITAR
-                  </NeonButton>
+                  <div className="flex flex-none gap-2">
+                    <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
+                      EDITAR
+                    </NeonButton>
+                    {compact && actions}
+                  </div>
                 </div>
                 <h1
-                  className="zk-display zk-glow m-0 mb-3 mt-1 font-normal leading-none"
-                  style={{ color: accent, fontSize: isMobile ? 46 : 78 }}
+                  className="zk-display m-0 mb-3 mt-1 font-normal leading-none"
+                  style={{ color: accent, fontSize: compact ? 32 : isMobile ? 46 : 78 }}
                 >
                   {title}
                 </h1>
@@ -188,7 +194,7 @@ export function ZettelWindow({
                   <p className="zk-display text-xl text-zk-dim">Corpo ainda não baixado neste aparelho.</p>
                 )}
                 {(bodyStatus === 'ready' || bodyStatus === 'stale') && (
-                  <div className="zk-md dark cursor-text text-[15.5px] leading-[1.8] lg:max-w-[900px] lg:text-lg" onClick={onBodyClick}>
+                  <div className="zk-md dark cursor-text text-[20px] leading-[1.5] lg:max-w-[900px] lg:text-[23px]" onClick={onBodyClick}>
                     {body.trim() ? (
                       <MarkdownRenderer
                         body={body}
@@ -204,15 +210,17 @@ export function ZettelWindow({
                 )}
                 {notice && <p className="zk-display mt-3 text-lg text-zk-amber">{notice}</p>}
               </div>
-              {actions}
-              <StatusBar
-                left={`${code} · clique no texto ou no diagrama para editar`}
-                right={
-                  <>
-                    <span className="text-zk-green">{linkCount}</span> ligações{meta ? ` · ${editedAgo(meta.updatedAt)}` : ''}
-                  </>
-                }
-              />
+              {!compact && actions}
+              {!compact && (
+                <StatusBar
+                  left={`${code} · clique no texto ou no diagrama para editar`}
+                  right={
+                    <>
+                      <span className="text-zk-green">{linkCount}</span> ligações{meta ? ` · ${editedAgo(meta.updatedAt)}` : ''}
+                    </>
+                  }
+                />
+              )}
             </>
           )}
           {editing && (

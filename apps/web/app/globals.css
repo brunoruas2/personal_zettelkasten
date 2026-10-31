@@ -5,7 +5,7 @@
 :root {
   --color-brand: 124 58 237;
   --color-brand-light: 167 139 250;
-  --font-body: var(--font-plex-mono), ui-monospace, "Cascadia Code", Consolas, monospace;
+  --font-body: var(--font-vt323), ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 
 * {
@@ -55,7 +55,7 @@ select {
   outline: none;
   min-height: 100%;
   font-size: var(--input-font-size, 16px);
-  font-family: var(--font-plex-mono), ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-family: var(--font-vt323), ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 
 /* Placeholder */
@@ -84,7 +84,7 @@ select {
 .ProseMirror strong { font-weight: 700; }
 .ProseMirror em { font-style: italic; }
 .ProseMirror code {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-vt323), ui-monospace, monospace;
   font-size: 0.875em;
   background: rgb(244 244 245); /* zinc-100 */
   color: rgb(39 39 42);         /* zinc-800 */

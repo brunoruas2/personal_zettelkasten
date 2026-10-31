@@ -15,10 +15,10 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        newsreader: ['var(--font-plex-mono)', 'ui-monospace', 'monospace'],
-        geist: ['var(--font-plex-mono)', 'ui-monospace', 'monospace'],
+        newsreader: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
+        geist: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
         vt323: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
-        plex: ['var(--font-plex-mono)', 'ui-monospace', 'monospace'],
+        plex: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
       },
       colors: {
         // Tema ZK//OS (valores espelhados em app/zkos.css).

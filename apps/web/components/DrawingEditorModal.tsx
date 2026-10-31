@@ -23,6 +23,7 @@ import {
 } from './SketchCanvas'
 import { sceneToSvg } from '../lib/sketchRender'
 import { useDrawingFocusStore } from '../store/useDrawingFocusStore'
+import { useThemeVariant } from './galaxy/themeVariant'
 import {
   drawingStore,
   saveDrawing,
@@ -437,12 +438,18 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   }
 
   // Strings de classe completas (nada de `lg:${x}`): o Tailwind só vê literais.
+  // No ZK//OS o visual vem de `.zk-draw` (zkos.css); aqui só entram as classes de layout.
+  const zk = useThemeVariant() === 'zkos'
   const wrapperClass = fullscreen
     ? 'fixed inset-0 z-50 bg-black/70 outline-none'
     : 'fixed inset-0 z-50 bg-black/70 outline-none lg:p-6'
-  const panelClass = fullscreen
-    ? 'flex h-[100dvh] w-full flex-col overflow-hidden bg-white dark:bg-zinc-900'
-    : 'flex h-[100dvh] w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-zinc-900 lg:h-full lg:rounded-xl'
+  const panelClass = zk
+    ? fullscreen
+      ? 'zk-draw-panel flex h-[100dvh] w-full flex-col overflow-hidden'
+      : 'zk-draw-panel flex h-[100dvh] w-full flex-col overflow-hidden lg:h-full'
+    : fullscreen
+      ? 'flex h-[100dvh] w-full flex-col overflow-hidden bg-white dark:bg-zinc-900'
+      : 'flex h-[100dvh] w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-zinc-900 lg:h-full lg:rounded-xl'
 
   const btn =
     'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-sm text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'
@@ -462,7 +469,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label="Editor de desenho"
-      className={wrapperClass}
+      className={zk ? `${wrapperClass} zk-draw` : wrapperClass}
     >
       <div className={panelClass}>
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
