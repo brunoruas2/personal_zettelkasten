@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
@@ -138,7 +139,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if input.Title == "" {
+	if input.Title == "" && input.ID == "" {
 		jsonError(w, http.StatusBadRequest, "title is required")
 		return
 	}
@@ -166,6 +167,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: input.UpdatedAt,
 	}
 	if err := h.repo.Create(z); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			jsonError(w, http.StatusConflict, "id already exists")
+			return
+		}
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

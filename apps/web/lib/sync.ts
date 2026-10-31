@@ -31,6 +31,19 @@ type SyncOp =
   | { op: 'update'; payload: Zettel }
   | { op: 'delete'; payload: { id: string } }
 
+class HttpError extends Error {
+  constructor(readonly status: number) {
+    super(`API ${status}`)
+  }
+}
+
+/** 4xx (menos 401/408/429) não melhora com retry: sai da fila. */
+function isPermanent(err: unknown): boolean {
+  if (!(err instanceof HttpError)) return false
+  const s = err.status
+  return s >= 400 && s < 500 && s !== 401 && s !== 408 && s !== 429
+}
+
 const QUEUE_KEY = 'zettel_sync_queue'
 const LAST_SYNC_KEY = 'zettel_last_sync_at'
 
@@ -114,8 +127,23 @@ class SyncService {
       await this.sendOp(op)
     } catch (err) {
       if (err instanceof AuthError) throw err
+      if (isPermanent(err)) {
+        console.warn('[sync] operação recusada pelo servidor, descartada', op.op, err)
+        return
+      }
       this.enqueue(op)
       this.setStatus('offline')
+    }
+  }
+
+  private createBody(z: Zettel) {
+    return {
+      id: z.id,
+      title: z.title,
+      body: z.body,
+      tags: z.tags,
+      created_at: z.createdAt,
+      updated_at: z.updatedAt,
     }
   }
 
@@ -123,15 +151,7 @@ class SyncService {
     let res: Response
 
     if (op.op === 'create') {
-      const z = op.payload
-      res = await api.post('/api/zettels', {
-        id: z.id,
-        title: z.title,
-        body: z.body,
-        tags: z.tags,
-        created_at: z.createdAt,
-        updated_at: z.updatedAt,
-      })
+      res = await api.post('/api/zettels', this.createBody(op.payload))
     } else if (op.op === 'update') {
       const z = op.payload
       res = await api.put(`/api/zettels/${z.id}`, {
@@ -140,13 +160,15 @@ class SyncService {
         tags: z.tags,
         updated_at: z.updatedAt,
       })
-      if (res.status === 404) return // deleted on server — ignore
+      // 404: o servidor ainda não conhece o zettel (create não passou) — cria.
+      // Se foi apagado lá, o POST volta 409 e a operação é descartada.
+      if (res.status === 404) res = await api.post('/api/zettels', this.createBody(z))
     } else {
       res = await api.delete(`/api/zettels/${op.payload.id}`)
       if (res.status === 404) return // already gone — ignore
     }
 
-    if (!res.ok) throw new Error(`API ${res.status}`)
+    if (!res.ok) throw new HttpError(res.status)
   }
 
   // Drain pending offline queue when connection is restored
@@ -163,6 +185,10 @@ class SyncService {
         if (err instanceof AuthError) {
           this.setStatus('error')
           return
+        }
+        if (isPermanent(err)) {
+          console.warn('[sync] operação recusada pelo servidor, descartada', op.op, err)
+          continue
         }
         remaining.push(op)
       }
