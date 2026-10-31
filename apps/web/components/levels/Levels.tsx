@@ -16,7 +16,7 @@ import { SettingsPanel } from '../panels/SettingsPanel';
 import { TagsPanel } from '../panels/TagsPanel';
 import { PasskeysPanel } from '../panels/PasskeysPanel';
 import { FocusScreen } from './FocusScreen';
-import { MemoryScreen } from './MemoryScreen';
+import { MemoryScreen, MemoryList } from './MemoryScreen';
 import { MapScreen } from './MapScreen';
 import { LevelsTopBar } from './LevelsTopBar';
 import { LevelsEnvProvider, useLevelsEnv } from './LevelsContext';
@@ -245,11 +245,16 @@ function DesktopLevels() {
             ▲ SUBIR AO FOCO · {focusTitle.toUpperCase()}
           </NeonButton>
         </div>
-        <div className="absolute inset-x-6 bottom-5 top-16 flex flex-col gap-4">
-          <div className="h-[45%] min-h-0 flex-none">
-            <MapScreen />
+        <div className="absolute inset-x-6 bottom-5 top-16 flex gap-5">
+          <div className="flex w-[42%] min-w-0 flex-none flex-col gap-4">
+            <div className="min-h-0 flex-1">
+              <MapScreen />
+            </div>
+            <div className="h-[34%] min-h-0 flex-none">
+              <MemoryList />
+            </div>
           </div>
-          <div className="min-h-0 flex-1">
+          <div className="min-w-0 flex-1">
             <MemoryScreen />
           </div>
         </div>
