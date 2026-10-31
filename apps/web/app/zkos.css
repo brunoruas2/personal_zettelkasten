@@ -201,15 +201,10 @@
   animation: zk-blink 1s steps(1) infinite;
 }
 
-/* Scanlines estáticas + vinheta; o flicker é a animação separada. */
-.zk-scan {
+/* Vinheta: escurece as bordas, sem linhas. */
+.zk-vignette {
   pointer-events: none;
-  background:
-    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.3) 0 1px, transparent 1px 3px),
-    radial-gradient(ellipse at 50% 48%, transparent 55%, rgba(0, 0, 0, 0.6) 100%);
-}
-.zk-scan[data-flicker='true'] {
-  animation: zk-flick 5s infinite;
+  background: radial-gradient(ellipse at 50% 48%, transparent 55%, rgba(0, 0, 0, 0.6) 100%);
 }
 
 /* Corpo renderizado pelo MarkdownRenderer dentro do tema: links verdes,
@@ -249,17 +244,6 @@
     opacity: 0;
   }
 }
-@keyframes zk-flick {
-  0%,
-  100%,
-  47%,
-  49% {
-    opacity: 1;
-  }
-  48% {
-    opacity: 0.86;
-  }
-}
 @keyframes zk-boot {
   from {
     opacity: 0;
@@ -271,9 +255,8 @@
   }
 }
 
-/* Movimento reduzido: nada pisca nem desliza (as scanlines estáticas ficam). */
+/* Movimento reduzido: nada pisca nem desliza. */
 @media (prefers-reduced-motion: reduce) {
-  .zk-scan[data-flicker='true'],
   .zk-caret,
   .zk-win-enter {
     animation: none;

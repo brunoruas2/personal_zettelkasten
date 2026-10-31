@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
-import { NeonButton, Scanlines } from '../zkos';
+import { NeonButton, Vignette } from '../zkos';
 import { GalaxyModal } from '../galaxy/GalaxyModal';
 import { GalaxySearch, type SearchFilters } from '../galaxy/GalaxySearch';
 import { QuickCapture } from '../galaxy/QuickCapture';
@@ -101,7 +101,7 @@ function LevelsInner() {
     <div className="zk-root fixed inset-0 flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
       <LevelsTopBar onSearch={() => setSearch({})} onNew={onNew} onMenu={onMenu} />
       <div className="relative min-h-0 flex-1 overflow-hidden">{isMobile ? <MobileLevels /> : <DesktopLevels />}</div>
-      <Scanlines />
+      <Vignette />
 
       {toast && (
         <div role="status" aria-live="polite" className="zk-win absolute bottom-20 left-1/2 z-50 -translate-x-1/2 flex-row items-center gap-3 px-4 py-2 text-sm">
