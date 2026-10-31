@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { Level } from '@zettelkasten/core';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
 import { useDeleteRequestStore } from '../../store/useDeleteRequestStore';
@@ -24,7 +25,9 @@ import { useLevelsSync } from './useLevelsSync';
 import { useLevelActions, deleteFromLevels } from './actions';
 import { captureNote, createNote } from './newNote';
 
-const TRACK_TRANSITION = 'transform .8s cubic-bezier(.7,0,.2,1)';
+const LEVEL_KEYS: Record<string, Level> = { Digit1: 'focus', Digit2: 'memory', Digit3: 'map' };
+
+const TRACK_TRANSITION ='transform .8s cubic-bezier(.7,0,.2,1)';
 
 /** Fluxo Foco → Memória → Mapa (spec level-navigation). Desktop: duas telas empilhadas; celular: três. */
 export function Levels() {
@@ -77,11 +80,17 @@ function LevelsInner() {
     [onNew],
   );
 
-  // Atalhos globais: Alt+B busca, Ctrl/⌘+K paleta, Alt+, configurações.
+  const overlayOpen = !!search || !!modal || capture || palette || !!deleteMeta;
+
+  // Atalhos globais: Alt+B busca, Ctrl/⌘+K paleta, Alt+, configurações, Alt+1/2/3 níveis.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (e.altKey && e.code === 'KeyB' && !e.ctrlKey && !e.metaKey) {
+      const level = LEVEL_KEYS[e.code];
+      if (level && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        if (!overlayOpen) void actions.go(level);
+      } else if (e.altKey && e.code === 'KeyB' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         setSearch({});
       } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK' && !e.altKey) {
@@ -94,15 +103,15 @@ function LevelsInner() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [actions, overlayOpen]);
 
   const paletteActions: PaletteAction[] = [
     { id: 'new', label: 'Novo zettel', run: onNew },
     { id: 'capture', label: 'Captura rápida', run: () => setCapture(true) },
     { id: 'search', label: 'Buscar', keys: 'Alt+B', run: () => setSearch({}) },
-    { id: 'lv-focus', label: 'Ir para o Foco', run: () => void actions.go('focus') },
-    { id: 'lv-memory', label: 'Ir para a Memória', run: () => void actions.go('memory') },
-    { id: 'lv-map', label: 'Ir para o Mapa', run: () => void actions.go('map') },
+    { id: 'lv-focus', label: 'Ir para o Foco', keys: 'Alt+1', run: () => void actions.go('focus') },
+    { id: 'lv-memory', label: 'Ir para a Memória', keys: 'Alt+2', run: () => void actions.go('memory') },
+    { id: 'lv-map', label: 'Ir para o Mapa', keys: 'Alt+3', run: () => void actions.go('map') },
     ...(focusId ? [{ id: 'delete-focus', label: 'Apagar zettel em foco', run: () => void actions.requestDelete(focusId) }] : []),
     { id: 'tags', label: 'Tags', run: () => setModal('tags') },
     { id: 'settings', label: 'Configurações', keys: 'Alt+,', run: () => setModal('settings') },
