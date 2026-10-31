@@ -238,7 +238,12 @@ export function ZettelWindow({
           {editing && (
             <>
               <div className={`flex flex-none items-center justify-between gap-2 border-b border-zk-line py-2 ${isMobile ? 'px-3' : 'px-10'}`}>
-                <span className="zk-display text-xl text-zk-amber">EDITANDO</span>
+                <div className="flex items-center gap-3">
+                  <NeonButton onClick={() => void finish()} aria-label="Voltar para a leitura">
+                    {isMobile ? '←' : '← VOLTAR'}
+                  </NeonButton>
+                  <span className="zk-display text-xl text-zk-amber">EDITANDO</span>
+                </div>
                 <NeonButton variant="hot" onClick={() => void finish()}>
                   {isMobile ? 'OK' : 'CONCLUIR [ESC]'}
                 </NeonButton>
