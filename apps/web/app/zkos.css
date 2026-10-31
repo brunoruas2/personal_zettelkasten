@@ -477,6 +477,40 @@
   line-height: 1.25;
 }
 
+/* Bloco de cifra: caixa de terminal, acordes âmbar (contraste). Ganchos
+   data-* vêm do Chords.tsx; a especificidade (classe + atributo + *) vence
+   os utilitários zinc/brand sem !important. */
+.zk-md [data-chords] {
+  background: var(--zk-bg-inset);
+  border: 1.5px solid var(--zk-line-strong);
+  border-radius: 0;
+}
+.zk-md [data-chords-bar] {
+  border-bottom: 1.5px solid var(--zk-line);
+}
+.zk-md [data-chords-bar] span {
+  color: var(--zk-dim);
+}
+.zk-md [data-chords-bar] button {
+  border: 1.5px solid var(--zk-cyan);
+  border-radius: 0;
+  color: var(--zk-cyan);
+  background: transparent;
+  padding: 0 8px;
+  font-weight: 400;
+}
+.zk-md [data-chords-bar] button:hover {
+  background: var(--zk-cyan);
+  color: var(--zk-black);
+  opacity: 1;
+}
+.zk-md [data-chords-sheet] * {
+  color: var(--zk-text);
+}
+.zk-md [data-chords-sheet] [data-chord] {
+  color: var(--zk-amber);
+}
+
 .zk-md .text-brand-light {
   color: var(--zk-green);
   text-decoration-style: dashed;

@@ -80,6 +80,17 @@ export function ZettelWindow({
   const meta = useMemo(() => indexById(zettels).get(id), [zettels, id]);
   const { body, status: bodyStatus } = useZettelBody(id);
 
+  const updateZettel = useZettelStore((s) => s.updateZettel);
+
+  // Salvar transposição de cifra: troca só o trecho do bloco, sem entrar em edição.
+  // Corpo stale não grava (StaleBodyError); o trecho precisa ainda ser o renderizado.
+  const onBodyChange = useCallback(
+    (start: number, end: number, content: string) => {
+      void updateZettel(id, { body: body.slice(0, start) + content + body.slice(end) });
+    },
+    [updateZettel, id, body],
+  );
+
   const [zettel, setZettel] = useState<Zettel | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [save, setSave] = useState<SaveStatus>('idle');
@@ -198,6 +209,7 @@ export function ZettelWindow({
                     {body.trim() ? (
                       <MarkdownRenderer
                         body={body}
+                        onBodyChange={bodyStatus === 'ready' ? onBodyChange : undefined}
                         onLinkPress={(t) => {
                           const target = resolveTitle(t);
                           if (target) onOpenLink(target);

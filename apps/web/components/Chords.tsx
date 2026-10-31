@@ -65,7 +65,7 @@ function transposeSource(source: string, semitones: number): string {
 function ChordLine({ line, semitones }: { line: string; semitones: number }) {
   const parts = line.replace(/^%c\s*/, '').split(/(\s+)/);
   return (
-    <div className="whitespace-pre-wrap break-words font-semibold leading-5 text-brand">
+    <div data-chord className="whitespace-pre-wrap break-words font-semibold leading-5 text-brand">
       {parts.map((p, i) =>
         /^\s+$/.test(p) ? p : isChord(p) ? tx(p, semitones) : p
       )}
@@ -82,7 +82,7 @@ function InlineLine({ line, semitones }: { line: string; semitones: number }) {
   while ((m = re.exec(line)) !== null) {
     if (m.index > last) nodes.push(<span key={k++}>{line.slice(last, m.index)}</span>);
     nodes.push(
-      <span key={k++} className="whitespace-nowrap font-semibold text-brand">
+      <span key={k++} data-chord className="whitespace-nowrap font-semibold text-brand">
         [{tx(m[1], semitones)}]
       </span>
     );
@@ -112,7 +112,7 @@ function ChordPair({ chordLine, lyricLine, semitones }: { chordLine: string; lyr
             className="inline-flex flex-col whitespace-pre"
             style={chord ? { minWidth: `${chord.length + 1}ch` } : undefined}
           >
-            <span className="font-semibold leading-5 text-brand">{chord || '\u00A0'}</span>
+            <span data-chord className="font-semibold leading-5 text-brand">{chord || '\u00A0'}</span>
             <span className="leading-relaxed text-zinc-800 dark:text-zinc-200">{seg.text || '\u00A0'}</span>
           </span>
         );
@@ -173,9 +173,9 @@ export function Chords({
   };
 
   return (
-    <div className="my-3 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+    <div data-chords className="my-3 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
       {/* Toolbar */}
-      <div className="flex items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-700">
+      <div data-chords-bar className="flex items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-700">
         <span className="flex-1 text-xs text-zinc-400">cifra</span>
         <button
           onClick={() => setSemitones((s) => s - 1)}
@@ -213,7 +213,7 @@ export function Chords({
       </div>
 
       {/* Sheet */}
-      <div className="p-3 font-mono" style={{ fontSize: fontSize ?? undefined }}>
+      <div data-chords-sheet className="p-3 font-mono" style={{ fontSize: fontSize ?? undefined }}>
         {renderLines(lines, semitones)}
       </div>
     </div>
