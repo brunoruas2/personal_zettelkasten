@@ -19,8 +19,8 @@ type Ui = 'zkos' | 'galaxy';
 /**
  * Qual interface abrir: o fluxo Foco → Memória → Mapa (`zkos`) ou a galáxia.
  * A escolha é por dispositivo (`zettel_ui`) e pode ser trocada abrindo
- * `/?ui=zkos` ou `/?ui=galaxy`. Enquanto o fluxo novo é validado, a galáxia
- * segue como padrão (change zkos-focus-memory-map-redesign).
+ * `/?ui=zkos` ou `/?ui=galaxy`. O fluxo novo é o padrão; a galáxia só abre
+ * por escolha explícita (`?ui=galaxy`, change zkos-default-ui).
  */
 function readUi(): Ui {
   try {
@@ -29,9 +29,9 @@ function readUi(): Ui {
       localStorage.setItem(UI_KEY, q);
       return q;
     }
-    return localStorage.getItem(UI_KEY) === 'zkos' ? 'zkos' : 'galaxy';
+    return localStorage.getItem(UI_KEY) === 'galaxy' ? 'galaxy' : 'zkos';
   } catch {
-    return 'galaxy';
+    return 'zkos';
   }
 }
 
