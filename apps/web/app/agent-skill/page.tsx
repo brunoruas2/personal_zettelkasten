@@ -61,7 +61,7 @@ Auth: \`X-API-Key: $ZETTEL_API_KEY\` em todas as chamadas.
 
 export default function AgentSkillPage() {
   return (
-    <div className={`${styles.page} ${publicSans.variable} ${plexMono.variable}`} style={{ fontFamily: 'var(--font-public-sans)' }}>
+    <div className={`${styles.page} ${publicSans.variable} ${plexMono.variable}`} style={{ fontFamily: 'var(--font-plex-mono), ui-monospace, monospace' }}>
       <div className={styles.shell}>
         <nav className={styles.toc}>
           <div className={styles.tocKicker}>Nesta página</div>

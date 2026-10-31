@@ -15,8 +15,8 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        newsreader: ['var(--font-newsreader)', 'Georgia', 'serif'],
-        geist: ['var(--font-geist)', 'system-ui', 'sans-serif'],
+        newsreader: ['var(--font-plex-mono)', 'ui-monospace', 'monospace'],
+        geist: ['var(--font-plex-mono)', 'ui-monospace', 'monospace'],
         vt323: ['var(--font-vt323)', 'ui-monospace', 'monospace'],
         plex: ['var(--font-plex-mono)', 'ui-monospace', 'monospace'],
       },

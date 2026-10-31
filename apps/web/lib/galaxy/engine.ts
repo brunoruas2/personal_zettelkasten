@@ -193,8 +193,8 @@ export class GalaxyEngine {
     this.ctx = this.scene.getContext('2d')!;
 
     this.accent = rgbVarToHex('--color-brand', '#7c3aed');
-    this.fontTitle = `${readCssVar('--font-newsreader', '')}, Georgia, serif`.replace(/^, /, '');
-    this.fontUi = `${readCssVar('--font-geist', '')}, system-ui, sans-serif`.replace(/^, /, '');
+    this.fontTitle = `${readCssVar('--font-plex-mono', '')}, ui-monospace, monospace`.replace(/^, /, '');
+    this.fontUi = this.fontTitle;
     // A fonte do título chega depois do primeiro desenho; repinta quando carregar.
     void document.fonts?.ready.then(() => this.markScene());
 

@@ -5,7 +5,7 @@
 :root {
   --color-brand: 124 58 237;
   --color-brand-light: 167 139 250;
-  --font-body: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-body: var(--font-plex-mono), ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 
 * {

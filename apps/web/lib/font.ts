@@ -11,7 +11,7 @@ export const FONTS: Font[] = [
   {
     id: 'system',
     label: 'Padrão',
-    stack: 'ui-sans-serif, system-ui, -apple-system, sans-serif',
+    stack: 'var(--font-plex-mono), ui-monospace, "Cascadia Code", Consolas, monospace',
     preview: 'Aa',
   },
   {
@@ -48,4 +48,4 @@ export function getSavedFontId(): FontId {
 
 // Injected into <head> before React hydrates — prevents font flash on load.
 // Must remain a self-contained string with no imports.
-export const FONT_SCRIPT = `(function(){try{var S={system:'ui-sans-serif,system-ui,-apple-system,sans-serif',serif:'var(--font-lora),Georgia,"Times New Roman",serif',mono:'var(--font-jetbrains),ui-monospace,"Cascadia Code",Consolas,monospace'};var id=localStorage.getItem('zettel_font')||'system';var stack=S[id]||S.system;document.documentElement.style.setProperty('--font-body',stack);}catch(e){}})();`;
+export const FONT_SCRIPT = `(function(){try{var S={system:'var(--font-plex-mono),ui-monospace,"Cascadia Code",Consolas,monospace',serif:'var(--font-lora),Georgia,"Times New Roman",serif',mono:'var(--font-jetbrains),ui-monospace,"Cascadia Code",Consolas,monospace'};var id=localStorage.getItem('zettel_font')||'system';var stack=S[id]||S.system;document.documentElement.style.setProperty('--font-body',stack);}catch(e){}})();`;
