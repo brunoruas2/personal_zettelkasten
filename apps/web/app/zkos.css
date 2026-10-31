@@ -466,6 +466,20 @@
   background: radial-gradient(ellipse at 50% 48%, transparent 55%, rgba(0, 0, 0, 0.6) 100%);
 }
 
+/* Edição com o mesmo tamanho e entrelinha da leitura (ZettelWindow:
+   20px, 23px em lg, entrelinha 1.5). */
+.zk-edit .ProseMirror {
+  font-size: 20px;
+}
+.zk-edit .ProseMirror :is(p, li) {
+  line-height: 1.5;
+}
+@media (min-width: 1024px) {
+  .zk-edit .ProseMirror {
+    font-size: 23px;
+  }
+}
+
 /* Corpo renderizado pelo MarkdownRenderer dentro do tema: links verdes,
    texto na cor do tema (o renderizador usa classes do accent do app). */
 .zk-md {
