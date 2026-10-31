@@ -213,7 +213,7 @@ function LevelsInner() {
   );
 }
 
-/** Desktop: tela 1 = Foco; tela 2 = Mapa + Memória. Transição vertical. */
+/** Desktop: tela 1 = Foco; tela 2 = Mapa acima, Memória abaixo. Transição vertical. */
 function DesktopLevels() {
   const level = useLevelsStore((s) => s.level);
   const focusId = useLevelsStore((s) => s.focusId);
@@ -252,11 +252,11 @@ function DesktopLevels() {
             ▲ SUBIR AO FOCO · {focusTitle.toUpperCase()}
           </NeonButton>
         </div>
-        <div className="absolute inset-x-6 bottom-5 top-16 flex gap-5">
-          <div className="w-[42%] min-w-0 flex-none">
+        <div className="absolute inset-x-6 bottom-5 top-16 flex flex-col gap-4">
+          <div className="h-[45%] min-h-0 flex-none">
             <MapScreen />
           </div>
-          <div className="min-w-0 flex-1">
+          <div className="min-h-0 flex-1">
             <MemoryScreen />
           </div>
         </div>
