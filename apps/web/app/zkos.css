@@ -480,6 +480,30 @@
   }
 }
 
+/* Bloco de código (```) no editor: mesma caixa de terminal da leitura.
+   Os utilitários zinc do NodeView perdem por especificidade (classe + atributo + *). */
+.zk-edit [data-code-block] {
+  background: var(--zk-bg-inset);
+  border: 1.5px solid var(--zk-line-strong);
+  border-radius: 0;
+}
+.zk-edit [data-code-block] [data-node-view-content] {
+  color: var(--zk-text);
+}
+.zk-edit [data-code-block] input {
+  color: var(--zk-dim);
+  background: transparent;
+}
+.zk-edit [data-code-block] [contenteditable='false']:not(:has(svg)) {
+  color: var(--zk-dim);
+}
+.zk-edit [data-code-block] pre,
+.zk-edit [data-code-block] code {
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  font-size: 19px;
+  line-height: 1.25;
+}
+
 /* Corpo renderizado pelo MarkdownRenderer dentro do tema: links verdes,
    texto na cor do tema (o renderizador usa classes do accent do app). */
 .zk-md {

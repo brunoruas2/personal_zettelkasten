@@ -34,7 +34,6 @@ import type { Node as PMNode, Slice } from '@tiptap/pm/model';
 import { generateId, type ZettelMeta as Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
 import { MermaidBlock } from './MermaidBlock';
-import { Chords } from './Chords';
 import { useDiagramLayout } from '../lib/diagramLayout';
 import { isImageFile, ImageCompressError } from '../lib/imageCompress';
 import { importImage, ImageUploadError } from '../lib/imageSync';
@@ -531,8 +530,7 @@ function CodeBlockNodeView({ node, updateAttributes }: {
 }) {
   const language = node.attrs.language ?? '';
   const isMermaid = language === 'mermaid';
-  const isChords = language === 'chords';
-  const isDiagram = language === 'plantuml' || isMermaid || isChords;
+  const isDiagram = language === 'plantuml' || isMermaid;
 
   // Chamado sempre, mesmo para blocos que não são diagrama: o early return abaixo não
   // pode ficar antes de um hook.
@@ -578,7 +576,7 @@ function CodeBlockNodeView({ node, updateAttributes }: {
 
   if (!isDiagram) {
     return (
-      <NodeViewWrapper as="div" className="my-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-x-auto">
+      <NodeViewWrapper as="div" data-code-block className="my-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-x-auto">
         {codeArea}
       </NodeViewWrapper>
     );
@@ -599,16 +597,10 @@ function CodeBlockNodeView({ node, updateAttributes }: {
     : 'w-full min-w-0 max-h-64 lg:max-h-[32rem] overflow-y-auto p-2 border-t border-zinc-200 dark:border-zinc-700';
 
   return (
-    <NodeViewWrapper as="div" className={wrapperClass}>
+    <NodeViewWrapper as="div" data-code-block className={wrapperClass}>
       <div className={codeColClass}>{codeArea}</div>
       <div contentEditable={false} className={previewColClass}>
-        {isChords ? (
-          <Chords source={debouncedSource} />
-        ) : isMermaid ? (
-          <MermaidBlock source={debouncedSource} />
-        ) : (
-          <PlantUmlBlock source={debouncedSource} />
-        )}
+        {isMermaid ? <MermaidBlock source={debouncedSource} /> : <PlantUmlBlock source={debouncedSource} />}
       </div>
     </NodeViewWrapper>
   );
