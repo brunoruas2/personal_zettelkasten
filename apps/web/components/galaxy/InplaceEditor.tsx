@@ -207,7 +207,7 @@ export const InplaceEditor = forwardRef<
   const btn = 'rounded-md px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5';
 
   return (
-    <div className={`dark flex min-h-0 flex-col ${isMobile ? 'h-full' : ''}`}>
+    <div className="dark flex h-full min-h-0 flex-col">
       <div className={isMobile ? 'px-5 pt-4' : 'px-6 pt-5'}>
         <input
           ref={titleRef}
