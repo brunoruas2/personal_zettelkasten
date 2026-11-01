@@ -6,7 +6,7 @@ import type { ZettelController } from '@zettelkasten/core';
 import { syncService } from '../lib/sync'
 import { searchZettels } from '../lib/searchZettels';
 import { getNodeColorRules, saveNodeColorRules, type NodeColorRule } from '../lib/graphColors';
-import { placeMissingAndQueue, positionStore, setManualPosition } from '../lib/positionSync';
+import { placeMissingAndQueue, positionStore, repositionOnLinks, setManualPosition } from '../lib/positionSync';
 import { downloadBodies } from '../lib/bodySync';
 import { clearBodyCache, invalidateBody, setCachedBody } from '../lib/bodyCache';
 
@@ -120,6 +120,8 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
       }
     }
     await loadAll();
+    // Ganhou link: se foi auto-posicionado, vai para perto dos vizinhos.
+    void repositionOnLinks(controller, id);
     return zettel;
   },
 

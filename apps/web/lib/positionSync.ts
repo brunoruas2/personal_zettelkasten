@@ -1,6 +1,10 @@
 import { PositionStore } from '@zettelkasten/db-web'
 import {
+  SpatialGrid,
+  anchorFor,
+  buildAdjacency,
   placeMissing,
+  placeNear,
   type Link,
   type Point,
   type PositionRecord,
@@ -60,8 +64,45 @@ function removeKey(key: string): void {
   }
 }
 
+// Ids posicionados pelo automático neste aparelho (nunca movidos à mão): só
+// esses são reposicionados quando ganham link.
+const AUTO_KEY = 'zettel_auto_placed'
+
 /** Chaves de `localStorage` das posições — o logout as remove. */
-export const POSITION_STORAGE_KEYS = [SINCE_KEY, EPOCH_KEY]
+export const POSITION_STORAGE_KEYS = [SINCE_KEY, EPOCH_KEY, AUTO_KEY]
+
+function readAutoPlaced(): Set<string> {
+  try {
+    const raw = localStorage.getItem(AUTO_KEY)
+    const arr: unknown = raw ? JSON.parse(raw) : []
+    return new Set(Array.isArray(arr) ? arr.filter((v): v is string => typeof v === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function writeAutoPlaced(ids: Set<string>): void {
+  try {
+    localStorage.setItem(AUTO_KEY, JSON.stringify([...ids]))
+  } catch {
+    // sem a marca o zettel só deixa de ser reposicionado
+  }
+}
+
+export function markAutoPlaced(ids: Iterable<string>): void {
+  const set = readAutoPlaced()
+  for (const id of ids) set.add(id)
+  writeAutoPlaced(set)
+}
+
+export function isAutoPlaced(id: string): boolean {
+  return readAutoPlaced().has(id)
+}
+
+export function unmarkAutoPlaced(id: string): void {
+  const set = readAutoPlaced()
+  if (set.delete(id)) writeAutoPlaced(set)
+}
 
 const synced = (id: string, x: number, y: number, updatedAt: number): PositionRecord => ({
   id,
@@ -258,12 +299,37 @@ async function doPlace(source: GalaxySource): Promise<void> {
   const positions = new Map<string, Point>(records.map((r) => [r.id, { x: r.x, y: r.y }]))
   const placed = placeMissing(zettels, links, positions)
   if (placed.size === 0) return
+  markAutoPlaced(placed.keys())
   const now = Date.now()
   await positionStore.putMany(
     [...placed].map(([id, p]) => ({ id, x: p.x, y: p.y, updatedAt: now, syncState: 'pending', mode: 'if_absent' })),
   )
   emitChanged()
   void pushPendingPositions()
+}
+
+/**
+ * Zettel auto-posicionado que ganhou link: move para a vaga livre mais próxima
+ * do centróide dos vizinhos já posicionados. Uma vez só — a marca cai depois do
+ * movimento. Sem vizinho posicionado ainda, mantém a marca para a próxima vez.
+ */
+export function repositionOnLinks(source: GalaxySource, id: string): Promise<void> {
+  placing = placing.then(() => doReposition(source, id)).catch(() => {})
+  return placing
+}
+
+async function doReposition(source: GalaxySource, id: string): Promise<void> {
+  if (!isAutoPlaced(id)) return
+  const [links, records] = await Promise.all([source.getAllLinks(), positionStore.getAll()])
+  const positions = new Map<string, Point>(records.map((r) => [r.id, { x: r.x, y: r.y }]))
+  if (!positions.has(id)) return
+  const neighbors = buildAdjacency(links).get(id)
+  if (!neighbors || ![...neighbors].some((n) => positions.has(n))) return
+  const anchor = anchorFor(id, buildAdjacency(links), positions)
+  const grid = new SpatialGrid()
+  for (const [pid, p] of positions) if (pid !== id) grid.add(pid, p)
+  const target = placeNear(anchor, grid)
+  await setManualPosition(id, target.x, target.y)
 }
 
 /** Recalcular layout: descarta tudo no servidor, avança a época e congela de novo. */
@@ -285,6 +351,7 @@ export async function resetGalaxyLayout(source: GalaxySource): Promise<void> {
  * senão o servidor ignoraria a mudança.
  */
 export async function setManualPosition(id: string, x: number, y: number): Promise<void> {
+  unmarkAutoPlaced(id)
   const prev = await positionStore.get(id)
   const updatedAt = Math.max(Date.now(), (prev?.updatedAt ?? 0) + 1)
   await positionStore.putMany([
