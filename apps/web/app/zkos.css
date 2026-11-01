@@ -498,7 +498,10 @@
   color: var(--zk-dim);
 }
 .zk-edit [data-code-block] pre,
-.zk-edit [data-code-block] code {
+.zk-edit [data-code-block] code,
+.zk-edit [data-code-block] [data-node-view-content],
+.zk-edit [data-code-block] > div,
+.zk-edit [data-code-block] input {
   font-family: var(--font-vt323), ui-monospace, monospace;
   font-size: 19px;
   line-height: 1.25;
