@@ -352,6 +352,9 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
   }, []);
 
   const dragRef = useRef<{ x: number; y: number; moved: boolean; id: number } | null>(null);
+  // Ponteiros ativos (pinça com 2 dedos); `pinchRef` vale até o último dedo sair.
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef(false);
 
   const pos = (e: React.PointerEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -368,10 +371,37 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
         style={{ touchAction: 'none', cursor: hoverRef.current >= 0 ? 'pointer' : 'grab' }}
         onPointerDown={(e) => {
           const p = pos(e);
+          pointersRef.current.set(e.pointerId, p);
+          if (pointersRef.current.size >= 2) {
+            // Pinça: cancela toque/arraste de 1 dedo e segue só com zoom/pan.
+            dragRef.current = null;
+            pinchRef.current = true;
+            for (const id of pointersRef.current.keys()) e.currentTarget.setPointerCapture(id);
+            return;
+          }
           dragRef.current = { x: p.x, y: p.y, moved: false, id: e.pointerId };
         }}
         onPointerMove={(e) => {
           const p = pos(e);
+          if (pointersRef.current.has(e.pointerId)) {
+            const pts = pointersRef.current;
+            if (pinchRef.current && pts.size === 2) {
+              const [a0, b0] = [...pts.values()];
+              const before = { d: Math.hypot(a0.x - b0.x, a0.y - b0.y), x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 };
+              pts.set(e.pointerId, p);
+              const [a1, b1] = [...pts.values()];
+              const cx = (a1.x + b1.x) / 2;
+              const cy = (a1.y + b1.y) / 2;
+              const dist = Math.hypot(a1.x - b1.x, a1.y - b1.y);
+              const v = viewRef.current;
+              viewRef.current = { ...v, cx: v.cx - (cx - before.x) / v.scale, cy: v.cy - (cy - before.y) / v.scale };
+              if (before.d > 0 && dist > 0) zoomAt(dist / before.d, cx, cy);
+              else schedule();
+              return;
+            }
+            pts.set(e.pointerId, p);
+            if (pinchRef.current) return;
+          }
           const d = dragRef.current;
           if (d && d.id === e.pointerId) {
             const dx = p.x - d.x;
@@ -399,6 +429,12 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
           }
         }}
         onPointerUp={(e) => {
+          pointersRef.current.delete(e.pointerId);
+          if (pinchRef.current) {
+            if (pointersRef.current.size === 0) pinchRef.current = false;
+            dragRef.current = null;
+            return;
+          }
           const d = dragRef.current;
           dragRef.current = null;
           if (!d || d.moved) return;
@@ -406,7 +442,9 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
           const i = hitAt(p.x, p.y);
           if (i >= 0) onSelect(stateRef.current.data.ids[i]);
         }}
-        onPointerCancel={() => {
+        onPointerCancel={(e) => {
+          pointersRef.current.delete(e.pointerId);
+          if (pointersRef.current.size === 0) pinchRef.current = false;
           dragRef.current = null;
         }}
         onPointerLeave={() => {
