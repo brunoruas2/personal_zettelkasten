@@ -1,7 +1,6 @@
 import type { GalaxyData } from '../galaxy/useGalaxyData';
-import { GRID_CELL } from '../../lib/galaxy/grid';
 
-/** Teto de bolinhas desenhadas por inteiro (spec connection-map / Escala). */
+/** Teto do recorte usado para enquadrar o botão FOCO. */
 export const SLICE_CAP = 400;
 
 export interface MapSlice {
@@ -11,9 +10,9 @@ export interface MapSlice {
 }
 
 /**
- * Recorte do mapa: BFS por vizinhança a partir do foco e dos consultados,
- * parando no teto. Sem sementes na base (foco oculto, sem posição), cai nos
- * zettels mais ligados. O resto da base vira manchas agregadas por célula.
+ * Vizinhança do foco: BFS a partir do foco e dos consultados, parando no teto.
+ * Sem sementes na base (foco oculto, sem posição), cai nos zettels mais
+ * ligados. Serve só ao enquadramento da câmera; o mapa desenha tudo.
  */
 export function computeSlice(data: GalaxyData, seeds: number[], cap = SLICE_CAP): MapSlice {
   const mask = new Uint8Array(data.count);
@@ -42,27 +41,11 @@ export function computeSlice(data: GalaxyData, seeds: number[], cap = SLICE_CAP)
   return { list, mask };
 }
 
-export interface RestCell {
-  x: number;
-  y: number;
-  count: number;
-  color: string | null;
-}
-
-/** Resto da base (fora do recorte) agregado por célula da grade. */
-export function aggregateRest(data: GalaxyData, mask: Uint8Array): RestCell[] {
-  const cells = new Map<string, { sx: number; sy: number; count: number; color: string | null }>();
-  for (let i = 0; i < data.count; i++) {
-    if (mask[i]) continue;
-    const k = `${Math.floor(data.xs[i] / GRID_CELL)},${Math.floor(data.ys[i] / GRID_CELL)}`;
-    const c = cells.get(k);
-    if (c) {
-      c.sx += data.xs[i];
-      c.sy += data.ys[i];
-      c.count++;
-    } else cells.set(k, { sx: data.xs[i], sy: data.ys[i], count: 1, color: data.nebula[i] });
-  }
-  return [...cells.values()].map((c) => ({ x: c.sx / c.count, y: c.sy / c.count, count: c.count, color: c.color }));
+/** Todos os zettels posicionados e visíveis: é o que o mapa desenha. */
+export function allSlice(data: GalaxyData): MapSlice {
+  const mask = new Uint8Array(data.count).fill(1);
+  const list = Array.from({ length: data.count }, (_, i) => i);
+  return { list, mask };
 }
 
 export interface Box {

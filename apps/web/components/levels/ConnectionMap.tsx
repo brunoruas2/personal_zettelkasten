@@ -5,12 +5,14 @@ import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
 import { NeonButton } from '../zkos';
 import { DEFAULT_ACCENT, useLevelsEnv } from './LevelsContext';
-import { aggregateRest, boundsOf, clampScale, computeSlice, fitView, type View } from './mapSlice';
+import { allSlice, boundsOf, clampScale, computeSlice, fitView, type View } from './mapSlice';
 
 const HOT = '#ff2bd6';
 const ACTIVE = '#ffb000';
 const DIM_EDGE = 'rgba(130,190,215,0.38)';
 const DRAG_PX = 4;
+/** Acima disso, sem brilho por bolinha (shadowBlur é caro em canvas 2D). */
+const GLOW_MAX = 400;
 
 interface Cluster {
   color: string;
@@ -21,8 +23,7 @@ interface Cluster {
 
 /**
  * Nível 3 · Mapa: bolinhas, manchas de cluster e linhas (sem cards). Desenha
- * só o recorte em volta do foco e dos consultados (teto de ~400); o resto da
- * base vira manchas agregadas por célula. Canvas 2D, redesenho sob demanda.
+ * todos os zettels posicionados. Canvas 2D, redesenho sob demanda.
  */
 export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) {
   const { data, isMobile } = useLevelsEnv();
@@ -53,8 +54,9 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
     return s;
   }, [data, focusIdx, consulted]);
 
-  const slice = useMemo(() => computeSlice(data, seeds), [data, seeds]);
-  const rest = useMemo(() => aggregateRest(data, slice.mask), [data, slice]);
+  const slice = useMemo(() => allSlice(data), [data]);
+  // Vizinhança do foco: só enquadra a câmera (botão FOCO).
+  const focusSlice = useMemo(() => computeSlice(data, seeds), [data, seeds]);
 
   const consultedSet = useMemo(() => {
     const s = new Set<number>();
@@ -105,8 +107,8 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
     return { first: [...new Set(first)], others };
   }, [data, slice, focusIdx, consultedSet]);
 
-  const stateRef = useRef({ data, slice, rest, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, isMobile });
-  stateRef.current = { data, slice, rest, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, isMobile };
+  const stateRef = useRef({ data, slice, focusSlice, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, isMobile });
+  stateRef.current = { data, slice, focusSlice, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, isMobile };
 
   const draw = useCallback(() => {
     rafRef.current = 0;
@@ -118,29 +120,13 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const { data: d, slice: sl, rest: rs, edges: ed, clusters: cl, labelOrder: lo, focusIdx: fi, activeIdx: ai, consultedSet: cs } = stateRef.current;
+    const { data: d, slice: sl, edges: ed, clusters: cl, labelOrder: lo, focusIdx: fi, activeIdx: ai, consultedSet: cs } = stateRef.current;
     const v = viewRef.current;
     const px = (x: number) => (x - v.cx) * v.scale + w / 2;
     const py = (y: number) => (y - v.cy) * v.scale + h / 2;
     const inView = (x: number, y: number, pad = 60) => x > -pad && x < w + pad && y > -pad && y < h + pad;
 
-    // Resto da base: manchas agregadas por célula.
-    for (const c of rs) {
-      const x = px(c.x);
-      const y = py(c.y);
-      if (!inView(x, y, 80)) continue;
-      const r = Math.min(46, 8 + Math.sqrt(c.count) * 3);
-      const col = c.color ?? '#7fb0c0';
-      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, hexAlpha(col, 0.28));
-      g.addColorStop(1, hexAlpha(col, 0));
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Manchas dos clusters do recorte.
+    // Manchas dos clusters.
     for (const i of sl.list) {
       const col = d.nebula[i];
       if (!col) continue;
@@ -180,6 +166,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
     ctx.restore();
 
     // Bolinhas.
+    const glow = sl.list.length <= GLOW_MAX;
     for (const i of sl.list) {
       const x = px(d.xs[i]);
       const y = py(d.ys[i]);
@@ -188,8 +175,10 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       const isFocus = i === fi;
       const r = isFocus ? 11 : 5 + Math.min(d.degree[i], 10) * 0.7;
       ctx.save();
-      ctx.shadowColor = col;
-      ctx.shadowBlur = isFocus ? 18 : 10;
+      if (glow || isFocus) {
+        ctx.shadowColor = col;
+        ctx.shadowBlur = isFocus ? 18 : 10;
+      }
       ctx.fillStyle = col;
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -296,8 +285,8 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
   // Enquadra o recorte quando o foco muda (ou quando os dados chegam); consultar não reenquadra.
   const fitSlice = useCallback(() => {
     const { w, h } = sizeRef.current;
-    const { data: d, slice: sl } = stateRef.current;
-    viewRef.current = fitView(boundsOf(d, sl.list), w, h);
+    const { data: d, focusSlice: fs } = stateRef.current;
+    viewRef.current = fitView(boundsOf(d, fs.list), w, h);
     schedule();
   }, [schedule]);
   useEffect(() => {
@@ -314,7 +303,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
 
   useEffect(() => {
     schedule();
-  }, [data, slice, rest, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, schedule]);
+  }, [data, slice, focusSlice, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, schedule]);
 
   const zoomAt = useCallback(
     (factor: number, ax: number, ay: number) => {
@@ -448,7 +437,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       <div className="zk-display pointer-events-none absolute bottom-2 left-3 text-[19px] text-zk-dim">
         {data.count === 0
           ? '> nenhum zettel posicionado ainda'
-          : `> ${slice.list.length} de ${data.count} no recorte · clique numa bolinha para abrir na memória`}
+          : `> ${data.count} zettels · clique numa bolinha para abrir na memória`}
         {data.unplacedIds.length > 0 ? ` · ${data.unplacedIds.length} sem lugar` : ''}
       </div>
     </div>
