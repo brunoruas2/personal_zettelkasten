@@ -220,7 +220,7 @@ export function ZettelWindow({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {!editing && (
             <>
-              <div data-card-scroll className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${pad} pb-2 pt-4`}>
+              <div data-card-scroll className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${pad} pb-2 pt-4`}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="zk-tag flex flex-wrap gap-x-3 text-[22px]">
                     {tags.map((t) => (

@@ -597,6 +597,20 @@
 .zk-md {
   color: var(--zk-text);
   font-family: var(--font-vt323), ui-monospace, monospace;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+/* Blocos largos nunca passam da janela (sem rolagem lateral). */
+.zk-md pre,
+.zk-md table,
+.zk-md [data-chords],
+.zk-md svg,
+.zk-md img {
+  max-width: 100%;
+}
+.zk-md pre {
+  white-space: pre-wrap;
 }
 .zk-md .font-mono {
   font-size: calc(19px * var(--zk-read-scale, 1)); /* VT323 é pequena: cifra e código ganham corpo */
