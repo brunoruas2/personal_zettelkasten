@@ -466,17 +466,21 @@
   background: radial-gradient(ellipse at 50% 48%, transparent 55%, rgba(0, 0, 0, 0.6) 100%);
 }
 
-/* Edição com o mesmo tamanho e entrelinha da leitura (ZettelWindow:
-   20px, 23px em lg, entrelinha 1.5). */
+/* Leitura (.zk-md) e edição (.zk-edit) com o mesmo tamanho, fonte e entrelinha:
+   20px, 23px em lg, vezes --zk-read-scale (definida no ZettelWindow). */
+.zk-md,
 .zk-edit .ProseMirror {
-  font-size: 20px;
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  font-size: calc(20px * var(--zk-read-scale, 1));
+  line-height: 1.5;
 }
 .zk-edit .ProseMirror :is(p, li) {
   line-height: 1.5;
 }
 @media (min-width: 1024px) {
+  .zk-md,
   .zk-edit .ProseMirror {
-    font-size: 23px;
+    font-size: calc(23px * var(--zk-read-scale, 1));
   }
 }
 
@@ -595,7 +599,7 @@
   font-family: var(--font-vt323), ui-monospace, monospace;
 }
 .zk-md .font-mono {
-  font-size: 19px; /* VT323 é pequena: cifra e código ganham corpo */
+  font-size: calc(19px * var(--zk-read-scale, 1)); /* VT323 é pequena: cifra e código ganham corpo */
   line-height: 1.25;
 }
 

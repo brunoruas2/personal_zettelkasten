@@ -12,6 +12,41 @@ import { editedAgo } from '../galaxy/HoverCard';
 import { NeonButton, StatusBar, TitleBar, Win } from '../zkos';
 import { EDIT_ACCENT, useLevelsEnv } from './LevelsContext';
 import { saveLabel, zkCode } from './format';
+import {
+  READING_SCALE_MAX,
+  READING_SCALE_MIN,
+  stepReadingScale,
+  useReadingScale,
+} from '../../lib/readingFontSize';
+
+/** A− / percentual / A+ (preferência única por dispositivo). */
+function FontSizeControl({ percent }: { percent: number }) {
+  // mousedown sem foco: na edição, o editor não perde cursor nem seleção.
+  const keep = (e: MouseEvent) => e.preventDefault();
+  return (
+    <div className="flex flex-none items-center gap-1" role="group" aria-label="Tamanho do texto">
+      <NeonButton
+        onMouseDown={keep}
+        onClick={() => stepReadingScale(-1)}
+        disabled={percent <= READING_SCALE_MIN}
+        aria-label="Diminuir texto"
+      >
+        A−
+      </NeonButton>
+      <span className="zk-display min-w-[3ch] text-center text-xl text-zk-dim" aria-live="polite">
+        {percent}%
+      </span>
+      <NeonButton
+        onMouseDown={keep}
+        onClick={() => stepReadingScale(1)}
+        disabled={percent >= READING_SCALE_MAX}
+        aria-label="Aumentar texto"
+      >
+        A+
+      </NeonButton>
+    </div>
+  );
+}
 
 /**
  * Quem está editando agora grava o que estiver pendente antes de a tela
@@ -79,6 +114,8 @@ export function ZettelWindow({
   compact = false,
 }: ZettelWindowProps) {
   const { isMobile, resolveTitle, createLinked } = useLevelsEnv();
+  const scalePercent = useReadingScale();
+  const scaleStyle = { ...style, '--zk-read-scale': scalePercent / 100 } as CSSProperties;
   const zettels = useZettelStore((s) => s.zettels);
   const meta = useMemo(() => indexById(zettels).get(id), [zettels, id]);
   const { body, status: bodyStatus } = useZettelBody(id);
@@ -177,7 +214,7 @@ export function ZettelWindow({
   const header = `${code} — ${title.toUpperCase()}${editing ? ' · EDITANDO' : titleSuffix ? ` · ${titleSuffix}` : ''}`;
 
   return (
-    <Win accent={winAccent} label={label ?? title} className={className} style={style}>
+    <Win accent={winAccent} label={label ?? title} className={className} style={scaleStyle}>
       {!(compact && !editing) && <TitleBar>{header}</TitleBar>}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -190,7 +227,8 @@ export function ZettelWindow({
                       <span key={t}>[{t}]</span>
                     ))}
                   </div>
-                  <div className="flex flex-none gap-2">
+                  <div className="flex flex-none items-center gap-2">
+                    <FontSizeControl percent={scalePercent} />
                     {onBack && (
                       <NeonButton onClick={onBack} aria-label="Voltar ao zettel anterior">
                         {compact ? '←' : '← VOLTAR'}
@@ -204,7 +242,7 @@ export function ZettelWindow({
                 </div>
                 <h1
                   className="zk-display m-0 mb-3 mt-1 font-normal leading-none"
-                  style={{ color: accent, fontSize: compact ? 16 : isMobile ? 23 : 39 }}
+                  style={{ color: accent, fontSize: `calc(${compact ? 16 : isMobile ? 23 : 39}px * var(--zk-read-scale, 1))` }}
                 >
                   {title}
                 </h1>
@@ -213,7 +251,7 @@ export function ZettelWindow({
                   <p className="zk-display text-xl text-zk-dim">Corpo ainda não baixado neste aparelho.</p>
                 )}
                 {(bodyStatus === 'ready' || bodyStatus === 'stale') && (
-                  <div className="zk-md dark cursor-text text-[20px] leading-[1.5] lg:max-w-[900px] lg:text-[23px]" onClick={onBodyClick}>
+                  <div className="zk-md dark cursor-text lg:max-w-[900px]" onClick={onBodyClick}>
                     {body.trim() ? (
                       <MarkdownRenderer
                         body={body}
@@ -247,6 +285,7 @@ export function ZettelWindow({
             <>
               <div className={`flex flex-none items-center justify-between gap-2 border-b border-zk-line py-2 ${isMobile ? 'px-3' : 'px-10'}`}>
                 <span className="zk-display text-xl text-zk-amber">EDITANDO</span>
+                <FontSizeControl percent={scalePercent} />
                 <NeonButton variant="hot" onClick={() => void finish()}>
                   {isMobile ? 'OK' : 'CONCLUIR [ESC]'}
                 </NeonButton>
