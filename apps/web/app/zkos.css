@@ -537,6 +537,57 @@
   font-size: 17px;
 }
 
+/* TagInput dentro do editor ZK//OS: usa classes do app (zinc/brand),
+   então é reestilizado por atributo. */
+.zk-edit [data-tag-label],
+.zk-edit [data-tag-hint] {
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  color: var(--zk-dim);
+  letter-spacing: 0.12em;
+}
+.zk-edit [data-tag-box] {
+  border: 1.5px solid var(--zk-line-strong);
+  border-radius: 0;
+  background: var(--zk-bg-inset);
+  font-family: var(--font-vt323), ui-monospace, monospace;
+}
+.zk-edit [data-tag-box]:focus-within {
+  border-color: var(--zk-cyan);
+}
+.zk-edit [data-tag-chip] {
+  border-radius: 0;
+  background: transparent;
+  color: var(--zk-pink);
+  font-size: 20px;
+  font-weight: 400;
+  padding: 0 4px;
+}
+.zk-edit [data-tag-input] {
+  font-family: inherit;
+  font-size: 20px;
+  color: var(--zk-text);
+}
+.zk-edit [data-tag-input]::placeholder {
+  color: var(--zk-dim);
+}
+.zk-edit [data-tag-list] {
+  border: 1.5px solid var(--zk-line-strong);
+  border-radius: 0;
+  background: var(--zk-bg-inset);
+  box-shadow: none;
+}
+.zk-edit [data-tag-option] {
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--zk-text);
+}
+.zk-edit [data-tag-option]:hover,
+.zk-edit [data-tag-option='active'] {
+  background: #0a1626;
+  color: var(--zk-green);
+}
+
 /* Corpo renderizado pelo MarkdownRenderer dentro do tema: links verdes,
    texto na cor do tema (o renderizador usa classes do accent do app). */
 .zk-md {

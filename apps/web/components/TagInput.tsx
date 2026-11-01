@@ -82,16 +82,18 @@ export function TagInput({ tags, onChange, suggestions = [], dropUp = false }: P
 
   return (
     <div className="mt-6" ref={containerRef}>
-      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-zinc-400">
+      <span data-tag-label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-zinc-400">
         Tags
       </span>
       <div
+        data-tag-box
         className="relative flex min-h-[44px] cursor-text flex-wrap items-center gap-1.5 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"
         onClick={() => inputRef.current?.focus()}
       >
         {tags.map((tag) => (
           <span
             key={tag}
+            data-tag-chip
             className="flex items-center gap-1 rounded-full bg-brand/10 px-2.5 py-0.5 text-sm font-medium text-brand dark:text-brand-light"
           >
             #{tag}
@@ -111,17 +113,19 @@ export function TagInput({ tags, onChange, suggestions = [], dropUp = false }: P
           onKeyDown={handleKeyDown}
           onFocus={() => { if (matches.length > 0) setDropdownOpen(true); }}
           placeholder={tags.length === 0 ? 'Adicionar tags...' : '+'}
+          data-tag-input
           className="flex-1 bg-transparent text-sm text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-200"
           autoCapitalize="none"
           autoCorrect="off"
         />
 
         {dropdownOpen && matches.length > 0 && (
-          <ul className={`absolute left-0 z-20 w-full ${dropUp ? 'bottom-full mb-1 max-h-48 overflow-y-auto' : 'top-full mt-1'} rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900`}>
+          <ul data-tag-list className={`absolute left-0 z-20 w-full ${dropUp ? 'bottom-full mb-1 max-h-48 overflow-y-auto' : 'top-full mt-1'} rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900`}>
             {matches.map((tag, idx) => (
               <li key={tag}>
                 <button
                   type="button"
+                  data-tag-option={idx === activeIdx ? 'active' : ''}
                   onMouseDown={(e) => { e.preventDefault(); addTag(tag); }}
                   className={`w-full px-3 py-1.5 text-left text-sm font-medium transition-colors ${
                     idx === activeIdx
@@ -137,7 +141,7 @@ export function TagInput({ tags, onChange, suggestions = [], dropUp = false }: P
         )}
       </div>
       {tags.length === 0 && (
-        <p className="mt-1.5 text-[11px] text-zinc-400">Separe com vírgula, espaço ou Enter</p>
+        <p data-tag-hint className="mt-1.5 text-[11px] text-zinc-400">Separe com vírgula, espaço ou Enter</p>
       )}
     </div>
   );
