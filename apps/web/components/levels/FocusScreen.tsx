@@ -64,7 +64,7 @@ export function FocusScreen() {
             </div>
           )
         }
-        side={isMobile ? undefined : <ConnectionsColumn id={focusId} onOpen={(id) => void actions.openInMemory(id)} />}
+        side={isMobile ? undefined : <ConnectionsColumn id={focusId} onOpen={(id) => void actions.focus(id)} />}
       />
     </div>
   );
