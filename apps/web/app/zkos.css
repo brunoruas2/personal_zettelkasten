@@ -507,6 +507,36 @@
   line-height: 1.25;
 }
 
+/* Popups de autocomplete (`[[` e `/`): renderizados por portal no body,
+   fora de .zk-edit, então levam classe própria (TipTapEditor `themed`). */
+.zk-popup {
+  background: var(--zk-bg-inset);
+  border: 1.5px solid var(--zk-line-strong);
+  color: var(--zk-text);
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  font-size: 20px;
+  line-height: 1.2;
+}
+.zk-popup-item {
+  display: block;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--zk-text);
+  cursor: pointer;
+}
+.zk-popup-item:hover {
+  background: #0a1626;
+  color: var(--zk-cyan);
+}
+.zk-popup-item-active {
+  background: #0a1626;
+  color: var(--zk-green);
+}
+.zk-popup-desc {
+  color: var(--zk-dim);
+  font-size: 17px;
+}
+
 /* Corpo renderizado pelo MarkdownRenderer dentro do tema: links verdes,
    texto na cor do tema (o renderizador usa classes do accent do app). */
 .zk-md {

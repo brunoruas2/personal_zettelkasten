@@ -151,6 +151,7 @@ interface WikiPopupState {
   items: Zettel[];
   command: (zettel: Zettel) => void;
   clientRect: (() => DOMRect | null) | null | undefined;
+  themed?: boolean;
 }
 
 interface SlashCommand {
@@ -176,6 +177,7 @@ interface SlashPopupState {
   items: SlashCommand[];
   command: (cmd: SlashCommand) => void;
   clientRect: (() => DOMRect | null) | null | undefined;
+  themed?: boolean;
 }
 
 // ── WikiLinkPopup ─────────────────────────────────────────────────────────────
@@ -185,7 +187,7 @@ interface WikiPopupHandle {
 }
 
 const WikiLinkPopup = forwardRef<WikiPopupHandle, WikiPopupState>(
-  function WikiLinkPopup({ items, command, clientRect }, ref) {
+  function WikiLinkPopup({ items, command, clientRect, themed }, ref) {
     const [activeIndex, setActiveIndex] = useState(0);
     const activeIndexRef = useRef(0);
 
@@ -218,17 +220,25 @@ const WikiLinkPopup = forwardRef<WikiPopupHandle, WikiPopupState>(
     return ReactDOM.createPortal(
       <div
         style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, zIndex: 9999 }}
-        className="min-w-[220px] max-h-64 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+        className={
+          themed
+            ? 'zk-popup min-w-[220px] max-h-64 overflow-y-auto'
+            : 'min-w-[220px] max-h-64 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900'
+        }
       >
         {items.map((zettel, i) => (
           <button
             key={zettel.id}
             onClick={() => command(zettel)}
-            className={`w-full px-3 py-2 text-left text-sm truncate transition-colors ${
-              i === activeIndex
-                ? 'bg-brand/10 text-brand'
-                : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800'
-            }`}
+            className={
+              themed
+                ? `zk-popup-item w-full truncate text-left${i === activeIndex ? ' zk-popup-item-active' : ''}`
+                : `w-full px-3 py-2 text-left text-sm truncate transition-colors ${
+                    i === activeIndex
+                      ? 'bg-brand/10 text-brand'
+                      : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                  }`
+            }
           >
             {zettel.id === CREATE_LINK_ID ? (
               <span>
@@ -252,7 +262,7 @@ interface SlashPopupHandle {
 }
 
 const SlashCommandPopup = forwardRef<SlashPopupHandle, SlashPopupState>(
-  function SlashCommandPopup({ items, command, clientRect }, ref) {
+  function SlashCommandPopup({ items, command, clientRect, themed }, ref) {
     const [activeIndex, setActiveIndex] = useState(0);
     const activeIndexRef = useRef(0);
 
@@ -285,22 +295,30 @@ const SlashCommandPopup = forwardRef<SlashPopupHandle, SlashPopupState>(
     return ReactDOM.createPortal(
       <div
         style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, zIndex: 9999 }}
-        className="min-w-[220px] rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+        className={
+          themed
+            ? 'zk-popup min-w-[220px]'
+            : 'min-w-[220px] rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900'
+        }
       >
         {items.map((cmd, i) => (
           <button
             key={cmd.id}
             onClick={() => command(cmd)}
-            className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-              i === activeIndex
-                ? 'bg-brand/10 text-brand'
-                : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800'
-            }`}
+            className={
+              themed
+                ? `zk-popup-item flex w-full items-center gap-3 text-left${i === activeIndex ? ' zk-popup-item-active' : ''}`
+                : `w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                    i === activeIndex
+                      ? 'bg-brand/10 text-brand'
+                      : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                  }`
+            }
           >
             <span className="text-base w-5 text-center shrink-0">{cmd.icon}</span>
             <span className="flex flex-col">
-              <span className="font-medium">{cmd.label}</span>
-              <span className="text-xs text-zinc-400">{cmd.description}</span>
+              <span className={themed ? undefined : 'font-medium'}>{cmd.label}</span>
+              <span className={themed ? 'zk-popup-desc' : 'text-xs text-zinc-400'}>{cmd.description}</span>
             </span>
           </button>
         ))}
@@ -1260,6 +1278,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
             items={wikiPopup.items}
             command={wikiPopup.command}
             clientRect={wikiPopup.clientRect}
+            themed={!!editor?.view.dom.closest('.zk-edit')}
           />
         )}
         {slashPopup && (
@@ -1268,6 +1287,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
             items={slashPopup.items}
             command={slashPopup.command}
             clientRect={slashPopup.clientRect}
+            themed={!!editor?.view.dom.closest('.zk-edit')}
           />
         )}
         {editor && <TableBubbleMenu editor={editor} />}
