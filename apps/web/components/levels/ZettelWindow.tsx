@@ -204,7 +204,7 @@ export function ZettelWindow({
                 </div>
                 <h1
                   className="zk-display m-0 mb-3 mt-1 font-normal leading-none"
-                  style={{ color: accent, fontSize: compact ? 32 : isMobile ? 46 : 78 }}
+                  style={{ color: accent, fontSize: compact ? 16 : isMobile ? 23 : 39 }}
                 >
                   {title}
                 </h1>
