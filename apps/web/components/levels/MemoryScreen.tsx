@@ -1,5 +1,6 @@
 'use client';
 
+import { EraserButton } from './EraserButton';
 import { useMemo, useState } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useLinkIndex } from '../../hooks/useLinkIndex';
@@ -132,11 +133,9 @@ export function MemoryScreen() {
           <NeonButton variant="hot" className="flex-1" onClick={() => void actions.focus(activeId)}>
             ABRIR EM FOCO ▲
           </NeonButton>
-          <NeonButton onClick={() => startEdit('memory')}>EDITAR</NeonButton>
+          <NeonButton onClick={() => startEdit('memory')}>EDIT</NeonButton>
           <NeonButton onClick={() => void actions.dismiss(activeId)}>FECHAR</NeonButton>
-          <button type="button" className="zk-btn-danger" onClick={() => void actions.requestDelete(activeId)}>
-            APAGAR
-          </button>
+          <EraserButton onClick={() => void actions.requestDelete(activeId)} />
         </div>
       }
     />

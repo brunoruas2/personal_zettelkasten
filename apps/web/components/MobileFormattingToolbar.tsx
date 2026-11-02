@@ -8,8 +8,6 @@ export const TOOLBAR_HEIGHT = 56;
 
 interface Props {
   editor: Editor | null;
-  previewOpen: boolean;
-  onTogglePreview: () => void;
   onInsertLink: () => void;
   onInsertImage: () => void;
   onInsertDrawing: () => void;
@@ -49,13 +47,6 @@ const NoteIcon = () => (
   </svg>
 );
 
-const EyeIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
-    <circle cx="12" cy="12" r="3" />
-  </svg>
-);
-
 const TocIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
     <line x1="9" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="9" y1="18" x2="21" y2="18" />
@@ -69,8 +60,6 @@ const Divider = () => (
 
 export function MobileFormattingToolbar({
   editor,
-  previewOpen,
-  onTogglePreview,
   onInsertLink,
   onInsertImage,
   onInsertDrawing,
@@ -115,12 +104,12 @@ export function MobileFormattingToolbar({
   });
 
   const wrapClass =
-    'fixed bottom-0 left-0 lg:left-80 right-0 z-10 flex items-center border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 lg:hidden';
+    'zk-tb fixed bottom-0 left-0 lg:left-80 right-0 z-10 flex items-center border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 lg:hidden';
   const wrapStyle = { height: TOOLBAR_HEIGHT, paddingBottom: 'env(safe-area-inset-bottom)' };
 
-  const base = 'flex w-11 h-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold transition-colors';
+  const base = 'zk-tb-btn flex w-11 h-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold transition-colors';
   const inactive = 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700';
-  const active = 'bg-brand text-white';
+  const active = 'zk-tb-btn-on bg-brand text-white';
 
   function fmtBtn(
     label: React.ReactNode,
@@ -152,9 +141,9 @@ export function MobileFormattingToolbar({
   };
 
   // Dentro de ```chords a barra completa tem o botão do teclado de cifras: o compacto cede.
-  if (compact && !previewOpen && !state?.inChordsBlock && onToggleCompact) {
+  if (compact && !state?.inChordsBlock && onToggleCompact) {
     // Botões dividem a largura (flex-1): 8 cabem em 320 px com ~39 px cada, 44 px a partir de 360.
-    const c = 'flex h-11 min-w-0 flex-1 items-center justify-center rounded-xl text-sm font-bold transition-colors';
+    const c = 'zk-tb-btn flex h-11 min-w-0 flex-1 items-center justify-center rounded-xl text-sm font-bold transition-colors';
     const noFocusSteal = (e: React.MouseEvent) => e.preventDefault();
     return (
       <div ref={toolbarRef} className={wrapClass} style={wrapStyle}>
@@ -179,47 +168,6 @@ export function MobileFormattingToolbar({
           </button>
           <button onMouseDown={noFocusSteal} onClick={onToggleCompact} aria-label="Mais ferramentas" aria-expanded={false} className={`${c} ${inactive} text-lg leading-none`}>
             ⋯
-          </button>
-          <button onMouseDown={noFocusSteal} onClick={onTogglePreview} aria-label="Visualizar preview" className={`${c} ${inactive} text-brand`}>
-            <EyeIcon />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (previewOpen) {
-    return (
-      <div ref={toolbarRef} className={wrapClass} style={wrapStyle}>
-        <div className="flex flex-1 items-center justify-end gap-1 px-3">
-{hasEmbeds && onToggleEmbeds && (
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={onToggleEmbeds}
-              aria-label="Renderizar zettels referenciados"
-              aria-pressed={embedsOn}
-              className={`${base} ${embedsOn ? active : inactive}`}
-            >
-              <EmbedIcon />
-            </button>
-          )}
-          {hasHeadings && (
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={onToggleToc}
-              aria-label="Sumário"
-              className={`${base} ${tocOpen ? active : inactive}`}
-            >
-              <TocIcon />
-            </button>
-          )}
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={onTogglePreview}
-            aria-label="Voltar para edição"
-            className={`${base} ${active}`}
-          >
-            <EyeIcon />
           </button>
         </div>
       </div>
@@ -343,7 +291,7 @@ export function MobileFormattingToolbar({
         </button>
 
         {/* Font size */}
-        <div className="flex shrink-0 items-center overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 ml-0.5">
+        <div className="flex shrink-0 items-center overflow-hidden zk-tb-box rounded-xl bg-zinc-100 dark:bg-zinc-800 ml-0.5">
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onFontSizeChange(Math.max(16, fontSize - 1))}
@@ -420,14 +368,6 @@ export function MobileFormattingToolbar({
             ⋯
           </button>
         )}
-        <button
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={onTogglePreview}
-          aria-label="Visualizar preview"
-          className={`${base} ${inactive} text-brand`}
-        >
-          <EyeIcon />
-        </button>
         <button
           onMouseDown={(e) => e.preventDefault()}
           onClick={onOpenCheatsheet}

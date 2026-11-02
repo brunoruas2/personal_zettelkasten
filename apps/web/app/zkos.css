@@ -703,3 +703,38 @@
     transition: none !important;
   }
 }
+
+/* Barra de opções do editor no tema ZK//OS (spec: zkos-theme). Só vale dentro de `.zk-edit`;
+   a galáxia usa a barra com o visual padrão. */
+.zk-edit .zk-tb {
+  background: var(--zk-bg-panel);
+  border-color: var(--zk-line);
+  font-family: var(--font-vt323), monospace;
+}
+.zk-edit .zk-tb [class*='border-l'] {
+  border-color: var(--zk-line);
+}
+.zk-edit .zk-tb .zk-tb-btn,
+.zk-edit .zk-tb .zk-tb-box {
+  background: transparent;
+  border: 1.5px solid var(--zk-line-strong);
+  border-radius: 0;
+  color: var(--zk-cyan);
+  font-family: var(--font-vt323), monospace;
+  font-weight: 400;
+}
+.zk-edit .zk-tb .zk-tb-box {
+  color: var(--zk-dim);
+}
+.zk-edit .zk-tb .zk-tb-box button {
+  color: var(--zk-cyan);
+}
+.zk-edit .zk-tb .zk-tb-btn.zk-tb-btn-on {
+  background: var(--zk-amber);
+  border-color: var(--zk-amber);
+  color: var(--zk-black);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+.zk-edit .zk-tb .zk-tb-btn:disabled {
+  opacity: 0.35;
+}

@@ -235,7 +235,7 @@ export function ZettelWindow({
                       </NeonButton>
                     )}
                     <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
-                      EDITAR
+                      EDIT
                     </NeonButton>
                     {compact && actions}
                   </div>

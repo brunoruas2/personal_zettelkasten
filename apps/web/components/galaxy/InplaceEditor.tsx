@@ -12,7 +12,6 @@ import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { ChordKeypad, KEYPAD_HEIGHT } from '../ChordKeypad';
 import { LinkPickerModal } from '../LinkPickerModal';
 import { MarkdownCheatsheet } from '../MarkdownCheatsheet';
-import { MarkdownRenderer } from '../MarkdownRenderer';
 import { LinksFooter } from './LinksFooter';
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'offline' | 'error';
@@ -73,7 +72,6 @@ export const InplaceEditor = forwardRef<
   const tagsRef = useRef<HTMLDivElement>(null);
   // Pré-visualização (só celular): o TipTap fica montado e escondido, para não
   // perder o desfazer nem o editorRef; `body` segue sendo a fonte do autosave.
-  const [previewOpen, setPreviewOpen] = useState(false);
 
   const editorRef = useRef<TipTapEditorHandle>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -199,11 +197,7 @@ export const InplaceEditor = forwardRef<
   };
 
   const isMobile = variant === 'mobile';
-  const showChordKeypad = isMobile && !previewOpen && chordKeypadOpen && (editorState?.inChordsBlock ?? false);
-  const togglePreview = () => {
-    if (!previewOpen) editor?.commands.blur();
-    setPreviewOpen((v) => !v);
-  };
+  const showChordKeypad = isMobile && chordKeypadOpen && (editorState?.inChordsBlock ?? false);
   const btn = 'rounded-md px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5';
 
   return (
@@ -230,18 +224,8 @@ export const InplaceEditor = forwardRef<
         data-card-scroll
         className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${isMobile ? 'px-5 pb-4' : 'px-6 pb-3'}`}
       >
-        {previewOpen && (
-          <div className="pt-3" style={{ fontSize }}>
-            {body.trim() ? (
-              <MarkdownRenderer body={body} onLinkPress={() => {}} disableWikiLinks />
-            ) : (
-              <p className="italic text-[#6f7787]">Sem conteúdo.</p>
-            )}
-          </div>
-        )}
         <div
           data-card-body
-          className={previewOpen ? 'hidden' : undefined}
           onKeyDownCapture={(e) => {
             // Shift+Tab no início do corpo (fora de lista) volta ao título.
             if (e.key !== 'Tab' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || !editor) return;
@@ -320,8 +304,6 @@ export const InplaceEditor = forwardRef<
       {isMobile && !showChordKeypad && (
         <MobileFormattingToolbar
           editor={editor}
-          previewOpen={previewOpen}
-          onTogglePreview={togglePreview}
           onInsertLink={() => setLinkPickerOpen(true)}
           onInsertImage={() => editorRef.current?.pickImages()}
           onInsertDrawing={() => editorRef.current?.insertDrawing()}

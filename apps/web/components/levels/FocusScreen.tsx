@@ -1,5 +1,6 @@
 'use client';
 
+import { EraserButton } from './EraserButton';
 import { useMemo } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useLinkIndex } from '../../hooks/useLinkIndex';
@@ -53,14 +54,10 @@ export function FocusScreen() {
         className="min-h-0 flex-1"
         actions={
           focusEditing ? undefined : isMobile ? (
-            <button type="button" className="zk-btn-danger" onClick={() => void actions.requestDelete(focusId)}>
-              APAGAR
-            </button>
+            <EraserButton onClick={() => void actions.requestDelete(focusId)} />
           ) : (
             <div className="flex flex-none justify-end gap-2 border-t border-zk-line p-2">
-              <button type="button" className="zk-btn-danger" onClick={() => void actions.requestDelete(focusId)}>
-                APAGAR
-              </button>
+              <EraserButton onClick={() => void actions.requestDelete(focusId)} />
             </div>
           )
         }
