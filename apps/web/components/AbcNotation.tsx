@@ -70,8 +70,12 @@ export function AbcNotation({ source }: Props) {
       tuneRef.current = tune ?? null;
       let playable = false;
       try {
-        playable = !!tune && tune.getTotalBeats() > 0;
-        if (tune) setBpm(defaultBpm(tune));
+        if (tune) {
+          // `getTotalTime` só tem valor depois de `setTiming`; o `renderAbc` não o chama.
+          tune.setTiming();
+          playable = (tune.getTotalTime() ?? 0) > 0;
+          setBpm(defaultBpm(tune));
+        }
       } catch {
         playable = false;
       }
