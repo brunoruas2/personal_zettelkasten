@@ -89,7 +89,7 @@ export function ChordKeypad({ editor, active, onRequestClose, keyboardOffset, on
   }
 
   const base = 'flex h-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold transition-colors px-2';
-  const keyClass = `${base} bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700`;
+  const keyClass = `zk-kp-btn ${base} bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700`;
 
   function key(label: string, onClick: () => void, extra = '') {
     return (
@@ -106,7 +106,7 @@ export function ChordKeypad({ editor, active, onRequestClose, keyboardOffset, on
 
   return (
     <div
-      className="fixed left-0 lg:left-80 right-0 z-10 flex flex-col gap-1.5 border-t border-zinc-200 bg-white px-2 pt-1.5 dark:border-zinc-800 dark:bg-zinc-950 lg:hidden"
+      className="zk-kp fixed left-0 lg:left-80 right-0 z-10 flex flex-col gap-1.5 border-t border-zinc-200 bg-white px-2 pt-1.5 dark:border-zinc-800 dark:bg-zinc-950 lg:hidden"
       style={{
         bottom: keyboardOffset,
         height: `calc(${KEYPAD_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
@@ -131,7 +131,7 @@ export function ChordKeypad({ editor, active, onRequestClose, keyboardOffset, on
         <button
           onMouseDown={(e) => e.preventDefault()}
           onClick={handleClose}
-          className="flex h-11 flex-1 shrink-0 items-center justify-center rounded-xl bg-brand text-sm font-bold text-white"
+          className="zk-kp-btn zk-kp-on flex h-11 flex-1 shrink-0 items-center justify-center rounded-xl bg-brand text-sm font-bold text-white"
         >
           Teclado normal
         </button>

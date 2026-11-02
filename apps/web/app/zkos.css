@@ -738,3 +738,58 @@
 .zk-edit .zk-tb .zk-tb-btn:disabled {
   opacity: 0.35;
 }
+
+/* Teclados de partitura (AbcKeypad) e de cifras (ChordKeypad) no tema ZK//OS: mesmo vocabulário da barra
+   acima (contorno ciano, canto reto, âmbar no ativo). Só vale dentro de `.zk-edit`. */
+.zk-edit .zk-kp {
+  background: var(--zk-bg-panel);
+  border-color: var(--zk-line);
+  font-family: var(--font-vt323), monospace;
+}
+.zk-edit .zk-kp .zk-kp-btn {
+  background: transparent;
+  border: 1.5px solid var(--zk-line-strong);
+  border-radius: 0;
+  color: var(--zk-cyan);
+  font-family: var(--font-vt323), monospace;
+  font-size: 1.2rem;
+  font-weight: 400;
+}
+.zk-edit .zk-kp .zk-kp-btn:active {
+  background: var(--zk-line);
+}
+.zk-edit .zk-kp .zk-kp-btn.zk-kp-on {
+  background: var(--zk-amber);
+  border-color: var(--zk-amber);
+  color: var(--zk-black);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+.zk-edit .zk-kp .zk-kp-btn:disabled {
+  opacity: 0.35;
+}
+.zk-edit .zk-kp .zk-kp-oct {
+  color: var(--zk-amber);
+  font-size: 1.3rem;
+}
+.zk-edit .zk-kp .zk-kp-white {
+  background: var(--zk-text);
+  border: 1.5px solid var(--zk-line-strong);
+  border-radius: 0;
+  color: var(--zk-bg);
+  font-size: 1.1rem;
+  font-weight: 400;
+}
+.zk-edit .zk-kp .zk-kp-black {
+  background: var(--zk-black);
+  border: 1.5px solid var(--zk-cyan);
+  border-radius: 0;
+  color: var(--zk-cyan);
+  font-size: 1rem;
+  font-weight: 400;
+}
+.zk-edit .zk-kp .zk-kp-white:active,
+.zk-edit .zk-kp .zk-kp-black:active {
+  background: var(--zk-amber);
+  border-color: var(--zk-amber);
+  color: var(--zk-black);
+}

@@ -125,13 +125,13 @@ export function AbcKeypad({ editor, active, onRequestClose, keyboardOffset, onRe
   }
 
   const base = 'flex h-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold transition-colors px-2';
-  const keyClass = `${base} bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700`;
-  const onClass = `${base} bg-brand text-white`;
+  const keyClass = `zk-kp-btn ${base} bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700`;
+  const onClass = `zk-kp-btn zk-kp-on ${base} bg-brand text-white`;
   const disabledClass = 'disabled:opacity-40';
 
   return (
     <div
-      className="fixed left-0 lg:left-80 right-0 z-10 flex flex-col gap-1.5 border-t border-zinc-200 bg-white px-2 pt-1.5 dark:border-zinc-800 dark:bg-zinc-950 lg:hidden"
+      className="zk-kp fixed left-0 lg:left-80 right-0 z-10 flex flex-col gap-1.5 border-t border-zinc-200 bg-white px-2 pt-1.5 dark:border-zinc-800 dark:bg-zinc-950 lg:hidden"
       style={{
         bottom: keyboardOffset,
         height: `calc(${ABC_KEYPAD_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
@@ -147,7 +147,7 @@ export function AbcKeypad({ editor, active, onRequestClose, keyboardOffset, onRe
         >
           −
         </button>
-        <span className="w-9 text-center text-sm font-bold tabular-nums text-zinc-700 dark:text-zinc-200" aria-label={`Oitava ${octave}`}>
+        <span className="zk-kp-oct w-9 text-center text-sm font-bold tabular-nums text-zinc-700 dark:text-zinc-200" aria-label={`Oitava ${octave}`}>
           C{octave}
         </span>
         <button
@@ -181,7 +181,7 @@ export function AbcKeypad({ editor, active, onRequestClose, keyboardOffset, onRe
             key={k.semitone}
             {...press(() => pressNote(k.semitone))}
             aria-label={k.label}
-            className="flex flex-1 items-end justify-center rounded-b-lg border border-zinc-300 bg-white pb-1 text-xs font-bold text-zinc-500 active:bg-brand/30 dark:border-zinc-600 dark:bg-zinc-200 dark:text-zinc-600"
+            className="zk-kp-white flex flex-1 items-end justify-center rounded-b-lg border border-zinc-300 bg-white pb-1 text-xs font-bold text-zinc-500 active:bg-brand/30 dark:border-zinc-600 dark:bg-zinc-200 dark:text-zinc-600"
           >
             {k.label}
           </button>
@@ -191,7 +191,7 @@ export function AbcKeypad({ editor, active, onRequestClose, keyboardOffset, onRe
             key={k.semitone}
             {...press(() => pressNote(k.semitone))}
             aria-label={k.label}
-            className="absolute top-0 z-10 flex items-end justify-center rounded-b-md bg-zinc-900 pb-1 text-[10px] font-bold text-zinc-300 active:bg-brand dark:bg-zinc-700 dark:text-zinc-100"
+            className="zk-kp-black absolute top-0 z-10 flex items-end justify-center rounded-b-md bg-zinc-900 pb-1 text-[10px] font-bold text-zinc-300 active:bg-brand dark:bg-zinc-700 dark:text-zinc-100"
             style={{
               left: `${((BLACK_AFTER_WHITE[k.semitone] + 1) / WHITE.length) * 100}%`,
               width: '8.5%',
@@ -217,7 +217,7 @@ export function AbcKeypad({ editor, active, onRequestClose, keyboardOffset, onRe
         <button
           onMouseDown={(e) => e.preventDefault()}
           onClick={handleClose}
-          className="flex h-11 flex-1 shrink-0 items-center justify-center rounded-xl bg-brand text-sm font-bold text-white"
+          className="zk-kp-btn zk-kp-on flex h-11 flex-1 shrink-0 items-center justify-center rounded-xl bg-brand text-sm font-bold text-white"
         >
           Teclado normal
         </button>
