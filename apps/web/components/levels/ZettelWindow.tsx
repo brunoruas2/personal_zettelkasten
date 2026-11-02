@@ -221,12 +221,7 @@ export function ZettelWindow({
           {!editing && (
             <>
               <div data-card-scroll className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${pad} pb-2 pt-4`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="zk-tag flex flex-wrap gap-x-3 text-[22px]">
-                    {tags.map((t) => (
-                      <span key={t}>[{t}]</span>
-                    ))}
-                  </div>
+                <div className="flex items-center justify-end gap-3">
                   <div className="flex flex-none items-center gap-2">
                     <FontSizeControl percent={scalePercent} />
                     {onBack && (
@@ -267,6 +262,13 @@ export function ZettelWindow({
                   </div>
                 )}
                 {notice && <p className="zk-display mt-3 text-lg text-zk-amber">{notice}</p>}
+                {tags.length > 0 && (
+                  <div className="zk-tag mt-4 flex flex-wrap gap-x-3 text-[22px]">
+                    {tags.map((t) => (
+                      <span key={t}>[{t}]</span>
+                    ))}
+                  </div>
+                )}
               </div>
               {!compact && actions}
               {!compact && (
