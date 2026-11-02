@@ -10,6 +10,8 @@ import { DrawingEditHost } from '../../hooks/useDrawingEditHost';
 import { MobileFormattingToolbar, TOOLBAR_HEIGHT } from '../MobileFormattingToolbar';
 import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { ChordKeypad, KEYPAD_HEIGHT } from '../ChordKeypad';
+import { AbcKeypad, ABC_KEYPAD_HEIGHT } from '../AbcKeypad';
+import { preloadAbcjs } from '../../lib/abcAudio';
 import { LinkPickerModal } from '../LinkPickerModal';
 import { MarkdownCheatsheet } from '../MarkdownCheatsheet';
 import { LinksFooter } from './LinksFooter';
@@ -68,6 +70,7 @@ export const InplaceEditor = forwardRef<
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   const [fontSize, setFontSize] = useState(16);
   const [chordKeypadOpen, setChordKeypadOpen] = useState(false);
+  const [abcKeypadOpen, setAbcKeypadOpen] = useState(false);
   const [compactBar, setCompactBar] = useState(loadCompact);
   const tagsRef = useRef<HTMLDivElement>(null);
   // Pré-visualização (só celular): o TipTap fica montado e escondido, para não
@@ -90,6 +93,7 @@ export const InplaceEditor = forwardRef<
     editor,
     selector: (ctx) => ({
       inChordsBlock: ctx.editor ? ctx.editor.isActive('codeBlock', { language: 'chords' }) : false,
+      inAbcBlock: ctx.editor ? ctx.editor.isActive('codeBlock', { language: 'abc' }) : false,
     }),
   });
 
@@ -198,6 +202,8 @@ export const InplaceEditor = forwardRef<
 
   const isMobile = variant === 'mobile';
   const showChordKeypad = isMobile && chordKeypadOpen && (editorState?.inChordsBlock ?? false);
+  const showAbcKeypad = isMobile && abcKeypadOpen && (editorState?.inAbcBlock ?? false);
+  const bottomBarHeight = showChordKeypad ? KEYPAD_HEIGHT : showAbcKeypad ? ABC_KEYPAD_HEIGHT : TOOLBAR_HEIGHT;
   const btn = 'rounded-md px-2 py-1 text-xs text-[#c9cfdb] hover:bg-white/5';
 
   return (
@@ -266,7 +272,7 @@ export const InplaceEditor = forwardRef<
         </div>
         {/* Celular: o rodapé rola com o conteúdo e termina acima da barra fixa. */}
         {isMobile && onNavigateLink && <LinksFooter id={zettel.id} onNavigate={flushAndNavigate} compact touch className="-mx-5" />}
-        {isMobile && <div style={{ height: `calc(${(showChordKeypad ? KEYPAD_HEIGHT : TOOLBAR_HEIGHT) + keyboardOffset}px + env(safe-area-inset-bottom))` }} />}
+        {isMobile && <div style={{ height: `calc(${bottomBarHeight + keyboardOffset}px + env(safe-area-inset-bottom))` }} />}
       </div>
       {!isMobile && onNavigateLink && <LinksFooter id={zettel.id} onNavigate={flushAndNavigate} compact className="shrink-0" />}
 
@@ -301,7 +307,16 @@ export const InplaceEditor = forwardRef<
           onRecomputeOffset={recomputeKeyboardOffset}
         />
       )}
-      {isMobile && !showChordKeypad && (
+      {isMobile && showAbcKeypad && (
+        <AbcKeypad
+          editor={editor}
+          active={showAbcKeypad}
+          onRequestClose={() => setAbcKeypadOpen(false)}
+          keyboardOffset={keyboardOffset}
+          onRecomputeOffset={recomputeKeyboardOffset}
+        />
+      )}
+      {isMobile && !showChordKeypad && !showAbcKeypad && (
         <MobileFormattingToolbar
           editor={editor}
           onInsertLink={() => setLinkPickerOpen(true)}
@@ -313,6 +328,11 @@ export const InplaceEditor = forwardRef<
           toolbarRef={toolbarRef}
           chordKeypadOpen={chordKeypadOpen}
           onToggleChordKeypad={() => setChordKeypadOpen((v) => !v)}
+          abcKeypadOpen={abcKeypadOpen}
+          onToggleAbcKeypad={() => {
+            void preloadAbcjs();
+            setAbcKeypadOpen((v) => !v);
+          }}
           compact={compactBar}
           onToggleCompact={() => {
             const next = !compactBar;

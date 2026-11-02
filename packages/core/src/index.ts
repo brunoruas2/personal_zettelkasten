@@ -25,3 +25,4 @@ export * from './services/RelatedZettels';
 export * from './services/BackStack';
 export * from './services/FocusGate';
 export * from './services/Levels';
+export * from './services/AbcNotes';

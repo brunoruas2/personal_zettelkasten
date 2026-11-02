@@ -15,10 +15,28 @@ const LEGACY_ROUTES_CACHE = 'zettelkasten-routes-v1';
 // trocado por um canvas próprio; o activate apaga o que ficou em quem já instalou.
 const LEGACY_EXCALIDRAW_CACHE = 'zettelkasten-excalidraw-v1';
 
+// Soundfont de piano do abcjs: um mp3 por nota (88, ~2,2 MB). Cache próprio, fora do
+// `zettelkasten-shell-` para o activate não apagá-lo a cada deploy.
+const ABC_SOUND_CACHE = 'zettelkasten-abc-sound-v1';
+const ABC_SOUND_PREFIX = '/vendor/abc-soundfont/acoustic_grand_piano-mp3/';
+const ABC_SOUND_NOTES = (() => {
+  const names = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const out: string[] = ['A0', 'Bb0', 'B0'];
+  for (let oct = 1; oct <= 7; oct++) for (const n of names) out.push(`${n}${oct}`);
+  out.push('C8');
+  return out;
+})();
+
 // Pre-cache the app shell on every SW install/update.
 self.addEventListener('install', (event) => {
   event.waitUntil(
     Promise.all([
+      // ~88 arquivos opcionais: falha de rede aqui não pode derrubar a instalação
+      // do SW. O que faltar é completado pelo cache-first do `fetch` abaixo.
+      caches
+        .open(ABC_SOUND_CACHE)
+        .then((cache) => cache.addAll(ABC_SOUND_NOTES.map((n) => `${ABC_SOUND_PREFIX}${n}.mp3`)))
+        .catch(() => undefined),
       caches
         .open(SHELL_CACHE)
         .then((cache) => cache.addAll(['/', '/vendor/plantuml/plantuml.js', '/vendor/plantuml/viz-global.js'])),
@@ -75,6 +93,21 @@ self.addEventListener('activate', (event) => {
 //   may return that RSC response instead of HTML, causing a blank/broken page.
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+
+  // Notas do soundfont: cache-first; o que não veio no precache entra no primeiro uso.
+  if (request.method === 'GET' && new URL(request.url).pathname.startsWith(ABC_SOUND_PREFIX)) {
+    event.respondWith(
+      caches.open(ABC_SOUND_CACHE).then(async (cache) => {
+        const hit = await cache.match(request);
+        if (hit) return hit;
+        const response = await fetch(request);
+        if (response.ok) cache.put(request, response.clone()).catch(() => undefined);
+        return response;
+      }),
+    );
+    return;
+  }
+
   if (request.mode !== 'navigate') return;
 
   const { pathname } = new URL(request.url);

@@ -17,6 +17,8 @@ interface Props {
   toolbarRef: RefObject<HTMLDivElement | null>;
   chordKeypadOpen: boolean;
   onToggleChordKeypad: () => void;
+  abcKeypadOpen: boolean;
+  onToggleAbcKeypad: () => void;
   /** Falso quando o texto não tem heading algum — o botão de sumário some. */
   hasHeadings: boolean;
   tocOpen: boolean;
@@ -47,6 +49,14 @@ const NoteIcon = () => (
   </svg>
 );
 
+const PianoIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M9 5v14M15 5v14" />
+    <path d="M7.5 5v7M12 5v7M16.5 5v7" strokeWidth="3" />
+  </svg>
+);
+
 const TocIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
     <line x1="9" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="9" y1="18" x2="21" y2="18" />
@@ -69,6 +79,8 @@ export function MobileFormattingToolbar({
   toolbarRef,
   chordKeypadOpen,
   onToggleChordKeypad,
+  abcKeypadOpen,
+  onToggleAbcKeypad,
   hasHeadings,
   tocOpen,
   onToggleToc,
@@ -98,6 +110,7 @@ export function MobileFormattingToolbar({
         canUndo: ctx.editor.can().undo(),
         canRedo: ctx.editor.can().redo(),
         inChordsBlock: ctx.editor.isActive('codeBlock', { language: 'chords' }),
+        inAbcBlock: ctx.editor.isActive('codeBlock', { language: 'abc' }),
         canEscapeLeadingBlock: canEscapeLeadingBlock(ctx.editor),
       };
     },
@@ -140,8 +153,8 @@ export function MobileFormattingToolbar({
     else chain.createParagraphNear().insertContent('/').run();
   };
 
-  // Dentro de ```chords a barra completa tem o botão do teclado de cifras: o compacto cede.
-  if (compact && !state?.inChordsBlock && onToggleCompact) {
+  // Dentro de ```chords / ```abc a barra completa tem o botão do teclado: o compacto cede.
+  if (compact && !state?.inChordsBlock && !state?.inAbcBlock && onToggleCompact) {
     // Botões dividem a largura (flex-1): 8 cabem em 320 px com ~39 px cada, 44 px a partir de 360.
     const c = 'zk-tb-btn flex h-11 min-w-0 flex-1 items-center justify-center rounded-xl text-sm font-bold transition-colors';
     const noFocusSteal = (e: React.MouseEvent) => e.preventDefault();
@@ -324,6 +337,16 @@ export function MobileFormattingToolbar({
             className={`${base} ${chordKeypadOpen ? active : inactive}`}
           >
             <NoteIcon />
+          </button>
+        )}
+        {state?.inAbcBlock && (
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onToggleAbcKeypad}
+            aria-label="Teclado de piano"
+            className={`${base} ${abcKeypadOpen ? active : inactive}`}
+          >
+            <PianoIcon />
           </button>
         )}
         {state?.canEscapeLeadingBlock && (
