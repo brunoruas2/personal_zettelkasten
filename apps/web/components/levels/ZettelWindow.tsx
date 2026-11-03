@@ -198,8 +198,20 @@ export function ZettelWindow({
       if (e.key === 'Escape') console.log('[esc-debug] Esc chegou na window, defaultPrevented =', e.defaultPrevented);
       if (e.key === 'Escape' && !e.defaultPrevented) void finish();
     };
+    // [esc-debug] temporário: mostra quem chama preventDefault num keydown de Esc.
+    const proto = Event.prototype as Event & { preventDefault: () => void };
+    const original = proto.preventDefault;
+    proto.preventDefault = function (this: Event) {
+      if (this.type === 'keydown' && (this as KeyboardEvent).key === 'Escape') {
+        console.log('[esc-debug] preventDefault chamado em Esc por:', new Error().stack);
+      }
+      return original.call(this);
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      proto.preventDefault = original;
+      window.removeEventListener('keydown', onKey);
+    };
   }, [editing, finish]);
 
   const onBodyClick = (e: MouseEvent) => {
