@@ -182,9 +182,12 @@ export function ZettelWindow({
   }, [zettel]);
 
   const finish = useCallback(async () => {
+    console.log('[esc-debug] finish: início');
     const empty = editorRef.current?.isEmpty() ?? false;
     await flushActiveEdit();
+    console.log('[esc-debug] finish: flush resolveu');
     onStopEdit();
+    console.log('[esc-debug] finish: onStopEdit chamado');
     onFinished?.({ empty });
   }, [onStopEdit, onFinished]);
 
@@ -192,6 +195,7 @@ export function ZettelWindow({
   useEffect(() => {
     if (!editing) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') console.log('[esc-debug] Esc chegou na window, defaultPrevented =', e.defaultPrevented);
       if (e.key === 'Escape' && !e.defaultPrevented) void finish();
     };
     window.addEventListener('keydown', onKey);
