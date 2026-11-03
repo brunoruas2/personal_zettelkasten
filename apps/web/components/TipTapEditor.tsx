@@ -972,6 +972,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
                     // (a suggestion continua "ativa" enquanto o cursor está após um `[[`).
                     if (!wikiPopupRef.current) return false;
                     setWikiPopupRef.current(null);
+                    props.event.stopPropagation(); // o Esc fechou só o popup; não sobe para sair da edição
                     return true;
                   }
                   return wikiPopupRef.current?.onKeyDown(props) ?? false;
@@ -1068,6 +1069,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
                     // Só consome o Esc com o popup aberto; fechado, o Esc segue.
                     if (!slashPopupRef.current) return false;
                     setSlashPopupRef.current(null);
+                    props.event.stopPropagation(); // o Esc fechou só o popup; não sobe para sair da edição
                     return true;
                   }
                   return slashPopupRef.current?.onKeyDown(props) ?? false;

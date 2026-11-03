@@ -182,36 +182,25 @@ export function ZettelWindow({
   }, [zettel]);
 
   const finish = useCallback(async () => {
-    console.log('[esc-debug] finish: início');
     const empty = editorRef.current?.isEmpty() ?? false;
     await flushActiveEdit();
-    console.log('[esc-debug] finish: flush resolveu');
     onStopEdit();
-    console.log('[esc-debug] finish: onStopEdit chamado');
     onFinished?.({ empty });
   }, [onStopEdit, onFinished]);
 
-  // Esc encerra a edição (popups do editor e o modal de desenho consomem o seu).
+  // Esc encerra a edição. O ProseMirror faz preventDefault em todo Esc com o
+  // editor focado (captureKeyDown), então `defaultPrevented` não diz nada
+  // aí dentro; os popups do editor consomem o seu com stopPropagation, e o
+  // modal de desenho fica fora do `.ProseMirror`.
   useEffect(() => {
     if (!editing) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') console.log('[esc-debug] Esc chegou na window, defaultPrevented =', e.defaultPrevented);
-      if (e.key === 'Escape' && !e.defaultPrevented) void finish();
-    };
-    // [esc-debug] temporário: mostra quem chama preventDefault num keydown de Esc.
-    const proto = Event.prototype as Event & { preventDefault: () => void };
-    const original = proto.preventDefault;
-    proto.preventDefault = function (this: Event) {
-      if (this.type === 'keydown' && (this as KeyboardEvent).key === 'Escape') {
-        console.log('[esc-debug] preventDefault chamado em Esc por:', new Error().stack);
-      }
-      return original.call(this);
+      if (e.key !== 'Escape') return;
+      const inEditor = !!(e.target as HTMLElement | null)?.closest?.('.ProseMirror');
+      if (!e.defaultPrevented || inEditor) void finish();
     };
     window.addEventListener('keydown', onKey);
-    return () => {
-      proto.preventDefault = original;
-      window.removeEventListener('keydown', onKey);
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [editing, finish]);
 
   const onBodyClick = (e: MouseEvent) => {
