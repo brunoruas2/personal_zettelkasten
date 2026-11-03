@@ -612,6 +612,18 @@
 .zk-md pre {
   white-space: pre-wrap;
 }
+/* Tabela segue o corpo: vence o text-sm da leitura e o 0.9em do editor. */
+.zk-md table,
+.zk-edit .ProseMirror table {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.zk-md :is(th, td),
+.zk-edit .ProseMirror :is(th, td, td p, th p) {
+  font-size: inherit;
+  line-height: inherit;
+}
 .zk-md .font-mono {
   font-size: calc(19px * var(--zk-read-scale, 1)); /* VT323 é pequena: cifra e código ganham corpo */
   line-height: 1.25;
