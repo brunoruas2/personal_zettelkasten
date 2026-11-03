@@ -968,6 +968,9 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
                 },
                 onKeyDown: (props: SuggestionKeyDownProps) => {
                   if (props.event.key === 'Escape') {
+                    // Só consome o Esc com o popup aberto; fechado, o Esc segue
+                    // (a suggestion continua "ativa" enquanto o cursor está após um `[[`).
+                    if (!wikiPopupRef.current) return false;
                     setWikiPopupRef.current(null);
                     return true;
                   }
@@ -1062,6 +1065,8 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
                 },
                 onKeyDown: (props: SuggestionKeyDownProps) => {
                   if (props.event.key === 'Escape') {
+                    // Só consome o Esc com o popup aberto; fechado, o Esc segue.
+                    if (!slashPopupRef.current) return false;
                     setSlashPopupRef.current(null);
                     return true;
                   }
