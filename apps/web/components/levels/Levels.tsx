@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { Level } from '@zettelkasten/core';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
+import { isTypingTarget } from '../../lib/galaxy/engine';
 import { useDeleteRequestStore } from '../../store/useDeleteRequestStore';
 import { DeleteZettelModal } from '../galaxy/DeleteZettelModal';
 import { NeonButton, Vignette } from '../zkos';
@@ -54,6 +55,7 @@ function LevelsInner() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const focusId = useLevelsStore((s) => s.focusId);
+  const trailPrevId = useLevelsStore((s) => (s.trail.length > 1 ? s.trail[s.trail.length - 2] : null));
   const zettels = useZettelStore((s) => s.zettels);
   const deleteId = useDeleteRequestStore((s) => s.id);
   const clearDelete = useDeleteRequestStore((s) => s.clear);
@@ -99,6 +101,13 @@ function LevelsInner() {
       } else if (e.altKey && e.code === 'Comma' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         setModal('settings');
+      } else if (e.code === 'KeyX' && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.repeat) {
+        const lv = useLevelsStore.getState();
+        if (overlayOpen || lv.level !== 'focus' || lv.editing || isTypingTarget(e.target)) return;
+        const prevId = lv.trail.length > 1 ? lv.trail[lv.trail.length - 2] : null;
+        if (!prevId) return;
+        e.preventDefault();
+        void actions.focus(prevId);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -109,6 +118,7 @@ function LevelsInner() {
     { id: 'new', label: 'Novo zettel', run: onNew },
     { id: 'capture', label: 'Captura rápida', run: () => setCapture(true) },
     { id: 'search', label: 'Buscar', keys: 'Alt+B', run: () => setSearch({}) },
+    ...(trailPrevId ? [{ id: 'prev', label: 'Voltar ao zettel anterior', keys: 'X', run: () => void actions.focus(trailPrevId) }] : []),
     { id: 'lv-focus', label: 'Ir para o Foco', keys: 'Alt+1', run: () => void actions.go('focus') },
     { id: 'lv-memory', label: 'Ir para a Memória', keys: 'Alt+2', run: () => void actions.go('memory') },
     { id: 'lv-map', label: 'Ir para o Mapa', keys: 'Alt+3', run: () => void actions.go('map') },
