@@ -119,7 +119,8 @@ export function ZettelWindow({
     ...style,
     '--zk-read-scale': scalePercent / 100,
     '--zk-title-size': `${compact ? 16 : isMobile ? 23 : 39}px`,
-    '--zk-title-color': accent,
+    '--zk-title-color': editing ? EDIT_ACCENT : accent,
+    '--zk-pad-x': isMobile ? '0.75rem' : '3.5rem',
   } as CSSProperties;
   const zettels = useZettelStore((s) => s.zettels);
   const meta = useMemo(() => indexById(zettels).get(id), [zettels, id]);
@@ -295,12 +296,14 @@ export function ZettelWindow({
           )}
           {editing && (
             <>
-              <div className={`flex flex-none items-center justify-between gap-2 border-b border-zk-line py-2 ${isMobile ? 'px-3' : 'px-10'}`}>
-                <span className="zk-display text-xl text-zk-amber">EDITANDO</span>
-                <FontSizeControl percent={scalePercent} />
-                <NeonButton variant="hot" onClick={() => void finish()}>
-                  {isMobile ? 'OK' : 'CONCLUIR [ESC]'}
-                </NeonButton>
+              {/* Mesma linha de controles da leitura: só o botão troca (EDIT → CONCLUIR). */}
+              <div className={`flex flex-none items-center justify-end gap-3 pt-4 ${pad}`}>
+                <div className="flex flex-none items-center gap-2">
+                  <FontSizeControl percent={scalePercent} />
+                  <NeonButton variant="hot" onClick={() => void finish()}>
+                    {isMobile ? 'OK' : 'CONCLUIR [ESC]'}
+                  </NeonButton>
+                </div>
               </div>
               <div className="zk-edit flex min-h-0 flex-1 flex-col overflow-hidden">
                 {zettel ? (

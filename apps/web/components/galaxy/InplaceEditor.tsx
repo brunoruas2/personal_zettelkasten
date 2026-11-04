@@ -208,7 +208,7 @@ export const InplaceEditor = forwardRef<
 
   return (
     <div className="dark flex h-full min-h-0 flex-col">
-      <div className={isMobile ? 'px-5 pt-4' : 'px-6 pt-5'}>
+      <div data-zettel-head className={isMobile ? 'px-5 pt-4' : 'px-6 pt-5'}>
         <input
           ref={titleRef}
           data-zettel-title

@@ -484,10 +484,22 @@
   }
 }
 
-/* Título na edição = título da leitura (h1 do ZettelWindow): mesma fonte, tamanho e cor. */
+/* Título e corpo na edição ocupam o mesmo lugar que na leitura (margem --zk-pad-x,
+   h1 com mt-1/mb-3); a troca de modo muda de cor, não de posição. */
+.zk-edit [data-zettel-head] {
+  padding: 0 var(--zk-pad-x, 0.75rem);
+  margin: 4px 0 12px;
+}
+.zk-edit [data-card-scroll] {
+  padding-left: var(--zk-pad-x, 0.75rem);
+  padding-right: var(--zk-pad-x, 0.75rem);
+}
+
+/* Título na edição = título da leitura (h1 do ZettelWindow): mesma fonte, tamanho e cor.
+   !important: o globals.css fixa o font-size de todo input em 16px com !important. */
 .zk-edit [data-zettel-title] {
   font-family: var(--font-vt323), ui-monospace, monospace;
-  font-size: calc(var(--zk-title-size, 39px) * var(--zk-read-scale, 1));
+  font-size: calc(var(--zk-title-size, 39px) * var(--zk-read-scale, 1)) !important;
   font-weight: 400;
   line-height: 1;
   color: var(--zk-title-color, #cfe9ee);
@@ -714,8 +726,23 @@
   }
 }
 
+/* Leitura ↔ edição: a troca de modo é sinalizada pela cor, com transição curta. */
+.zk-win,
+.zk-titlebar,
+.zk-edit [data-zettel-title] {
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
 /* Movimento reduzido: nada pisca nem desliza. */
 @media (prefers-reduced-motion: reduce) {
+  .zk-win,
+  .zk-titlebar,
+  .zk-edit [data-zettel-title] {
+    transition: none;
+  }
   .zk-caret,
   .zk-win-enter {
     animation: none;
