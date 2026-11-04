@@ -29,6 +29,8 @@ interface LevelsActions {
   consult: (id: string) => void;
   dismiss: (id: string) => void;
   go: (level: Level) => void;
+  /** Desktop: mapa ocupa toda a área das Referências (esconde abertos e viewer). Só UI. */
+  setMapMaximized: (v: boolean) => void;
   startEdit: (where: EditingIn) => void;
   stopEdit: () => void;
   /** Aplica um estado inteiro (voltar do sistema). */
@@ -60,8 +62,9 @@ function isVisibleFn(): (id: string) => boolean {
   };
 }
 
-export const useLevelsStore = create<LevelsState & LevelsActions>((set, get) => ({
+export const useLevelsStore = create<LevelsState & LevelsActions & { mapMaximized: boolean }>((set, get) => ({
   ...initialLevels,
+  mapMaximized: false,
 
   setFocus: (id) => {
     const { links } = useZettelStore.getState();
@@ -70,7 +73,8 @@ export const useLevelsStore = create<LevelsState & LevelsActions>((set, get) => 
   },
   consult: (id) => set(consult(get(), id)),
   dismiss: (id) => set(dismiss(get(), id)),
-  go: (level) => set(goLevel(get(), level)),
+  go: (level) => set({ ...goLevel(get(), level), ...(level === 'focus' ? { mapMaximized: false } : {}) }),
+  setMapMaximized: (v) => set({ mapMaximized: v }),
   startEdit: (where) => set(startEditing(get(), where)),
   stopEdit: () => set(stopEditing(get())),
   apply: (state) => set(state),

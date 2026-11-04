@@ -13,6 +13,11 @@ const DIM_EDGE = 'rgba(130,190,215,0.38)';
 const DRAG_PX = 4;
 /** Acima disso, sem brilho por bolinha (shadowBlur é caro em canvas 2D). */
 const GLOW_MAX = 400;
+/** Duração do anel de destaque no resultado da pesquisa. */
+const PULSE_MS = 1500;
+const MAX_RESULTS = 8;
+
+const fold = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 interface Cluster {
   color: string;
@@ -37,9 +42,13 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
   const sizeRef = useRef({ w: 0, h: 0 });
   const viewRef = useRef<View>({ cx: 0, cy: 0, scale: 0.2 });
   const hoverRef = useRef(-1);
+  const pulseRef = useRef(-1);
+  const pulseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const rafRef = useRef(0);
   const fontRef = useRef('monospace');
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const [query, setQuery] = useState('');
+  const [sel, setSel] = useState(0);
 
   const focusIdx = focusId ? data.indexById.get(focusId) : undefined;
   const activeIdx = activeId ? data.indexById.get(activeId) : undefined;
@@ -87,6 +96,21 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       y: g.minY,
     }));
   }, [data, slice, rules]);
+
+  // Pesquisa: só zettels que aparecem no mapa; título/tag, sem caixa nem acento.
+  const results = useMemo(() => {
+    const q = fold(query.trim());
+    if (!q) return [];
+    const hits: { i: number; starts: boolean }[] = [];
+    for (const i of slice.list) {
+      const m = data.metas[i];
+      const title = fold(m.title);
+      const starts = title.startsWith(q);
+      if (starts || title.includes(q) || m.tags.some((t) => fold(t).includes(q))) hits.push({ i, starts });
+    }
+    hits.sort((a, b) => Number(b.starts) - Number(a.starts) || data.degree[b.i] - data.degree[a.i]);
+    return hits.slice(0, MAX_RESULTS).map((h) => h.i);
+  }, [query, data, slice]);
 
   const edges = useMemo(() => {
     const normal: [number, number][] = [];
@@ -199,6 +223,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       if (i === ai) ring(ACTIVE, 6, 2);
       if (isFocus) ring(HOT, 4, 2.5);
       if (i === hoverRef.current) ring('#cfe9ee', 9, 1);
+      if (i === pulseRef.current) ring('#ffffff', 12, 2);
     }
 
     // Nomes de cluster.
@@ -332,6 +357,29 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
     return () => el.removeEventListener('wheel', onWheel);
   }, [zoomAt]);
 
+  // Centraliza no zettel pesquisado mantendo o zoom; não troca foco nem consulta.
+  const centerOn = useCallback(
+    (idx: number) => {
+      const { data: d } = stateRef.current;
+      viewRef.current = { ...viewRef.current, cx: d.xs[idx], cy: d.ys[idx] };
+      pulseRef.current = idx;
+      clearTimeout(pulseTimer.current);
+      pulseTimer.current = setTimeout(() => {
+        pulseRef.current = -1;
+        schedule();
+      }, PULSE_MS);
+      schedule();
+    },
+    [schedule],
+  );
+  useEffect(() => () => clearTimeout(pulseTimer.current), []);
+
+  const pick = (idx: number) => {
+    centerOn(idx);
+    setQuery('');
+    setSel(0);
+  };
+
   const hitAt = useCallback((x: number, y: number): number => {
     const { data: d, slice: sl, isMobile: mob } = stateRef.current;
     const { w, h } = sizeRef.current;
@@ -454,6 +502,57 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
           }
         }}
       />
+      <div className="absolute left-2 top-2 z-10 w-[min(260px,45%)]">
+        <input
+          type="search"
+          value={query}
+          placeholder="> buscar no mapa"
+          aria-label="Buscar zettel no mapa"
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setSel(0);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' && results.length) {
+              e.preventDefault();
+              setSel((s) => (s + 1) % results.length);
+            } else if (e.key === 'ArrowUp' && results.length) {
+              e.preventDefault();
+              setSel((s) => (s - 1 + results.length) % results.length);
+            } else if (e.key === 'Enter' && results.length) {
+              e.preventDefault();
+              pick(results[Math.min(sel, results.length - 1)]);
+            } else if (e.key === 'Escape' && query) {
+              e.preventDefault();
+              setQuery('');
+            }
+          }}
+          className="zk-display w-full border border-zk-line bg-zk-panel px-2 text-[19px] text-zk-text"
+          style={{ minHeight: isMobile ? 44 : 36 }}
+        />
+        {query.trim() && (
+          <ul className="m-0 mt-1 list-none border border-zk-line bg-zk-panel p-0" role="listbox">
+            {results.length === 0 && <li className="zk-display px-2 py-1 text-[19px] text-zk-dim">&gt; nenhum resultado</li>}
+            {results.map((i, n) => (
+              <li key={data.ids[i]} role="option" aria-selected={n === sel}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(i)}
+                  className="zk-display block w-full truncate px-2 text-left text-[19px]"
+                  style={{
+                    minHeight: isMobile ? 44 : 30,
+                    background: n === sel ? '#19f2ff' : 'transparent',
+                    color: n === sel ? '#04060b' : '#cfe9ee',
+                  }}
+                >
+                  {data.metas[i].title.trim() || 'Sem título'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <div className="absolute right-2 top-2 flex gap-2">
         {!isMobile && (
           <>

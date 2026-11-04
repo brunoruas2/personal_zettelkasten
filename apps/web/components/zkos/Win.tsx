@@ -33,19 +33,40 @@ export function TitleBar({
   onClose,
   closeLabel = 'Fechar',
   className = '',
+  onMaximize,
+  maximized = false,
+  maximizeDisabled = false,
 }: {
   children: ReactNode;
   /** Quando existe, o "x" vira um botão real. */
   onClose?: () => void;
   closeLabel?: string;
   className?: string;
+  /** Quando existe, o "□" vira um botão real de maximizar/restaurar. */
+  onMaximize?: () => void;
+  maximized?: boolean;
+  maximizeDisabled?: boolean;
 }) {
   return (
     <div className={`zk-titlebar ${className}`}>
       <span className="truncate">{children}</span>
       <span className="flex-none">
         <span aria-hidden="true" className="zk-ctl">_</span>
-        <span aria-hidden="true" className="zk-ctl">□</span>
+        {onMaximize ? (
+          <button
+            type="button"
+            onClick={onMaximize}
+            disabled={maximizeDisabled}
+            aria-pressed={maximized}
+            aria-label={maximized ? 'Restaurar' : 'Maximizar'}
+            className="zk-ctl"
+            style={{ background: 'transparent', cursor: maximizeDisabled ? 'not-allowed' : 'pointer', opacity: maximizeDisabled ? 0.4 : 1 }}
+          >
+            □
+          </button>
+        ) : (
+          <span aria-hidden="true" className="zk-ctl">□</span>
+        )}
         {onClose ? (
           <button type="button" onClick={onClose} aria-label={closeLabel} className="zk-ctl" style={{ background: 'transparent', cursor: 'pointer' }}>
             x

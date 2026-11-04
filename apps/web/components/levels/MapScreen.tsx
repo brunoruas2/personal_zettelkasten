@@ -15,6 +15,9 @@ import { DEFAULT_ACCENT, useLevelsEnv } from './LevelsContext';
  */
 export function MapScreen() {
   const activeId = useLevelsStore((s) => s.activeId);
+  const maximized = useLevelsStore((s) => s.mapMaximized);
+  const setMaximized = useLevelsStore((s) => s.setMapMaximized);
+  const editing = useLevelsStore((s) => s.editing);
   const { isMobile, accentOf } = useLevelsEnv();
   const actions = useLevelActions();
   const zettels = useZettelStore((s) => s.zettels);
@@ -26,7 +29,13 @@ export function MapScreen() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       <Win accent={DEFAULT_ACCENT} label="Mapa de conexões" className="min-h-0 flex-1">
-        <TitleBar>MAPA_CONEXOES.EXE</TitleBar>
+        <TitleBar
+          onMaximize={isMobile ? undefined : () => setMaximized(!maximized)}
+          maximized={maximized}
+          maximizeDisabled={editing !== null}
+        >
+          MAPA_CONEXOES.EXE
+        </TitleBar>
         <div className="min-h-0 flex-1">
           <ConnectionMap onSelect={(id) => void actions.consult(id)} />
         </div>

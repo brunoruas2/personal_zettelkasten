@@ -236,10 +236,25 @@ function DesktopLevels() {
   const level = useLevelsStore((s) => s.level);
   const focusId = useLevelsStore((s) => s.focusId);
   const consulted = useLevelsStore((s) => s.consulted);
+  const maximized = useLevelsStore((s) => s.mapMaximized);
   const actions = useLevelActions();
   const zettels = useZettelStore((s) => s.zettels);
   const focusTitle = useMemo(() => zettels.find((z) => z.id === focusId)?.title.trim() || 'Sem título', [zettels, focusId]);
   const second = level !== 'focus';
+
+  // Esc restaura o mapa maximizado (fora de campo de texto e sem edição).
+  useEffect(() => {
+    if (!maximized) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (useLevelsStore.getState().editing !== null) return;
+      useLevelsStore.getState().setMapMaximized(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [maximized]);
 
   return (
     <div
@@ -264,17 +279,21 @@ function DesktopLevels() {
           </NeonButton>
         </div>
         <div className="absolute inset-x-6 bottom-5 top-16 flex gap-5">
-          <div className="flex w-[42%] min-w-0 flex-none flex-col gap-4">
+          <div className={maximized ? 'flex min-w-0 flex-1 flex-col' : 'flex w-[42%] min-w-0 flex-none flex-col gap-4'}>
             <div className="min-h-0 flex-1">
               <MapScreen />
             </div>
-            <div className="h-[34%] min-h-0 flex-none">
-              <MemoryList />
+            {!maximized && (
+              <div className="h-[34%] min-h-0 flex-none">
+                <MemoryList />
+              </div>
+            )}
+          </div>
+          {!maximized && (
+            <div className="min-w-0 flex-1">
+              <MemoryScreen />
             </div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <MemoryScreen />
-          </div>
+          )}
         </div>
       </section>
     </div>
