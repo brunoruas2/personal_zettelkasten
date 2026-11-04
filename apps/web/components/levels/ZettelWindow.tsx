@@ -115,7 +115,12 @@ export function ZettelWindow({
 }: ZettelWindowProps) {
   const { isMobile, resolveTitle, createLinked } = useLevelsEnv();
   const scalePercent = useReadingScale();
-  const scaleStyle = { ...style, '--zk-read-scale': scalePercent / 100 } as CSSProperties;
+  const scaleStyle = {
+    ...style,
+    '--zk-read-scale': scalePercent / 100,
+    '--zk-title-size': `${compact ? 16 : isMobile ? 23 : 39}px`,
+    '--zk-title-color': accent,
+  } as CSSProperties;
   const zettels = useZettelStore((s) => s.zettels);
   const meta = useMemo(() => indexById(zettels).get(id), [zettels, id]);
   const { body, status: bodyStatus } = useZettelBody(id);
@@ -242,7 +247,7 @@ export function ZettelWindow({
                 </div>
                 <h1
                   className="zk-display m-0 mb-3 mt-1 font-normal leading-none"
-                  style={{ color: accent, fontSize: `calc(${compact ? 16 : isMobile ? 23 : 39}px * var(--zk-read-scale, 1))` }}
+                  style={{ color: 'var(--zk-title-color)', fontSize: 'calc(var(--zk-title-size) * var(--zk-read-scale, 1))' }}
                 >
                   {title}
                 </h1>

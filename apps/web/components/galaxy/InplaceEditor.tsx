@@ -211,6 +211,7 @@ export const InplaceEditor = forwardRef<
       <div className={isMobile ? 'px-5 pt-4' : 'px-6 pt-5'}>
         <input
           ref={titleRef}
+          data-zettel-title
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => void saveTitle()}

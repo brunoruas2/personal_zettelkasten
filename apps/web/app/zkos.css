@@ -484,6 +484,15 @@
   }
 }
 
+/* Título na edição = título da leitura (h1 do ZettelWindow): mesma fonte, tamanho e cor. */
+.zk-edit [data-zettel-title] {
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  font-size: calc(var(--zk-title-size, 39px) * var(--zk-read-scale, 1));
+  font-weight: 400;
+  line-height: 1;
+  color: var(--zk-title-color, #cfe9ee);
+}
+
 /* Bloco de código (```) no editor: mesma caixa de terminal da leitura.
    Os utilitários zinc do NodeView perdem por especificidade (classe + atributo + *). */
 .zk-edit [data-code-block] {
