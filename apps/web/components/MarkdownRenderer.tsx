@@ -151,12 +151,15 @@ function renderListNodes(
         <li key={idx} className="flex flex-col">
           <div className="flex gap-2 items-start">
             {node.checked !== undefined ? (
-              <span className={`mt-0.5 shrink-0 flex h-4 w-4 items-center justify-center rounded border ${node.checked ? 'border-brand bg-brand text-white' : 'border-zinc-400 dark:border-zinc-500'}`}>
-                {node.checked && (
-                  <svg viewBox="0 0 10 8" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <polyline points="1,4 3.5,6.5 9,1" />
-                  </svg>
-                )}
+              // Wrapper com a altura da entrelinha: centra a caixa na primeira linha.
+              <span className="flex h-[1lh] shrink-0 items-center">
+                <span className={`flex h-4 w-4 items-center justify-center rounded border ${node.checked ? 'border-brand bg-brand text-white' : 'border-zinc-400 dark:border-zinc-500'}`}>
+                  {node.checked && (
+                    <svg viewBox="0 0 10 8" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <polyline points="1,4 3.5,6.5 9,1" />
+                    </svg>
+                  )}
+                </span>
               </span>
             ) : (
               <span
