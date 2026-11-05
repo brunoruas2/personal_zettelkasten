@@ -474,8 +474,42 @@
   font-size: calc(20px * var(--zk-read-scale, 1));
   line-height: 1.5;
 }
-.zk-edit .ProseMirror :is(p, li) {
+.zk-edit .ProseMirror li {
   line-height: 1.5;
+}
+
+/* Ritmo vertical do corpo = leitura (MarkdownRenderer): <p> com leading-relaxed (1.625),
+   blocos a 2 px, linha em branco entre parágrafos 8 px (=> 12 px entre dois parágrafos),
+   parágrafo vazio (sentinela) 24 px, listas my-1 / itens 2 px, tabela my-2. Valores em px
+   fixos, como os espaçadores da leitura (não escalam com --zk-read-scale). */
+.zk-edit .ProseMirror p {
+  margin: 0;
+  line-height: 1.625;
+}
+.zk-edit .ProseMirror p + p {
+  margin-top: 12px;
+}
+.zk-edit .ProseMirror p:has(> br.ProseMirror-trailingBreak:only-child) {
+  height: 24px;
+  line-height: 24px;
+  overflow: hidden;
+}
+/* O vazio já vale 24 px sozinho; o gap de 12 px dos vizinhos contaria o respiro duas vezes. */
+.zk-edit .ProseMirror p:has(> br.ProseMirror-trailingBreak:only-child) + p,
+.zk-edit .ProseMirror p + p:has(> br.ProseMirror-trailingBreak:only-child) {
+  margin-top: 2px;
+}
+.zk-edit .ProseMirror :is(ul, ol) {
+  margin: 4px 0;
+}
+.zk-edit .ProseMirror li {
+  margin: 0;
+}
+.zk-edit .ProseMirror li + li {
+  margin-top: 2px;
+}
+.zk-edit .ProseMirror table {
+  margin: 8px 0;
 }
 @media (min-width: 1024px) {
   .zk-md,
