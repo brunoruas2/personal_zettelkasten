@@ -212,9 +212,7 @@ function LevelsInner() {
         />
       )}
       {exportId && (
-        <div className="dark">
-          <ExportScopeModal open zettelId={exportId} onClose={clearExport} />
-        </div>
+        <ExportScopeModal open zettelId={exportId} onClose={clearExport} />
       )}
       {modal === 'settings' && (
         <GalaxyModal title="Configurações" onClose={() => setModal(null)}>

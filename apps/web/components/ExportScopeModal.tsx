@@ -4,6 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { analyzeSubtree } from '@zettelkasten/core';
 import { useZettelStore } from '../store/useZettelStore';
 import { useOfflineRouter } from '../hooks/useOfflineRouter';
+import { useThemeVariant } from './galaxy/themeVariant';
 
 interface Props {
   open: boolean;
@@ -14,6 +15,7 @@ interface Props {
 export function ExportScopeModal({ open, zettelId, onClose }: Props) {
   const { zettels, links } = useZettelStore();
   const offlineRouter = useOfflineRouter();
+  const zk = useThemeVariant() === 'zkos';
 
   // Tudo sai de estado local (zettels + links do store), então o modal calcula
   // resumo e ciclos offline, sem nenhuma requisição.
@@ -59,6 +61,68 @@ export function ExportScopeModal({ open, zettelId, onClose }: Props) {
     offlineRouter.push(`/export/pdf?ids=${list.join(',')}`);
   };
 
+  const summary = hasCycle ? (
+    <>
+      A árvore de filhos tem referência circular, então não dá para exportar com os filhos. Corrija{' '}
+      {cycles.length === 1 ? 'o link abaixo' : 'os links abaixo'} e tente de novo.
+    </>
+  ) : hasChildren ? (
+    <>
+      Este zettel tem{' '}
+      <strong className="font-semibold">
+        {ids.length - 1} {ids.length - 1 === 1 ? 'filho' : 'filhos'}
+      </strong>{' '}
+      na descendência, em {depth} {depth === 1 ? 'nível' : 'níveis'}. Exportar com os filhos gera um PDF único de{' '}
+      {ids.length} zettels, cada um em sua página.
+    </>
+  ) : (
+    <>Este zettel não tem filhos. O PDF vai conter só ele.</>
+  );
+  const subtreeLabel = hasCycle ? 'Com os filhos (bloqueado)' : `Com os filhos (${ids.length} zettels)`;
+
+  if (zk) {
+    return (
+      <div className="zk-modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Exportar PDF"
+          onClick={(e) => e.stopPropagation()}
+          className="dark zk-modal w-full max-w-md"
+        >
+          <div className="zk-modal-head">
+            <h2 className="m-0 truncate text-[inherit] font-normal">EXPORTAR PDF</h2>
+          </div>
+          <div className="p-5">
+            <p className="m-0 text-sm text-zk-dim">{summary}</p>
+            {hasCycle && (
+              <ul className="mt-4 max-h-48 space-y-2 overflow-y-auto overscroll-contain p-0" style={{ listStyle: 'none' }}>
+                {cycles.map((cycle) => (
+                  <li key={cycle.join('>')} className="border border-zk-line px-3 py-2 text-xs text-zk-amber">
+                    {cycle.map((id) => titleById.get(id) ?? id).join(' → ')}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-6 flex flex-col gap-2">
+              {hasChildren && (
+                <button type="button" onClick={() => exportIds(ids)} disabled={!canExportSubtree} className="zk-btn-hot">
+                  {subtreeLabel}
+                </button>
+              )}
+              <button type="button" onClick={() => exportIds([zettelId])} className="zk-btn">
+                Só este zettel
+              </button>
+              <button type="button" onClick={onClose} className="zk-btn">
+                CANCELAR
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
@@ -78,37 +142,18 @@ export function ExportScopeModal({ open, zettelId, onClose }: Props) {
         </div>
 
         <div className="px-5 py-4">
-          {hasCycle ? (
-            <div>
-              <p className="text-sm text-zinc-700 dark:text-zinc-300">
-                A árvore de filhos tem referência circular, então não dá para exportar com os
-                filhos. Corrija {cycles.length === 1 ? 'o link abaixo' : 'os links abaixo'} e tente
-                de novo.
-              </p>
-              <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto overscroll-contain">
-                {cycles.map((cycle) => (
-                  <li
-                    key={cycle.join('>')}
-                    className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
-                  >
-                    {cycle.map((id) => titleById.get(id) ?? id).join(' → ')}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : hasChildren ? (
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">
-              Este zettel tem{' '}
-              <strong className="font-semibold">
-                {ids.length - 1} {ids.length - 1 === 1 ? 'filho' : 'filhos'}
-              </strong>{' '}
-              na descendência, em {depth} {depth === 1 ? 'nível' : 'níveis'}. Exportar com os filhos
-              gera um PDF único de {ids.length} zettels, cada um em sua página.
-            </p>
-          ) : (
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">
-              Este zettel não tem filhos. O PDF vai conter só ele.
-            </p>
+          <p className="text-sm text-zinc-700 dark:text-zinc-300">{summary}</p>
+          {hasCycle && (
+            <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto overscroll-contain">
+              {cycles.map((cycle) => (
+                <li
+                  key={cycle.join('>')}
+                  className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+                >
+                  {cycle.map((id) => titleById.get(id) ?? id).join(' → ')}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
 
@@ -119,7 +164,7 @@ export function ExportScopeModal({ open, zettelId, onClose }: Props) {
               disabled={!canExportSubtree}
               className="w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:opacity-50"
             >
-              {hasCycle ? 'Com os filhos (bloqueado)' : `Com os filhos (${ids.length} zettels)`}
+              {subtreeLabel}
             </button>
           )}
           <button
