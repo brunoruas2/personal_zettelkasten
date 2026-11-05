@@ -645,6 +645,28 @@
   font-size: inherit;
   line-height: inherit;
 }
+/* Cores da tabela no tema (leitura e edição): bordas ciano, cabeçalho em
+   painel, sem zebra zinc. A especificidade vence os utilitários/globals. */
+.zk-md table tr,
+.zk-edit .ProseMirror table tr {
+  background: transparent;
+}
+.zk-md table :is(th, td),
+.zk-edit .ProseMirror table :is(th, td) {
+  border: 1.5px solid var(--zk-line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--zk-text);
+}
+.zk-md table th,
+.zk-edit .ProseMirror table th {
+  background: var(--zk-bg-panel);
+  color: var(--zk-cyan);
+  font-weight: 400;
+}
+.zk-edit .ProseMirror table .selectedCell {
+  background: #0a1626;
+}
 .zk-md .font-mono {
   font-size: calc(19px * var(--zk-read-scale, 1)); /* VT323 é pequena: cifra e código ganham corpo */
   line-height: 1.25;
