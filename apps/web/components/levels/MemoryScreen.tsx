@@ -1,6 +1,7 @@
 'use client';
 
 import { EraserButton } from './EraserButton';
+import { PdfButton } from './PdfButton';
 import { useMemo, useState } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useLinkIndex } from '../../hooks/useLinkIndex';
@@ -135,6 +136,7 @@ export function MemoryScreen() {
           </NeonButton>
           <NeonButton onClick={() => startEdit('memory')}>EDIT</NeonButton>
           <NeonButton onClick={() => void actions.dismiss(activeId)}>FECHAR</NeonButton>
+          <PdfButton onClick={() => void actions.requestExport(activeId)} />
           <EraserButton onClick={() => void actions.requestDelete(activeId)} />
         </div>
       }

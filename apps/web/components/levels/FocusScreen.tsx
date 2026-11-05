@@ -1,6 +1,7 @@
 'use client';
 
 import { EraserButton } from './EraserButton';
+import { PdfButton } from './PdfButton';
 import { useMemo } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useLinkIndex } from '../../hooks/useLinkIndex';
@@ -54,9 +55,13 @@ export function FocusScreen() {
         className="min-h-0 flex-1"
         actions={
           focusEditing ? undefined : isMobile ? (
-            <EraserButton onClick={() => void actions.requestDelete(focusId)} />
+            <>
+              <PdfButton onClick={() => void actions.requestExport(focusId)} />
+              <EraserButton onClick={() => void actions.requestDelete(focusId)} />
+            </>
           ) : (
             <div className="flex flex-none justify-end gap-2 border-t border-zk-line p-2">
+              <PdfButton onClick={() => void actions.requestExport(focusId)} />
               <EraserButton onClick={() => void actions.requestDelete(focusId)} />
             </div>
           )

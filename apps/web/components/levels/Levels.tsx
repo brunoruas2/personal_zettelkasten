@@ -6,6 +6,8 @@ import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
 import { useDeleteRequestStore } from '../../store/useDeleteRequestStore';
 import { DeleteZettelModal } from '../galaxy/DeleteZettelModal';
+import { ExportScopeModal } from '../ExportScopeModal';
+import { useExportRequestStore } from '../../store/useExportRequestStore';
 import { NeonButton, Vignette } from '../zkos';
 import { GalaxyModal } from '../galaxy/GalaxyModal';
 import { GalaxySearch, type SearchFilters } from '../galaxy/GalaxySearch';
@@ -58,6 +60,8 @@ function LevelsInner() {
   const zettels = useZettelStore((s) => s.zettels);
   const deleteId = useDeleteRequestStore((s) => s.id);
   const clearDelete = useDeleteRequestStore((s) => s.clear);
+  const exportId = useExportRequestStore((s) => s.id);
+  const clearExport = useExportRequestStore((s) => s.clear);
   const deleteMeta = useMemo(() => (deleteId ? (zettels.find((z) => z.id === deleteId) ?? null) : null), [deleteId, zettels]);
 
   const unplacedSet = useMemo(() => new Set(data.unplacedIds), [data.unplacedIds]);
@@ -81,7 +85,7 @@ function LevelsInner() {
     [onNew],
   );
 
-  const overlayOpen = !!search || !!modal || capture || palette || !!deleteMeta;
+  const overlayOpen = !!search || !!modal || capture || palette || !!deleteMeta || !!exportId;
 
   // Atalhos globais: Alt+B busca, Ctrl/⌘+K paleta, Alt+, configurações, Alt+Z zettel anterior, Alt+1/2/3 níveis.
   useEffect(() => {
@@ -122,6 +126,7 @@ function LevelsInner() {
     { id: 'lv-memory', label: 'Ir para a Mesa', keys: 'Alt+2', run: () => void actions.go('memory') },
     { id: 'lv-map', label: 'Ir para o Mapa', keys: 'Alt+3', run: () => void actions.go('map') },
     ...(focusId ? [{ id: 'delete-focus', label: 'Apagar zettel em foco', run: () => void actions.requestDelete(focusId) }] : []),
+    ...(focusId ? [{ id: 'export-focus', label: 'Exportar PDF do zettel em foco', run: () => void actions.requestExport(focusId) }] : []),
     { id: 'tags', label: 'Tags', run: () => setModal('tags') },
     { id: 'settings', label: 'Configurações', keys: 'Alt+,', run: () => setModal('settings') },
     { id: 'passkeys', label: 'Passkeys', run: () => setModal('passkeys') },
@@ -205,6 +210,11 @@ function LevelsInner() {
             void deleteFromLevels(deleteMeta.id);
           }}
         />
+      )}
+      {exportId && (
+        <div className="dark">
+          <ExportScopeModal open zettelId={exportId} onClose={clearExport} />
+        </div>
       )}
       {modal === 'settings' && (
         <GalaxyModal title="Configurações" onClose={() => setModal(null)}>

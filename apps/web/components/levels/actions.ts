@@ -5,6 +5,7 @@ import type { Level } from '@zettelkasten/core';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
 import { useDeleteRequestStore } from '../../store/useDeleteRequestStore';
+import { useExportRequestStore } from '../../store/useExportRequestStore';
 import { flushActiveEdit } from './ZettelWindow';
 
 /**
@@ -44,6 +45,12 @@ export function useLevelActions() {
         await flushActiveEdit();
         if (st().editing) st().stopEdit();
         useDeleteRequestStore.getState().request(id);
+      },
+      /** Grava a edição pendente e abre o modal de escopo do PDF. */
+      requestExport: async (id: string) => {
+        await flushActiveEdit();
+        if (st().editing) st().stopEdit();
+        useExportRequestStore.getState().request(id);
       },
     };
   }, []);
