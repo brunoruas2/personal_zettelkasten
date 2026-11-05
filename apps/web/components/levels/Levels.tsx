@@ -292,7 +292,7 @@ function DesktopLevels() {
               <MapScreen />
             </div>
             {!maximized && (
-              <div className="h-[34%] min-h-0 flex-none">
+              <div className="flex h-[34%] min-h-0 flex-none flex-col">
                 <MemoryList />
               </div>
             )}
