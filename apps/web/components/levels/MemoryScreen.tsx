@@ -9,7 +9,7 @@ import { useZettelStore } from '../../store/useZettelStore';
 import { NeonButton, TitleBar, Win } from '../zkos';
 import { ZettelWindow } from './ZettelWindow';
 import { useLevelActions } from './actions';
-import { useLevelsEnv } from './LevelsContext';
+import { DEFAULT_ACCENT, useLevelsEnv } from './LevelsContext';
 import { zkCode } from './format';
 import { ConnectionLists } from './ConnectionsColumn';
 import { editedAgo } from '../galaxy/HoverCard';
@@ -23,11 +23,9 @@ export function MemoryList() {
   const zettels = useZettelStore((s) => s.zettels);
   const titles = useMemo(() => new Map(zettels.map((z) => [z.id, z.title])), [zettels]);
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
-      <div className="zk-display flex-none px-1 text-[22px] tracking-wider text-zk-amber">
-        // ABERTAS NA MESA · {consulted.length}
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
+    <Win accent={DEFAULT_ACCENT} className="min-h-0 flex-1" label="Abertas na Mesa">
+      <TitleBar>ABERTAS NA MESA · {consulted.length}</TitleBar>
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
         {consulted.map((id) => {
           const on = id === activeId;
           const color = accentOf(id);
@@ -45,7 +43,7 @@ export function MemoryList() {
           );
         })}
       </div>
-    </div>
+    </Win>
   );
 }
 
