@@ -23,7 +23,7 @@ export function MemoryList() {
   const zettels = useZettelStore((s) => s.zettels);
   const titles = useMemo(() => new Map(zettels.map((z) => [z.id, z.title])), [zettels]);
   return (
-    <Win accent={DEFAULT_ACCENT} className="min-h-0 flex-1" label="Abertas na Mesa">
+    <Win accent={DEFAULT_ACCENT} className="h-full min-h-0" label="Abertas na Mesa">
       <TitleBar>ABERTAS NA MESA · {consulted.length}</TitleBar>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
         {consulted.map((id) => {
