@@ -685,6 +685,8 @@ function ImageChipNodeView({ node, selected }: {
       <span
         contentEditable={false}
         title={alt || src}
+        data-attach-chip=""
+        data-selected={selected ? '' : undefined}
         className={`inline-flex select-none items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
           selected
             ? 'border-brand bg-brand/10 text-brand'
@@ -702,6 +704,7 @@ function ImageChipNodeView({ node, selected }: {
             // mousedown não pode mover a seleção do ProseMirror antes do clique.
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => openDrawing(id)}
+            data-attach-edit=""
             className="rounded-md bg-brand px-2 py-0.5 text-xs font-medium text-white hover:opacity-90"
           >
             Editar
