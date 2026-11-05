@@ -21,7 +21,7 @@ const SYNC: Record<SyncStatus, { text: string; color: string }> = {
 
 const LEVEL_TAG: Record<Level, string> = {
   focus: '1 · FOCO',
-  memory: '2 · MEMÓRIA',
+  memory: '2 · MESA',
   map: '3 · MAPA',
 };
 

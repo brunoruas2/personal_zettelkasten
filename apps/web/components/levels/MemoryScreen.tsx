@@ -13,7 +13,7 @@ import { zkCode } from './format';
 import { ConnectionLists } from './ConnectionsColumn';
 import { editedAgo } from '../galaxy/HoverCard';
 
-/** Desktop: nomes dos zettels abertos na Memória; clicar torna o zettel ativo. */
+/** Desktop: nomes dos zettels abertos na Mesa; clicar torna o zettel ativo. */
 export function MemoryList() {
   const consulted = useLevelsStore((s) => s.consulted);
   const activeId = useLevelsStore((s) => s.activeId);
@@ -24,7 +24,7 @@ export function MemoryList() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="zk-display flex-none px-1 text-[22px] tracking-wider text-zk-amber">
-        // ABERTAS NA MEMÓRIA · {consulted.length}
+        // ABERTAS NA MESA · {consulted.length}
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
         {consulted.map((id) => {
@@ -79,7 +79,7 @@ function MobileConnections({ focusId, onOpen }: { focusId: string; onOpen: (id: 
 }
 
 /**
- * Nível 2 · Memória: zettels consultados. Um em leitura/edição (o ativo) e os
+ * Nível 2 · Mesa: zettels consultados. Um em leitura/edição (o ativo) e os
  * demais como janelas compactas (desktop) ou abas (celular).
  */
 export function MemoryScreen() {
@@ -99,7 +99,7 @@ export function MemoryScreen() {
 
   const header = (
     <div className="zk-display flex-none px-1 text-[22px] tracking-wider text-zk-amber">
-      // ABERTAS NA MEMÓRIA · {consulted.length}
+      // ABERTAS NA MESA · {consulted.length}
     </div>
   );
 
@@ -107,8 +107,8 @@ export function MemoryScreen() {
     return (
       <div className="flex h-full min-h-0 flex-col gap-2">
         {isMobile && header}
-        <Win accent="#19f2ff" className="min-h-0 flex-1" label="Memória vazia">
-          <TitleBar>MEMÓRIA — VAZIA</TitleBar>
+        <Win accent="#19f2ff" className="min-h-0 flex-1" label="Mesa vazia">
+          <TitleBar>MESA — VAZIA</TitleBar>
           <p className="zk-display m-0 p-6 text-2xl text-zk-dim">
             &gt; nada aberto. Toque numa bolinha do mapa ou numa conexão do foco.
           </p>

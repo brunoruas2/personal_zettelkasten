@@ -15,17 +15,17 @@ export function useLevelActions() {
   return useMemo(() => {
     const st = () => useLevelsStore.getState();
     return {
-      /** Troca o foco e recarrega a Memória com os links dele. */
+      /** Troca o foco e recarrega a Mesa com os links dele. */
       focus: async (id: string) => {
         await flushActiveEdit();
         st().setFocus(id);
       },
-      /** Consulta sem mudar o foco (Memória e Mapa). */
+      /** Consulta sem mudar o foco (Mesa e Mapa). */
       consult: async (id: string) => {
         await flushActiveEdit();
         st().consult(id);
       },
-      /** Consulta e vai ao nível Memória (Conexões do Foco, chips, mapa). */
+      /** Consulta e vai ao nível Mesa (Conexões do Foco, chips, mapa). */
       openInMemory: async (id: string) => {
         await flushActiveEdit();
         st().consult(id);
@@ -51,7 +51,7 @@ export function useLevelActions() {
 
 /**
  * Apaga o zettel e ajusta os níveis: o foco apagado passa ao anterior da
- * trilha; o de Memória sai das consultas. O resto (ids órfãos) o
+ * trilha; o de Mesa sai das consultas. O resto (ids órfãos) o
  * `useLevelsSync` poda quando o índice muda.
  */
 export async function deleteFromLevels(id: string): Promise<void> {

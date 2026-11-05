@@ -50,7 +50,7 @@ export function ConnectionsColumn({ id, onOpen }: { id: string; onOpen: (id: str
       <ConnectionLists id={id} onOpen={onOpen} />
       <div className="flex-1" />
       <p className="zk-display m-0 border border-dashed border-zk-line p-[10px] text-[19px] leading-tight text-zk-dim" style={{ borderColor: '#2a6f80' }}>
-        &gt; todas já estão abertas na memória. Abaixe para ver no mapa.
+        &gt; todas já estão abertas na mesa. Abaixe para ver no mapa.
       </p>
     </aside>
   );

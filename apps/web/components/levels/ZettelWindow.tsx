@@ -79,7 +79,7 @@ export interface ZettelWindowProps {
   linkCount: number;
   /** Sufixo da barra de título, ex.: "LEITURA". */
   titleSuffix?: string;
-  /** Botões fixos acima do rodapé (Memória: abrir em foco, fechar). */
+  /** Botões fixos acima do rodapé (Mesa: abrir em foco, fechar). */
   actions?: ReactNode;
   /** Coluna à direita (Foco no desktop: conexões). */
   side?: ReactNode;

@@ -414,7 +414,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       <canvas
         ref={canvasRef}
         role="img"
-        aria-label="Mapa de conexões entre zettels. Use as conexões do foco ou as abas da memória para navegar pelo teclado."
+        aria-label="Mapa de conexões entre zettels. Use as conexões do foco ou as abas da mesa para navegar pelo teclado."
         className="absolute inset-0 h-full w-full"
         style={{ touchAction: 'none', cursor: hoverRef.current >= 0 ? 'pointer' : 'grab' }}
         onPointerDown={(e) => {
@@ -574,7 +574,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       <div className="zk-display pointer-events-none absolute bottom-2 left-3 text-[19px] text-zk-dim">
         {data.count === 0
           ? '> nenhum zettel posicionado ainda'
-          : `> ${data.count} zettels · clique numa bolinha para abrir na memória`}
+          : `> ${data.count} zettels · clique numa bolinha para abrir na mesa`}
         {data.unplacedIds.length > 0 ? ` · ${data.unplacedIds.length} sem lugar` : ''}
       </div>
     </div>

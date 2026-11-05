@@ -19,12 +19,12 @@ import { useZettelStore } from './useZettelStore';
 import { pushRecent } from '../lib/recentZettels';
 
 /**
- * Estado da navegação em três níveis (Foco, Memória, Mapa). A lógica das
+ * Estado da navegação em três níveis (Foco, Mesa, Mapa). A lógica das
  * transições é pura e mora em `@zettelkasten/core` (`Levels.ts`, testada);
  * este store só a aplica sobre o índice e os links do app.
  */
 interface LevelsActions {
-  /** Define o foco, carrega os links dele na Memória e volta ao nível Foco. */
+  /** Define o foco, carrega os links dele na Mesa e volta ao nível Foco. */
   setFocus: (id: string) => void;
   consult: (id: string) => void;
   dismiss: (id: string) => void;

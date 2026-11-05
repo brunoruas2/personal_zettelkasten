@@ -12,7 +12,7 @@ import { discardIfEmpty } from './newNote';
 
 /**
  * Nível 1 · Foco: um zettel em janela grande, leitura e edição no mesmo lugar.
- * Desktop: coluna "Conexões" ao lado; celular: só o zettel (conexões na Memória).
+ * Desktop: coluna "Conexões" ao lado; celular: só o zettel (conexões na Mesa).
  */
 export function FocusScreen() {
   const focusId = useLevelsStore((s) => s.focusId);

@@ -29,7 +29,7 @@ const LEVEL_KEYS: Record<string, Level> = { Digit1: 'focus', Digit2: 'memory', D
 
 const TRACK_TRANSITION ='transform .8s cubic-bezier(.7,0,.2,1)';
 
-/** Fluxo Foco → Memória → Mapa (spec level-navigation). Desktop: duas telas empilhadas; celular: três. */
+/** Fluxo Foco → Mesa → Mapa (spec level-navigation). Desktop: duas telas empilhadas; celular: três. */
 export function Levels() {
   return (
     <ThemeVariantContext.Provider value="zkos">
@@ -119,7 +119,7 @@ function LevelsInner() {
     { id: 'search', label: 'Buscar', keys: 'Alt+B', run: () => setSearch({}) },
     ...(trailPrevId ? [{ id: 'prev', label: 'Voltar ao zettel anterior', keys: 'Alt+Z', run: () => void actions.focus(trailPrevId) }] : []),
     { id: 'lv-focus', label: 'Ir para o Foco', keys: 'Alt+1', run: () => void actions.go('focus') },
-    { id: 'lv-memory', label: 'Ir para a Memória', keys: 'Alt+2', run: () => void actions.go('memory') },
+    { id: 'lv-memory', label: 'Ir para a Mesa', keys: 'Alt+2', run: () => void actions.go('memory') },
     { id: 'lv-map', label: 'Ir para o Mapa', keys: 'Alt+3', run: () => void actions.go('map') },
     ...(focusId ? [{ id: 'delete-focus', label: 'Apagar zettel em foco', run: () => void actions.requestDelete(focusId) }] : []),
     { id: 'tags', label: 'Tags', run: () => setModal('tags') },
@@ -231,7 +231,7 @@ function LevelsInner() {
   );
 }
 
-/** Desktop: tela 1 = Foco; tela 2 = Mapa acima, Memória abaixo. Transição vertical. */
+/** Desktop: tela 1 = Foco; tela 2 = Mapa acima, Mesa abaixo. Transição vertical. */
 function DesktopLevels() {
   const level = useLevelsStore((s) => s.level);
   const focusId = useLevelsStore((s) => s.focusId);
@@ -302,14 +302,14 @@ function DesktopLevels() {
 
 const MOBILE_LEVELS = ['focus', 'memory', 'map'] as const;
 
-/** Celular: três telas (Foco, Memória, Mapa) e barra de níveis fixa embaixo. */
+/** Celular: três telas (Foco, Mesa, Mapa) e barra de níveis fixa embaixo. */
 function MobileLevels(): ReactNode {
   const level = useLevelsStore((s) => s.level);
   const editing = useLevelsStore((s) => s.editing);
   const consulted = useLevelsStore((s) => s.consulted);
   const actions = useLevelActions();
   const idx = MOBILE_LEVELS.indexOf(level);
-  const labels = { focus: 'FOCO', memory: `MEMÓRIA [${consulted.length}]`, map: 'MAPA' } as const;
+  const labels = { focus: 'FOCO', memory: `MESA [${consulted.length}]`, map: 'MAPA' } as const;
 
   return (
     <div className="absolute inset-0 flex flex-col">
@@ -321,7 +321,7 @@ function MobileLevels(): ReactNode {
           <section aria-label="Foco" aria-hidden={level !== 'focus'} className="zk-desk h-1/3 overflow-hidden p-2">
             <FocusScreen />
           </section>
-          <section aria-label="Memória" aria-hidden={level !== 'memory'} className="zk-desk h-1/3 overflow-hidden p-2">
+          <section aria-label="Mesa" aria-hidden={level !== 'memory'} className="zk-desk h-1/3 overflow-hidden p-2">
             <MemoryScreen />
           </section>
           <section aria-label="Mapa" aria-hidden={level !== 'map'} className="zk-desk h-1/3 overflow-hidden p-2">

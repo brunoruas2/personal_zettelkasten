@@ -9,9 +9,9 @@ import { useLevelActions } from './actions';
 import { DEFAULT_ACCENT, useLevelsEnv } from './LevelsContext';
 
 /**
- * Nível 3 · Mapa. Tocar numa bolinha consulta o zettel (entra na Memória e vira
+ * Nível 3 · Mapa. Tocar numa bolinha consulta o zettel (entra na Mesa e vira
  * o ativo) sem trocar o foco. No celular, uma faixa embaixo mostra o
- * selecionado e leva à Memória.
+ * selecionado e leva à Mesa.
  */
 export function MapScreen() {
   const activeId = useLevelsStore((s) => s.activeId);
@@ -50,7 +50,7 @@ export function MapScreen() {
             </span>
           </p>
           <NeonButton variant="hot" disabled={!activeId} onClick={() => void actions.go('memory')} className="flex-none">
-            VER NA MEMÓRIA
+            VER NA MESA
           </NeonButton>
         </div>
       )}
