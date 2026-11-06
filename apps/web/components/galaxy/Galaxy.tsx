@@ -5,6 +5,7 @@ import {
   analyzeSubtree,
   firstLine,
   relatedZettels,
+  seedBodyWithParent,
   splitCapture,
   subtreeDepths,
   type Zettel,
@@ -581,7 +582,8 @@ export function Galaxy() {
       const cam = engineRef.current?.getCamera();
       const anchor = idx !== undefined ? { x: dataRef.current.xs[idx], y: dataRef.current.ys[idx] } : cam ? { x: cam.x, y: cam.y } : { x: 0, y: 0 };
       const position = await snapPosition(anchor);
-      await createZettel({ title, body: '', tags: [] }, { position });
+      const parentTitle = idx !== undefined ? dataRef.current.metas[idx]?.title : fullscreen?.zettel.title;
+      await createZettel({ title, body: seedBodyWithParent(parentTitle), tags: [] }, { position });
     },
     [createZettel, fullscreen],
   );

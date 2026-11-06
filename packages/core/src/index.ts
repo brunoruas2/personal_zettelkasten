@@ -26,3 +26,4 @@ export * from './services/BackStack';
 export * from './services/FocusGate';
 export * from './services/Levels';
 export * from './services/AbcNotes';
+export * from './services/ParentSeed';

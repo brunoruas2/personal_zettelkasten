@@ -313,7 +313,7 @@ export function ZettelWindow({
                     variant={isMobile ? 'mobile' : 'card'}
                     autoFocusTitle={focusTitle}
                     onStatus={setSave}
-                    onCreateLink={createLinked}
+                    onCreateLink={(t) => createLinked(t, meta?.title)}
                   />
                 ) : (
                   <p className={`zk-display text-xl text-zk-dim ${pad} py-4`}>carregando…</p>

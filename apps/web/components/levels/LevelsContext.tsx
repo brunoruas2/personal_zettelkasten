@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { seedBodyWithParent } from '@zettelkasten/core';
 import { useZettelStore } from '../../store/useZettelStore';
 import { useGalaxyData, type GalaxyData } from '../galaxy/useGalaxyData';
 
@@ -22,7 +23,7 @@ export interface LevelsEnv {
   resolveTitle: (title: string) => string | undefined;
   isMobile: boolean;
   /** `[[novo]]` no editor: cria o zettel; a posição sai do posicionamento automático. */
-  createLinked: (title: string) => Promise<void>;
+  createLinked: (title: string, parentTitle?: string) => Promise<void>;
 }
 
 const Ctx = createContext<LevelsEnv | null>(null);
@@ -78,8 +79,8 @@ export function LevelsEnvProvider({ children }: { children: ReactNode }) {
   const resolveTitle = useCallback((title: string) => idByTitle.get(title.trim().toLowerCase()), [idByTitle]);
 
   const createLinked = useCallback(
-    async (title: string) => {
-      await createZettel({ title, body: '', tags: [] });
+    async (title: string, parentTitle?: string) => {
+      await createZettel({ title, body: seedBodyWithParent(parentTitle), tags: [] });
     },
     [createZettel],
   );
