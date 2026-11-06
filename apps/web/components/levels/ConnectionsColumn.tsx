@@ -25,7 +25,7 @@ export function ConnectionLists({ id, onOpen }: { id: string; onOpen: (id: strin
         className="h-[10px] w-[10px] flex-none"
         style={{ background: accentOf(z.id) }}
       />
-      <span className="min-w-0">{z.title.trim() || 'Sem título'}</span>
+      <span className="min-w-0 break-words [overflow-wrap:anywhere]">{z.title.trim() || 'Sem título'}</span>
     </button>
   );
 

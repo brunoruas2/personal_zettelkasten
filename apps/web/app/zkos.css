@@ -436,6 +436,7 @@
 
 .zk-row {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
   min-height: 44px;
