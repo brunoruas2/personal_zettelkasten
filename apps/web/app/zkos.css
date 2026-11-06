@@ -1009,6 +1009,39 @@
   color: var(--zk-text);
 }
 
+/* Tokens que o `github.css` (import do MarkdownRenderer) recolore com seletor
+   composto de especificidade (0,2,0) — empate com as regras acima, e o github.css
+   carrega depois e vence (ex.: `[FunctionName("x")]` em C# virava #032f62, quase
+   invisível no fundo escuro). Aqui a especificidade é (0,3,0), sem depender da ordem. */
+:is(.zk-md, .zk-edit) .hljs-meta .hljs-string {
+  color: var(--zk-green);
+}
+:is(.zk-md, .zk-edit) .hljs-meta .hljs-keyword {
+  color: var(--zk-magenta);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-template-tag, .hljs-template-variable, .hljs-variable.language_) {
+  color: var(--zk-magenta);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-attribute, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .hljs-bullet) {
+  color: var(--zk-amber);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-selector-pseudo, .hljs-title.class_.inherited__) {
+  color: var(--zk-cyan);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-section, .hljs-doctag) {
+  color: var(--zk-cyan);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-code, .hljs-formula) {
+  color: var(--zk-green);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-subst, .hljs-emphasis, .hljs-strong) {
+  color: var(--zk-text);
+}
+/* Diff: sem o fundo claro do github.css. */
+:is(.zk-md, .zk-edit) :is(.hljs-addition, .hljs-deletion) {
+  background-color: transparent;
+}
+
 /* Código inline: chip de terminal. Fora de bloco (```) — `pre code` não entra. */
 .zk-md [data-code-inline],
 .zk-edit .ProseMirror :not(pre) > code {
