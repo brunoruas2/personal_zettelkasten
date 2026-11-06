@@ -938,3 +938,85 @@
   border-color: var(--zk-amber);
   color: var(--zk-black);
 }
+
+/* Bloco de código na leitura (.zk-md): mesma caixa de terminal do editor.
+   Seletores com atributo vencem os utilitários zinc do CodeBlock. */
+.zk-md [data-code-block-read] {
+  background: var(--zk-bg-inset);
+  border: 1.5px solid var(--zk-line-strong);
+  border-radius: 0;
+}
+.zk-md [data-code-head] {
+  border-bottom: 1.5px solid var(--zk-line);
+  padding: 4px 12px;
+}
+.zk-md [data-code-head] > span {
+  color: var(--zk-dim);
+  font-family: inherit;
+  font-size: 17px;
+}
+.zk-md [data-code-btn] {
+  background: transparent;
+  border: 1.5px solid var(--zk-cyan);
+  color: var(--zk-cyan);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.zk-md [data-code-btn]:hover {
+  background: var(--zk-cyan);
+  color: var(--zk-black);
+}
+.zk-md [data-code-btn][data-active] {
+  border-color: var(--zk-green);
+  color: var(--zk-green);
+}
+.zk-md [data-code-btn][data-active]:hover {
+  background: var(--zk-green);
+  color: var(--zk-black);
+}
+.zk-md [data-code-block-read] pre,
+.zk-md [data-code-block-read] code {
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  font-size: 19px;
+  line-height: 1.25;
+  color: var(--zk-text);
+}
+
+/* Cores de sintaxe do highlight.js com a paleta do tema (leitura e edição).
+   O prefixo .zk-md/.zk-edit vence `html .hljs-*` do globals.css. */
+:is(.zk-md, .zk-edit) .hljs { color: var(--zk-text); background: transparent; }
+:is(.zk-md, .zk-edit) :is(.hljs-keyword, .hljs-selector-tag, .hljs-deletion, .hljs-tag, .hljs-name) {
+  color: var(--zk-magenta);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-string, .hljs-addition, .hljs-regexp, .hljs-symbol) {
+  color: var(--zk-green);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-number, .hljs-literal, .hljs-variable, .hljs-attr, .hljs-meta) {
+  color: var(--zk-amber);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-built_in, .hljs-type, .hljs-title, .hljs-title.class_, .hljs-title.function_) {
+  color: var(--zk-cyan);
+}
+:is(.zk-md, .zk-edit) :is(.hljs-comment, .hljs-quote) {
+  color: var(--zk-dim);
+  font-style: italic;
+}
+:is(.zk-md, .zk-edit) :is(.hljs-operator, .hljs-punctuation) {
+  color: var(--zk-text);
+}
+
+/* Código inline: chip de terminal. Fora de bloco (```) — `pre code` não entra. */
+.zk-md [data-code-inline],
+.zk-edit .ProseMirror :not(pre) > code {
+  background: var(--zk-bg-inset);
+  border: 1px solid var(--zk-line);
+  border-radius: 0;
+  color: var(--zk-amber);
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0 4px;
+}

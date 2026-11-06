@@ -234,12 +234,14 @@ function CodeBlock({ content, lang }: { content: string; lang: string }) {
   }, [content, lang]);
 
   return (
-    <div className="my-3 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
-      <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-1 dark:border-zinc-700">
+    <div data-code-block-read className="my-3 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+      <div data-code-head className="flex items-center justify-between border-b border-zinc-200 px-3 py-1 dark:border-zinc-700">
         <span className="font-mono text-xs text-zinc-400">{lang}</span>
         <div className="no-print flex items-center gap-2">
           <button
             onClick={handleCopy}
+            data-code-btn
+            data-active={copied || undefined}
             className={`text-[11px] font-semibold transition-colors ${
               copied
                 ? 'text-brand dark:text-brand-light'
@@ -251,6 +253,8 @@ function CodeBlock({ content, lang }: { content: string; lang: string }) {
           </button>
           <button
             onClick={() => setWrapped((v) => !v)}
+            data-code-btn
+            data-active={wrapped || undefined}
             className={`text-[11px] font-semibold transition-colors ${
               wrapped
                 ? 'text-brand dark:text-brand-light'
@@ -326,6 +330,7 @@ function renderInline(
       parts.push(
         <code
           key={`${keyPrefix}-c${k++}`}
+          data-code-inline
           className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-sm dark:bg-zinc-800"
         >
           {m[5]}
