@@ -50,20 +50,20 @@ export function LinkPickerModal({ open, zettels, onSelect, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+      className="zk-modal-backdrop fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-white shadow-2xl dark:bg-zinc-900"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Inserir Link"
+        className="dark zk-modal w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
-          <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Inserir Link</span>
-          <button
-            onClick={onClose}
-            className="text-base font-medium text-brand hover:opacity-80"
-          >
+        <div className="zk-modal-head">
+          <h2 className="m-0 truncate text-[inherit] font-normal">Inserir Link</h2>
+          <button type="button" onClick={onClose}>
             Cancelar
           </button>
         </div>
@@ -75,19 +75,24 @@ export function LinkPickerModal({ open, zettels, onSelect, onClose }: Props) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar zettel..."
-            className="w-full rounded-xl bg-zinc-100 px-4 py-2.5 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 dark:bg-zinc-800 dark:text-zinc-100"
+            className="w-full border border-zk-line bg-zk-inset px-4 py-2.5 text-sm text-zk-text outline-none placeholder:text-zk-dim focus:border-zk-cyan"
           />
         </div>
 
-        <label className="flex items-center gap-2 px-5 pb-2 text-xs text-zinc-500 dark:text-zinc-400">
-          <input type="checkbox" checked={asParent} onChange={(e) => setAsParent(e.target.checked)} />
+        <label className="flex items-center gap-2 px-5 pb-2 text-xs text-zk-dim">
+          <input
+            type="checkbox"
+            className="accent-[var(--zk-cyan)]"
+            checked={asParent}
+            onChange={(e) => setAsParent(e.target.checked)}
+          />
           Inserir como pai desta nota
         </label>
 
         {/* Results */}
         <div className="max-h-72 overflow-y-auto overscroll-contain pb-2">
           {results.length === 0 ? (
-            <p className="py-10 text-center text-sm text-zinc-400">
+            <p className="py-10 text-center text-sm text-zk-dim">
               {zettels.length === 0 ? 'Nenhum zettel criado ainda.' : 'Nenhum resultado.'}
             </p>
           ) : (
@@ -95,11 +100,11 @@ export function LinkPickerModal({ open, zettels, onSelect, onClose }: Props) {
               <button
                 key={z.id}
                 onClick={() => { setQuery(''); onSelect(z, asParent); }}
-                className="w-full px-5 py-3.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                className="w-full px-5 py-3.5 text-left hover:bg-[color-mix(in_srgb,var(--zk-cyan)_18%,transparent)]"
               >
-                <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{z.title}</div>
+                <div className="text-sm text-zk-text">{z.title}</div>
                 {z.tags.length > 0 && (
-                  <div className="mt-0.5 text-xs text-zinc-400">
+                  <div className="mt-0.5 text-xs text-zk-dim">
                     {z.tags.map((t) => `#${t}`).join(' ')}
                   </div>
                 )}
