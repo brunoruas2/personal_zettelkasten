@@ -167,3 +167,21 @@ export function placeMissing(
   }
   return placed;
 }
+
+/** Vizinhos de `after` que não estão em `before` e já têm posição. */
+export function newPositionedNeighbors(
+  before: ReadonlySet<string>,
+  after: ReadonlySet<string>,
+  positions: ReadonlyMap<string, Point>,
+): string[] {
+  const out: string[] = [];
+  for (const n of after) if (!before.has(n) && positions.has(n)) out.push(n);
+  return out;
+}
+
+/** Raio (em px de mundo) abaixo do qual o zettel já conta como "perto" do centróide. */
+export const NEAR_ANCHOR_RADIUS = Math.hypot(FOOTPRINT_W, FOOTPRINT_H) * 1.5;
+
+export function isNearAnchor(p: Point, anchor: Point): boolean {
+  return Math.hypot(p.x - anchor.x, p.y - anchor.y) < NEAR_ANCHOR_RADIUS;
+}

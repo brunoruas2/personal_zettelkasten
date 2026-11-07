@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Link } from '../models/Link';
 import { FOOTPRINT_H, FOOTPRINT_W, footprintsOverlap, type Point } from '../models/GalaxyPosition';
-import { SpatialGrid, anchorFor, buildAdjacency, placeMissing, placeNear } from './GalaxyPlacement';
+import { SpatialGrid, anchorFor, buildAdjacency, isNearAnchor, newPositionedNeighbors, placeMissing, placeNear } from './GalaxyPlacement';
 import { freezeLayout, resolveOverlaps, simulateLayout } from './GalaxyLayout';
 
 function lcg(seed: number): () => number {
@@ -283,5 +283,22 @@ describe('freezeLayout', () => {
     const out = resolveOverlaps(stacked);
     expect(out.get('a')).toEqual({ x: 0, y: 0 });
     expect(overlappingPairs(out)).toBe(0);
+  });
+});
+
+describe('newPositionedNeighbors / isNearAnchor', () => {
+  const pos = new Map([['a', { x: 0, y: 0 }], ['b', { x: 10, y: 10 }]]);
+
+  it('só vizinhos novos e posicionados', () => {
+    expect(newPositionedNeighbors(new Set(['a']), new Set(['a', 'b', 'c']), pos)).toEqual(['b']);
+  });
+
+  it('sem vizinho novo devolve vazio', () => {
+    expect(newPositionedNeighbors(new Set(['a']), new Set(['a']), pos)).toEqual([]);
+  });
+
+  it('perto e longe do centróide', () => {
+    expect(isNearAnchor({ x: 100, y: 100 }, { x: 0, y: 0 })).toBe(true);
+    expect(isNearAnchor({ x: 5000, y: 0 }, { x: 0, y: 0 })).toBe(false);
   });
 });

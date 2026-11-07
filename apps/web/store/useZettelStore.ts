@@ -6,7 +6,7 @@ import type { ZettelController } from '@zettelkasten/core';
 import { syncService } from '../lib/sync'
 import { searchZettels } from '../lib/searchZettels';
 import { getNodeColorRules, saveNodeColorRules, type NodeColorRule } from '../lib/graphColors';
-import { placeMissingAndQueue, positionStore, repositionOnLinks, setManualPosition } from '../lib/positionSync';
+import { neighborsOf, placeMissingAndQueue, positionStore, repositionOnLinks, setManualPosition } from '../lib/positionSync';
 import { downloadBodies } from '../lib/bodySync';
 import { clearBodyCache, invalidateBody, setCachedBody } from '../lib/bodyCache';
 
@@ -102,6 +102,7 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     if (!controller) throw new Error('Controller not initialized');
     // Da base, não da lista global: a busca da sidebar substitui a lista.
     const existing = await controller.getById(id);
+    const neighborsBefore = await neighborsOf(controller, id).catch(() => new Set<string>());
     const zettel = await controller.update(id, data);
     setCachedBody(zettel.id, zettel.body, zettel.bodyLen);
     syncService.push({ op: 'update', payload: zettel }).catch(() => {});
@@ -121,7 +122,7 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     }
     await loadAll();
     // Ganhou link: se foi auto-posicionado, vai para perto dos vizinhos.
-    void repositionOnLinks(controller, id);
+    void repositionOnLinks(controller, id, neighborsBefore);
     return zettel;
   },
 

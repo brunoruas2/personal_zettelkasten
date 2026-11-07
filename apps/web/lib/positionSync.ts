@@ -3,6 +3,8 @@ import {
   SpatialGrid,
   anchorFor,
   buildAdjacency,
+  isNearAnchor,
+  newPositionedNeighbors,
   placeMissing,
   placeNear,
   type Link,
@@ -309,27 +311,41 @@ async function doPlace(source: GalaxySource): Promise<void> {
 }
 
 /**
- * Zettel auto-posicionado que ganhou link: move para a vaga livre mais próxima
- * do centróide dos vizinhos já posicionados. Uma vez só — a marca cai depois do
- * movimento. Sem vizinho posicionado ainda, mantém a marca para a próxima vez.
+ * Zettel auto-posicionado que ganhou link novo: move para a vaga livre mais
+ * próxima do centróide dos vizinhos já posicionados, a cada link novo. Não move
+ * se já está perto. `before` = vizinhos de link antes do salvamento. A marca de
+ * auto-posicionado fica — só mover à mão (`setManualPosition`) a remove.
  */
-export function repositionOnLinks(source: GalaxySource, id: string): Promise<void> {
-  placing = placing.then(() => doReposition(source, id)).catch(() => {})
+export function repositionOnLinks(source: GalaxySource, id: string, before: ReadonlySet<string>): Promise<void> {
+  placing = placing.then(() => doReposition(source, id, before)).catch(() => {})
   return placing
 }
 
-async function doReposition(source: GalaxySource, id: string): Promise<void> {
+/** Vizinhos de link atuais de um zettel (para comparar antes/depois de salvar). */
+export async function neighborsOf(source: GalaxySource, id: string): Promise<Set<string>> {
+  return new Set(buildAdjacency(await source.getAllLinks()).get(id) ?? [])
+}
+
+async function doReposition(source: GalaxySource, id: string, before: ReadonlySet<string>): Promise<void> {
   if (!isAutoPlaced(id)) return
   const [links, records] = await Promise.all([source.getAllLinks(), positionStore.getAll()])
   const positions = new Map<string, Point>(records.map((r) => [r.id, { x: r.x, y: r.y }]))
-  if (!positions.has(id)) return
-  const neighbors = buildAdjacency(links).get(id)
-  if (!neighbors || ![...neighbors].some((n) => positions.has(n))) return
-  const anchor = anchorFor(id, buildAdjacency(links), positions)
+  const current = positions.get(id)
+  if (!current) return
+  const adjacency = buildAdjacency(links)
+  const after = adjacency.get(id) ?? new Set<string>()
+  if (newPositionedNeighbors(before, after, positions).length === 0) return
+  const anchor = anchorFor(id, adjacency, positions)
+  if (isNearAnchor(current, anchor)) return
   const grid = new SpatialGrid()
   for (const [pid, p] of positions) if (pid !== id) grid.add(pid, p)
   const target = placeNear(anchor, grid)
-  await setManualPosition(id, target.x, target.y)
+  const updatedAt = Math.max(Date.now(), (records.find((r) => r.id === id)?.updatedAt ?? 0) + 1)
+  await positionStore.putMany([
+    { id, x: Math.round(target.x), y: Math.round(target.y), updatedAt, syncState: 'pending', mode: 'lww' },
+  ])
+  emitChanged()
+  void pushPendingPositions().catch(() => {})
 }
 
 /** Recalcular layout: descarta tudo no servidor, avança a época e congela de novo. */
