@@ -1129,6 +1129,27 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         },
       });
 
+      // O nível do heading não é texto (`##` virou nó), então não há o que apagar para
+      // mudar de nível. Backspace no início do heading o devolve a parágrafo — daí
+      // `# `…`###### ` valem de novo. Prioridade acima do keymap do core, que fundiria a
+      // linha com a anterior; o undo do input rule (Backspace logo após `## `) vem antes.
+      const HeadingBackspace = Extension.create({
+        name: 'headingBackspace',
+        priority: 101,
+        addKeyboardShortcuts() {
+          return {
+            Backspace: () => {
+              const { selection } = this.editor.state;
+              const { $from, empty } = selection;
+              if (!empty || $from.parentOffset !== 0 || $from.parent.type.name !== 'heading') {
+                return false;
+              }
+              return this.editor.commands.undoInputRule() || this.editor.commands.setParagraph();
+            },
+          };
+        },
+      });
+
       return [
         // paragraph desligado no StarterKit para o CustomParagraph assumir a
         // serialização markdown (parágrafo vazio → sentinela NBSP).
@@ -1144,6 +1165,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         TaskListTightFix,
         ListKeymap,
         LeadingNodeEscape,
+        HeadingBackspace,
         // allowBase64 desligado de propósito: bytes inline no body multiplicariam
         // tamanho em cada salto (IndexedDB, fila de sync, SQLite, export, PDF).
         ImageChip.configure({ inline: false, allowBase64: false }),

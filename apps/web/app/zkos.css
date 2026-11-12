@@ -708,6 +708,21 @@
 .zk-md pre {
   white-space: pre-wrap;
 }
+/* Headings proporcionais ao corpo (em sobre o font-size de .zk-md / .ProseMirror, que já
+   leva --zk-read-scale): escalam com A−/A+ e são iguais em leitura e edição. Vencem o
+   text-2xl… do MarkdownRenderer e o rem do globals.css pela especificidade. */
+.zk-md h1,
+.zk-edit .ProseMirror h1 { font-size: 1.6em; line-height: 1.25; }
+.zk-md h2,
+.zk-edit .ProseMirror h2 { font-size: 1.4em; line-height: 1.25; }
+.zk-md h3,
+.zk-edit .ProseMirror h3 { font-size: 1.2em; line-height: 1.3; }
+.zk-md h4,
+.zk-edit .ProseMirror h4 { font-size: 1.1em; line-height: 1.3; }
+.zk-md h5,
+.zk-edit .ProseMirror h5,
+.zk-md h6,
+.zk-edit .ProseMirror h6 { font-size: 1em; line-height: 1.4; }
 /* Tabela segue o corpo: vence o text-sm da leitura e o 0.9em do editor. */
 .zk-md table,
 .zk-edit .ProseMirror table {
