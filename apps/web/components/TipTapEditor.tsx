@@ -586,7 +586,8 @@ function PencilButton({ onClick, label }: { onClick: () => void; label: string }
       // mousedown não pode mover a seleção do ProseMirror antes do clique.
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className="absolute right-2 top-2 z-10 rounded-md bg-black/50 px-2 py-1 text-sm leading-none text-white opacity-70 hover:opacity-100"
+      // right-11: à esquerda do botão de ampliar (right-2) dos blocos renderizados.
+      className="no-print absolute right-11 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-md bg-zinc-100 text-sm text-zinc-400 transition-opacity hover:text-zinc-700 dark:bg-zinc-800 dark:hover:text-zinc-200 lg:h-7 lg:w-7 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
     >
       ✏️
     </button>
@@ -666,7 +667,7 @@ function CodeBlockNodeView({ node, updateAttributes, editor, getPos }: {
   // na leitura) abre o código-fonte.
   if (isRenderedKind && !inside) {
     return (
-      <NodeViewWrapper as="div" data-code-block data-rendered className="relative my-2">
+      <NodeViewWrapper as="div" data-code-block data-rendered className="group relative my-2">
         <div contentEditable={false} className="min-w-0">{renderedView}</div>
         <PencilButton
           label="Editar código-fonte"
@@ -784,7 +785,6 @@ function ImageChipNodeView({ node, selected }: {
         >
           {isDrawing ? <DrawingBlock id={id} alt={alt} /> : <ZettelImage id={id} alt={alt} />}
         </div>
-        {isDrawing && openDrawing && <PencilButton label="Editar desenho" onClick={() => openDrawing(id)} />}
       </NodeViewWrapper>
     );
   }
