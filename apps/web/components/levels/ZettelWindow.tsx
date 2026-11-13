@@ -9,6 +9,7 @@ import { loadZettel } from '../../lib/bodySync';
 import { MarkdownRenderer } from '../MarkdownRenderer';
 import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from '../galaxy/InplaceEditor';
 import { editedAgo } from '../galaxy/HoverCard';
+import { captureCaretAnchor, type CaretAnchor } from '../../lib/caretAnchor';
 import { NeonButton, StatusBar, TitleBar, Win } from '../zkos';
 import { EDIT_ACCENT, useLevelsEnv } from './LevelsContext';
 import { saveLabel, zkCode } from './format';
@@ -142,6 +143,8 @@ export function ZettelWindow({
   const [save, setSave] = useState<SaveStatus>('idle');
   const [focusTitle, setFocusTitle] = useState(false);
   const editorRef = useRef<InplaceEditorHandle>(null);
+  // Ponto do duplo clique, consumido pelo editor ao montar; limpo ao sair da edição.
+  const caretRef = useRef<CaretAnchor | null>(null);
   const stopRef = useRef(onStopEdit);
   stopRef.current = onStopEdit;
 
@@ -149,6 +152,7 @@ export function ZettelWindow({
   // (escrever dele sobrescreveria a versão de outro aparelho).
   useEffect(() => {
     if (!editing) {
+      caretRef.current = null;
       setZettel(null);
       setSave('idle');
       return;
@@ -209,10 +213,13 @@ export function ZettelWindow({
     return () => window.removeEventListener('keydown', onKey);
   }, [editing, finish]);
 
-  const onBodyClick = (e: MouseEvent) => {
+  // Duplo clique no corpo entra em edição com o cursor onde se clicou. O clique
+  // simples só seleciona/segue links. EDIT e atalhos entram sem âncora (início).
+  const onBodyDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
     const t = e.target as HTMLElement;
     if (t.closest('a,button,input,textarea,summary,[data-no-edit]')) return;
-    if (window.getSelection()?.toString()) return;
+    caretRef.current = captureCaretAnchor(e, e.currentTarget);
+    window.getSelection()?.removeAllRanges();
     onStartEdit();
   };
 
@@ -257,7 +264,7 @@ export function ZettelWindow({
                   <p className="zk-display text-xl text-zk-dim">Corpo ainda não baixado neste aparelho.</p>
                 )}
                 {(bodyStatus === 'ready' || bodyStatus === 'stale') && (
-                  <div className="zk-md dark cursor-text lg:max-w-[900px]" onClick={onBodyClick}>
+                  <div className="zk-md dark cursor-default lg:max-w-[900px]" onDoubleClick={onBodyDoubleClick}>
                     {body.trim() ? (
                       <MarkdownRenderer
                         body={body}
@@ -268,7 +275,7 @@ export function ZettelWindow({
                         }}
                       />
                     ) : (
-                      <p className="zk-display text-xl text-zk-dim">Sem conteúdo. Clique para escrever.</p>
+                      <p className="zk-display text-xl text-zk-dim">Sem conteúdo. Dê dois cliques para escrever.</p>
                     )}
                   </div>
                 )}
@@ -284,7 +291,7 @@ export function ZettelWindow({
               {!compact && actions}
               {!compact && (
                 <StatusBar
-                  left={`${code} · clique no texto ou no diagrama para editar`}
+                  left={`${code} · duplo clique no texto ou no diagrama para editar`}
                   right={
                     <>
                       <span className="text-zk-green">{linkCount}</span> ligações{meta ? ` · ${editedAgo(meta.updatedAt)}` : ''}
@@ -312,6 +319,8 @@ export function ZettelWindow({
                     zettel={zettel}
                     variant={isMobile ? 'mobile' : 'card'}
                     autoFocusTitle={focusTitle}
+                    initialCaret={caretRef.current}
+                    renderedBlocks
                     onStatus={setSave}
                     onCreateLink={(t) => createLinked(t, meta?.title)}
                   />

@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  createContext,
   forwardRef,
   useEffect,
   useImperativeHandle,
@@ -38,7 +39,11 @@ import { useDiagramLayout } from '../lib/diagramLayout';
 import { isImageFile, ImageCompressError } from '../lib/imageCompress';
 import { importImage, ImageUploadError } from '../lib/imageSync';
 import { ZK_IMG_PREFIX } from './ZettelImage';
-import { DrawingEditContext, ZK_DRAW_PREFIX } from './DrawingBlock';
+import { DrawingBlock, DrawingEditContext, ZK_DRAW_PREFIX } from './DrawingBlock';
+import { ZettelImage } from './ZettelImage';
+import { Chords } from './Chords';
+import { AbcNotation } from './AbcNotation';
+import { placeCaret, type CaretAnchor } from '../lib/caretAnchor';
 import { useDrawingEditHost } from '../hooks/useDrawingEditHost';
 import { drawingStore, emptyDrawingRecord, subscribeDrawingsBusy, getDrawingsBusy } from '../lib/drawingSync';
 
@@ -115,6 +120,8 @@ export interface TipTapEditorHandle {
    */
   focus: (opts?: { scrollIntoView?: boolean }) => void;
   focusEnd: () => void;
+  /** Cursor no trecho que o usuário clicou na leitura (ver `lib/caretAnchor.ts`). */
+  focusAt: (anchor: CaretAnchor | null | undefined) => void;
   insertCodeBlock: (language: string, template?: string) => void;
   /** Abre o seletor de arquivos de imagem (usado pela toolbar mobile). */
   pickImages: () => void;
@@ -138,6 +145,8 @@ interface Props {
    * quando o título não existe. Sem a prop (páginas antigas), nada muda.
    */
   onCreateLink?: (title: string) => void | Promise<void>;
+  /** ZK//OS: diagramas, cifras, partituras, imagens e desenhos renderizados no editor. */
+  renderedBlocks?: boolean;
 }
 
 /** Item sintético do autocomplete de `[[` que cria o zettel citado. */
@@ -542,13 +551,62 @@ function TableBubbleMenu({ editor }: { editor: Editor }) {
 
 // ── CodeBlockNodeView ─────────────────────────────────────────────────────────
 
-function CodeBlockNodeView({ node, updateAttributes }: {
+/** ZK//OS: blocos pesados aparecem renderizados no editor, com lápis para o código. */
+const RenderedBlocksContext = createContext(false);
+
+/** A seleção está dentro deste nó? (abre o código-fonte do bloco) */
+function useSelectionInside(editor: Editor, getPos: () => number | undefined): boolean {
+  const [inside, setInside] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const pos = getPos();
+      const node = typeof pos === 'number' ? editor.state.doc.nodeAt(pos) : null;
+      if (!node || typeof pos !== 'number') return setInside(false);
+      const { from, to } = editor.state.selection;
+      setInside(from > pos && to < pos + node.nodeSize);
+    };
+    check();
+    editor.on('selectionUpdate', check);
+    editor.on('update', check);
+    return () => {
+      editor.off('selectionUpdate', check);
+      editor.off('update', check);
+    };
+  }, [editor, getPos]);
+  return inside;
+}
+
+function PencilButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      data-no-edit=""
+      aria-label={label}
+      title={label}
+      // mousedown não pode mover a seleção do ProseMirror antes do clique.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      className="absolute right-2 top-2 z-10 rounded-md bg-black/50 px-2 py-1 text-sm leading-none text-white opacity-70 hover:opacity-100"
+    >
+      ✏️
+    </button>
+  );
+}
+
+const RENDERED_LANGS = ['plantuml', 'mermaid', 'chords', 'abc'];
+
+function CodeBlockNodeView({ node, updateAttributes, editor, getPos }: {
   node: { attrs: { language?: string }; textContent: string };
   updateAttributes: (attrs: { language: string }) => void;
+  editor: Editor;
+  getPos: () => number | undefined;
 }) {
   const language = node.attrs.language ?? '';
   const isMermaid = language === 'mermaid';
   const isDiagram = language === 'plantuml' || isMermaid;
+  const renderedBlocks = useContext(RenderedBlocksContext);
+  const isRenderedKind = renderedBlocks && RENDERED_LANGS.includes(language);
+  const inside = useSelectionInside(editor, getPos);
 
   // Chamado sempre, mesmo para blocos que não são diagrama: o early return abaixo não
   // pode ficar antes de um hook.
@@ -592,10 +650,45 @@ function CodeBlockNodeView({ node, updateAttributes }: {
     </>
   );
 
+  const renderedView =
+    language === 'chords' ? (
+      <Chords source={node.textContent} />
+    ) : language === 'abc' ? (
+      <AbcNotation source={node.textContent} />
+    ) : isMermaid ? (
+      <MermaidBlock source={debouncedSource} />
+    ) : (
+      <PlantUmlBlock source={debouncedSource} />
+    );
+
+  // Fechado: só o render + lápis. O NodeViewContent segue montado (escondido):
+  // é o contentDOM do ProseMirror. Selecionar o nó (lápis, setas, duplo clique
+  // na leitura) abre o código-fonte.
+  if (isRenderedKind && !inside) {
+    return (
+      <NodeViewWrapper as="div" data-code-block data-rendered className="relative my-2">
+        <div contentEditable={false} className="min-w-0">{renderedView}</div>
+        <PencilButton
+          label="Editar código-fonte"
+          onClick={() => {
+            const pos = getPos();
+            if (typeof pos === 'number') editor.chain().focus().setTextSelection(pos + 1).run();
+          }}
+        />
+        <NodeViewContent className="hidden" />
+      </NodeViewWrapper>
+    );
+  }
+
   if (!isDiagram) {
     return (
       <NodeViewWrapper as="div" data-code-block className="my-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-x-auto">
         {codeArea}
+        {isRenderedKind && (
+          <div contentEditable={false} className="border-t border-zinc-200 p-2 dark:border-zinc-700">
+            {renderedView}
+          </div>
+        )}
       </NodeViewWrapper>
     );
   }
@@ -618,7 +711,7 @@ function CodeBlockNodeView({ node, updateAttributes }: {
     <NodeViewWrapper as="div" data-code-block className={wrapperClass}>
       <div className={codeColClass}>{codeArea}</div>
       <div contentEditable={false} className={previewColClass}>
-        {isMermaid ? <MermaidBlock source={debouncedSource} /> : <PlantUmlBlock source={debouncedSource} />}
+        {renderedView}
       </div>
     </NodeViewWrapper>
   );
@@ -679,6 +772,22 @@ function ImageChipNodeView({ node, selected }: {
       ? src.slice(ZK_IMG_PREFIX.length)
       : src;
   const openDrawing = useContext(DrawingEditContext);
+  const renderedBlocks = useContext(RenderedBlocksContext);
+
+  if (renderedBlocks && (isDrawing || src.startsWith(ZK_IMG_PREFIX))) {
+    return (
+      <NodeViewWrapper as="div" className="relative my-2" data-rendered>
+        <div
+          contentEditable={false}
+          data-selected={selected ? '' : undefined}
+          className={selected ? 'rounded outline outline-2 outline-brand' : undefined}
+        >
+          {isDrawing ? <DrawingBlock id={id} alt={alt} /> : <ZettelImage id={id} alt={alt} />}
+        </div>
+        {isDrawing && openDrawing && <PencilButton label="Editar desenho" onClick={() => openDrawing(id)} />}
+      </NodeViewWrapper>
+    );
+  }
 
   return (
     <NodeViewWrapper as="div" className="my-2">
@@ -812,7 +921,7 @@ function normalizeSentinelParagraphs(editor: Editor): void {
 // ── TipTapEditor ──────────────────────────────────────────────────────────────
 
 export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
-  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onPendingImagesChange, onCreateLink }, ref) {
+  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onPendingImagesChange, onCreateLink, renderedBlocks = false }, ref) {
     const isExternalUpdate = useRef(false);
 
     // Keep current zettels accessible inside extensions without recreating them
@@ -1276,6 +1385,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         else editor?.commands.focus('start');
       },
       focusEnd() { editor?.commands.focus('end'); },
+      focusAt(anchor) { if (editor) placeCaret(editor, anchor); },
       insertCodeBlock(language: string, template = '') {
         if (!editor) return;
         editor
@@ -1297,11 +1407,13 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
     return (
       <>
         <DrawingEditContext.Provider value={drawingHost.open}>
-          <EditorContent
-            editor={editor}
-            className={className}
-            style={fontSize ? ({ '--input-font-size': `${fontSize}px` } as React.CSSProperties) : undefined}
-          />
+          <RenderedBlocksContext.Provider value={renderedBlocks}>
+            <EditorContent
+              editor={editor}
+              className={className}
+              style={fontSize ? ({ '--input-font-size': `${fontSize}px` } as React.CSSProperties) : undefined}
+            />
+          </RenderedBlocksContext.Provider>
         </DrawingEditContext.Provider>
         {drawingHost.modal}
         {wikiPopup && (

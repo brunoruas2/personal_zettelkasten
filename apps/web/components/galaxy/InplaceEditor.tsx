@@ -12,6 +12,7 @@ import { useKeyboardOffset } from '../../hooks/useKeyboardOffset';
 import { ChordKeypad, KEYPAD_HEIGHT } from '../ChordKeypad';
 import { AbcKeypad, ABC_KEYPAD_HEIGHT } from '../AbcKeypad';
 import { preloadAbcjs } from '../../lib/abcAudio';
+import type { CaretAnchor } from '../../lib/caretAnchor';
 import { LinkPickerModal } from '../LinkPickerModal';
 import { MarkdownCheatsheet } from '../MarkdownCheatsheet';
 import { LinksFooter } from './LinksFooter';
@@ -55,8 +56,12 @@ export const InplaceEditor = forwardRef<
     onNavigateLink?: (id: string) => void;
     /** Anexos aguardando (para o cabeçalho do editor em tela cheia). */
     onPending?: (n: number) => void;
+    /** ZK//OS: cursor no trecho clicado na leitura (sem isto, no início). */
+    initialCaret?: CaretAnchor | null;
+    /** ZK//OS: blocos pesados renderizados no editor, com lápis. */
+    renderedBlocks?: boolean;
   }
->(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink, onPending }, ref) {
+>(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink, onPending, initialCaret, renderedBlocks }, ref) {
   const updateZettel = useZettelStore((s) => s.updateZettel);
   const zettels = useZettelStore((s) => s.zettels);
   const allTags = useMemo(() => [...new Set(zettels.flatMap((z) => z.tags))].sort(), [zettels]);
@@ -172,9 +177,18 @@ export const InplaceEditor = forwardRef<
 
   useEffect(() => {
     if (autoFocusTitle) titleRef.current?.focus();
-    else editorRef.current?.focus({ scrollIntoView: false });
+    else if (!initialCaret) editorRef.current?.focus({ scrollIntoView: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Duplo clique na leitura: cursor no trecho clicado, uma única vez, assim que
+  // o TipTap existe (o título tem precedência).
+  const caretDoneRef = useRef(false);
+  useEffect(() => {
+    if (!editor || !initialCaret || autoFocusTitle || caretDoneRef.current) return;
+    caretDoneRef.current = true;
+    editorRef.current?.focusAt(initialCaret);
+  }, [editor, initialCaret, autoFocusTitle]);
 
   // Chip do rodapé: grava o que está pendente antes de sair do zettel.
   const flushAndNavigate = useCallback(
@@ -256,6 +270,7 @@ export const InplaceEditor = forwardRef<
               onEditorReady={setEditor}
               onPendingImagesChange={setPendingImages}
               onCreateLink={onCreateLink}
+              renderedBlocks={renderedBlocks}
             />
           </DrawingEditHost>
         </div>
