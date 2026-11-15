@@ -519,6 +519,18 @@
   }
 }
 
+/* Celular: entrelinha mais curta (leitura e edição juntas, para não mudar ao editar).
+   O leitor usa leading-relaxed (1.625) nos parágrafos; a edição, 1.625 em p. */
+[data-mobile] .zk-md,
+[data-mobile] .zk-edit .ProseMirror,
+[data-mobile] .zk-edit .ProseMirror li {
+  line-height: 1.35;
+}
+[data-mobile] .zk-md .leading-relaxed,
+[data-mobile] .zk-edit .ProseMirror p {
+  line-height: 1.4;
+}
+
 /* Título e corpo na edição ocupam o mesmo lugar que na leitura (margem --zk-pad-x,
    h1 com mt-1/mb-3); a troca de modo muda de cor, não de posição. */
 .zk-edit [data-zettel-head] {

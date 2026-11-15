@@ -49,6 +49,92 @@ function FontSizeControl({ percent }: { percent: number }) {
   );
 }
 
+export interface MenuAction {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}
+
+/** Menu `⋯` da barra de leitura do celular: fecha por clique fora, Esc e ao escolher. */
+function ActionsMenu({ items }: { items: MenuAction[] }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const close = useCallback((refocus: boolean) => {
+    setOpen(false);
+    if (refocus) triggerRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) close(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      close(true);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [open, close]);
+
+  const onMenuKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const els = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+    const i = els.indexOf(document.activeElement as HTMLElement);
+    const next = e.key === 'ArrowDown' ? (i + 1) % els.length : (i - 1 + els.length) % els.length;
+    els[next]?.focus();
+  };
+
+  return (
+    <div ref={rootRef} className="relative flex-none">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="zk-btn"
+        aria-label="Mais ações"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        style={{ padding: '0 12px', minWidth: 44 }}
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          role="menu"
+          onKeyDown={onMenuKey}
+          className="zk-win absolute right-0 top-full z-30 mt-1 flex w-52 flex-col gap-1 p-1"
+        >
+          {items.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              role="menuitem"
+              className={`${it.danger ? 'zk-btn-danger' : 'zk-btn'} justify-start px-3 text-left`}
+              style={{ minHeight: 44 }}
+              onClick={() => {
+                close(false);
+                it.onClick();
+              }}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Quem está editando agora grava o que estiver pendente antes de a tela
  * trocar de zettel/nível. Só uma janela edita por vez (spec memory-screen).
@@ -82,6 +168,8 @@ export interface ZettelWindowProps {
   titleSuffix?: string;
   /** Botões fixos acima do rodapé (Mesa: abrir em foco, fechar). */
   actions?: ReactNode;
+  /** Celular (`compact`): itens do menu `⋯` da barra de leitura (além de "Voltar"). */
+  menuActions?: MenuAction[];
   /** Coluna à direita (Foco no desktop: conexões). */
   side?: ReactNode;
   className?: string;
@@ -108,6 +196,7 @@ export function ZettelWindow({
   linkCount,
   titleSuffix,
   actions,
+  menuActions,
   side,
   className = '',
   style,
@@ -119,7 +208,7 @@ export function ZettelWindow({
   const scaleStyle = {
     ...style,
     '--zk-read-scale': scalePercent / 100,
-    '--zk-title-size': `${compact ? 16 : isMobile ? 23 : 39}px`,
+    '--zk-title-size': `${isMobile || compact ? 23 : 39}px`,
     '--zk-title-color': editing ? EDIT_ACCENT : accent,
     '--zk-pad-x': isMobile ? '0.75rem' : '3.5rem',
   } as CSSProperties;
@@ -229,6 +318,11 @@ export function ZettelWindow({
   const pad = isMobile ? 'px-3' : 'px-14';
   const winAccent = editing ? EDIT_ACCENT : accent;
 
+  const readingMenu: MenuAction[] = [
+    ...(onBack ? [{ label: '← Voltar', onClick: onBack }] : []),
+    ...(menuActions ?? []),
+  ];
+
   const header = `${code} — ${title.toUpperCase()}${editing ? ' · EDITANDO' : titleSuffix ? ` · ${titleSuffix}` : ''}`;
 
   return (
@@ -238,21 +332,32 @@ export function ZettelWindow({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {!editing && (
             <>
-              <div data-card-scroll className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${pad} pb-2 pt-4`}>
-                <div className="flex items-center justify-end gap-3">
-                  <div className="flex flex-none items-center gap-2">
-                    <FontSizeControl percent={scalePercent} />
-                    {onBack && (
-                      <NeonButton onClick={onBack} aria-label="Voltar ao zettel anterior">
-                        {compact ? '←' : '← VOLTAR'}
-                      </NeonButton>
-                    )}
-                    <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
-                      EDIT
-                    </NeonButton>
-                    {compact && actions}
-                  </div>
+              {/* Celular: barra fixa fora da rolagem; o resto das ações mora no menu ⋯. */}
+              {compact && (
+                <div className="flex flex-none flex-wrap items-center justify-end gap-1 px-2 pb-1 pt-2">
+                  <FontSizeControl percent={scalePercent} />
+                  <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
+                    EDIT
+                  </NeonButton>
+                  {readingMenu.length > 0 && <ActionsMenu items={readingMenu} />}
                 </div>
+              )}
+              <div data-card-scroll className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${pad} pb-2 ${compact ? 'pt-1' : 'pt-4'}`}>
+                {!compact && (
+                  <div className="flex items-center justify-end gap-3">
+                    <div className="flex flex-none items-center gap-2">
+                      <FontSizeControl percent={scalePercent} />
+                      {onBack && (
+                        <NeonButton onClick={onBack} aria-label="Voltar ao zettel anterior">
+                          ← VOLTAR
+                        </NeonButton>
+                      )}
+                      <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
+                        EDIT
+                      </NeonButton>
+                    </div>
+                  </div>
+                )}
                 <h1
                   className="zk-display m-0 mb-3 mt-1 font-normal leading-none"
                   style={{ color: 'var(--zk-title-color)', fontSize: 'calc(var(--zk-title-size) * var(--zk-read-scale, 1))' }}

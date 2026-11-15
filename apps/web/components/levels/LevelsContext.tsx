@@ -22,6 +22,8 @@ export interface LevelsEnv {
   /** `[[título]]` → id, sem caixa (mesma regra do `findByTitle`). */
   resolveTitle: (title: string) => string | undefined;
   isMobile: boolean;
+  /** Celular em paisagem curta (`isMobile` + `orientation: landscape` + `max-height: 500px`). */
+  isLandscape: boolean;
   /** `[[novo]]` no editor: cria o zettel; a posição sai do posicionamento automático. */
   createLinked: (title: string, parentTitle?: string) => Promise<void>;
 }
@@ -51,9 +53,29 @@ export function useIsMobile(): boolean {
   );
 }
 
+const LANDSCAPE_QUERY = '(orientation: landscape) and (max-height: 500px)';
+
+function subscribeLandscape(cb: () => void): () => void {
+  const mq = window.matchMedia(LANDSCAPE_QUERY);
+  mq.addEventListener('change', cb);
+  return () => mq.removeEventListener('change', cb);
+}
+
+/** Celular em paisagem com pouca altura: topbar compacta, trilho lateral de níveis. */
+export function useLandscapeShort(): boolean {
+  const mobile = useIsMobile();
+  const landscape = useSyncExternalStore(
+    subscribeLandscape,
+    () => window.matchMedia(LANDSCAPE_QUERY).matches,
+    () => false,
+  );
+  return mobile && landscape;
+}
+
 export function LevelsEnvProvider({ children }: { children: ReactNode }) {
   const data = useGalaxyData();
   const isMobile = useIsMobile();
+  const isLandscape = useLandscapeShort();
   const createZettel = useZettelStore((s) => s.createZettel);
 
   const idByTitle = useMemo(() => {
@@ -86,8 +108,8 @@ export function LevelsEnvProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<LevelsEnv>(
-    () => ({ data, accentOf, resolveTitle, isMobile, createLinked }),
-    [data, accentOf, resolveTitle, isMobile, createLinked],
+    () => ({ data, accentOf, resolveTitle, isMobile, isLandscape, createLinked }),
+    [data, accentOf, resolveTitle, isMobile, isLandscape, createLinked],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

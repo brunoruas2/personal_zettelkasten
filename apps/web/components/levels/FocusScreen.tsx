@@ -53,13 +53,16 @@ export function FocusScreen() {
         linkCount={linkCount}
         compact={isMobile}
         className="min-h-0 flex-1"
+        menuActions={
+          isMobile
+            ? [
+                { label: 'Exportar PDF', onClick: () => void actions.requestExport(focusId) },
+                { label: 'Apagar', onClick: () => void actions.requestDelete(focusId), danger: true },
+              ]
+            : undefined
+        }
         actions={
-          focusEditing ? undefined : isMobile ? (
-            <>
-              <PdfButton onClick={() => void actions.requestExport(focusId)} />
-              <EraserButton onClick={() => void actions.requestDelete(focusId)} />
-            </>
-          ) : (
+          focusEditing || isMobile ? undefined : (
             <div className="flex flex-none justify-end gap-2 border-t border-zk-line p-2">
               <PdfButton onClick={() => void actions.requestExport(focusId)} />
               <EraserButton onClick={() => void actions.requestDelete(focusId)} />

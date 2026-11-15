@@ -38,7 +38,7 @@ export function LevelsTopBar({
   onNew: () => void;
   onMenu: (a: MenuAction) => void;
 }) {
-  const { isMobile } = useLevelsEnv();
+  const { isMobile, isLandscape } = useLevelsEnv();
   const level = useLevelsStore((s) => s.level);
   const focusId = useLevelsStore((s) => s.focusId);
   const trail = useLevelsStore((s) => s.trail);
@@ -73,11 +73,10 @@ export function LevelsTopBar({
   return (
     <header
       data-levels-topbar
-      className="relative z-30 flex h-14 flex-none items-center gap-3 border-b-2 border-zk-cyan bg-zk-panel px-3 lg:gap-4 lg:px-5"
-     
+      className={`relative z-30 flex flex-none items-center gap-3 border-b-2 border-zk-cyan bg-zk-panel px-3 lg:gap-4 lg:px-5 ${isLandscape ? 'h-11' : 'h-14'}`}
     >
-      <div className="zk-display text-[28px] tracking-widest text-zk-magenta lg:text-[32px]">ZK//OS</div>
-      <div className="zk-display border border-zk-cyan px-2 text-lg leading-6 text-zk-cyan lg:text-xl">{LEVEL_TAG[level]}</div>
+      <div className={`zk-display tracking-widest text-zk-magenta lg:text-[32px] ${isLandscape ? 'text-[22px]' : 'text-[28px]'}`}>ZK//OS</div>
+      <div className={`zk-display border border-zk-cyan px-2 text-zk-cyan lg:text-xl ${isLandscape ? 'text-base leading-5' : 'text-lg leading-6'}`}>{LEVEL_TAG[level]}</div>
 
       {!isMobile && (
         <>

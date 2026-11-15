@@ -46,7 +46,8 @@ type Toast = { msg: string; action?: { label: string; run: () => void } };
 
 function LevelsInner() {
   useLevelsSync();
-  const { isMobile, data } = useLevelsEnv();
+  const { isMobile, isLandscape, data } = useLevelsEnv();
+  const editing = useLevelsStore((s) => s.editing);
   const actions = useLevelActions();
   const [search, setSearch] = useState<SearchFilters | null>(null);
   const [modal, setModal] = useState<'settings' | 'tags' | 'passkeys' | null>(null);
@@ -133,8 +134,9 @@ function LevelsInner() {
   ];
 
   return (
-    <div className="zk-root fixed inset-0 flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
-      <LevelsTopBar onSearch={() => setSearch({})} onNew={onNew} onMenu={onMenu} />
+    <div className="zk-root fixed inset-0 flex flex-col overflow-hidden" style={{ height: '100dvh' }} data-mobile={isMobile ? '' : undefined}>
+      {/* Paisagem curta + edição: só o editor e a barra de formatação (o slot do filho fica, o resto da árvore não remonta). */}
+      {!(isLandscape && editing !== null) && <LevelsTopBar onSearch={() => setSearch({})} onNew={onNew} onMenu={onMenu} />}
       <div className="relative min-h-0 flex-1 overflow-hidden">{isMobile ? <MobileLevels /> : <DesktopLevels />}</div>
       <Vignette />
 
@@ -315,13 +317,14 @@ function MobileLevels(): ReactNode {
   const level = useLevelsStore((s) => s.level);
   const editing = useLevelsStore((s) => s.editing);
   const consulted = useLevelsStore((s) => s.consulted);
+  const { isLandscape } = useLevelsEnv();
   const actions = useLevelActions();
   const idx = MOBILE_LEVELS.indexOf(level);
   const labels = { focus: 'FOCO', memory: `MESA [${consulted.length}]`, map: 'MAPA' } as const;
 
   return (
-    <div className="absolute inset-0 flex flex-col">
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+    <div className={`absolute inset-0 flex ${isLandscape ? 'flex-row' : 'flex-col'}`}>
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         <div
           className="zk-levels-track absolute inset-x-0 top-0"
           style={{ height: '300%', transform: `translateY(-${(idx * 100) / 3}%)`, transition: TRACK_TRANSITION }}
@@ -339,7 +342,14 @@ function MobileLevels(): ReactNode {
       </div>
       {/* Em edição a barra de formatação do editor ocupa o rodapé. */}
       {editing === null && (
-        <nav aria-label="Níveis" className="flex h-[72px] flex-none gap-[6px] bg-zk-bg px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2">
+        <nav
+          aria-label="Níveis"
+          className={
+            isLandscape
+              ? 'order-first flex flex-none flex-col gap-[6px] bg-zk-bg py-2 pl-[max(8px,env(safe-area-inset-left))] pr-1'
+              : 'flex h-[72px] flex-none gap-[6px] bg-zk-bg px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2'
+          }
+        >
           {MOBILE_LEVELS.map((l) => {
             const on = l === level;
             return (
@@ -348,8 +358,9 @@ function MobileLevels(): ReactNode {
                 type="button"
                 aria-current={on ? 'page' : undefined}
                 onClick={() => void actions.go(l)}
-                className="zk-display min-h-[56px] flex-1 border text-[22px] leading-none"
+                className={`zk-display flex-1 border text-[22px] leading-none ${isLandscape ? 'w-11' : 'min-h-[56px]'}`}
                 style={{
+                  ...(isLandscape ? { writingMode: 'vertical-rl', transform: 'rotate(180deg)' } : null),
                   borderColor: 'var(--zk-cyan)',
                   background: on ? 'var(--zk-cyan)' : 'var(--zk-bg-panel)',
                   color: on ? 'var(--zk-black)' : 'var(--zk-cyan)',
