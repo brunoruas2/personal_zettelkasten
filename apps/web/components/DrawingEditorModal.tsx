@@ -9,6 +9,9 @@ import {
   MIN_ZOOM,
   SKETCH_COLORS,
   SKETCH_SIZES,
+  MAX_DRAWING_BYTES,
+  drawingWeightLevel,
+  formatDrawingBytes,
   parseSketchScene,
   serializeSketchScene,
   themeColor,
@@ -22,6 +25,7 @@ import {
   type SketchTool,
 } from './SketchCanvas'
 import { sceneToSvg } from '../lib/sketchRender'
+import { measureDrawingBytes } from '../lib/drawingWeight'
 import { useDrawingFocusStore } from '../store/useDrawingFocusStore'
 import { useThemeVariant } from './galaxy/themeVariant'
 import {
@@ -89,6 +93,13 @@ function fullscreenSupported(el: HTMLElement | null): boolean {
   return !!el && typeof el.requestFullscreen === 'function'
 }
 
+/** Cor do indicador de peso por faixa (strings completas para o Tailwind). */
+const WEIGHT_CLASS = {
+  ok: 'text-zinc-500 dark:text-zinc-400',
+  warn: 'font-medium text-amber-600 dark:text-amber-400',
+  over: 'font-medium text-red-600 dark:text-red-400',
+} as const
+
 /**
  * Editor de desenho: overlay `fixed` sobre um canvas 2D próprio (ver `SketchCanvas`).
  * Salvar e Cancelar são explícitos (sem autosave): salvar grava cena + SVG de
@@ -122,6 +133,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   const [color, setColor] = React.useState<string>(SKETCH_COLORS[0])
   const [size, setSize] = React.useState<number>(4)
   const [zoom, setZoom] = React.useState(1)
+  const [weight, setWeight] = React.useState(0)
   // Lazy: o valor tem que existir antes de o canvas montar (a primeira pintura já sai no tema certo).
   const [theme, setTheme] = React.useState<SketchTheme>(readInitialTheme)
 
@@ -134,6 +146,26 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   savingRef.current = saving
   const fullscreenRef = React.useRef(false)
   fullscreenRef.current = fullscreen
+
+  // Peso do desenho (cena + SVG) contra o teto do servidor. Debounce + idle: sceneToSvg percorre
+  // todos os traços, então nunca roda durante o traço (o engine só emite no pointerup).
+  React.useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    let idleId: number | undefined
+    const run = () => {
+      const c = canvasRef.current
+      if (c) setWeight(measureDrawingBytes(c.getScene()))
+    }
+    const timer = window.setTimeout(() => {
+      if (typeof window.requestIdleCallback === 'function') idleId = window.requestIdleCallback(run, { timeout: 1000 })
+      else run()
+    }, 500)
+    return () => {
+      window.clearTimeout(timer)
+      if (idleId !== undefined) window.cancelIdleCallback(idleId)
+    }
+  }, [eng])
 
   // Modo desenho: galáxia suspensa e sync de background adiado enquanto o modal existe.
   // Layout effect: liga antes da primeira pintura do canvas.
@@ -477,6 +509,17 @@ export function DrawingEditorModal({ id, onClose }: Props) {
             Desenho
             {eng.dirty ? <span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">não salvo</span> : null}
           </span>
+
+          {ready && (
+            <span
+              aria-live="polite"
+              title="Peso do desenho (cena + SVG). O servidor aceita até 2 MB; acima disso o desenho fica só neste aparelho."
+              className={`text-xs tabular-nums ${WEIGHT_CLASS[drawingWeightLevel(weight)]}`}
+            >
+              {formatDrawingBytes(weight)} / {formatDrawingBytes(MAX_DRAWING_BYTES).replace(',00', '')}
+              {weight > MAX_DRAWING_BYTES ? ' — acima do limite, não sincroniza' : ''}
+            </span>
+          )}
 
           {ready && (
             <>

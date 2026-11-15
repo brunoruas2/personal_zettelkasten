@@ -15,6 +15,7 @@ export * from './services/SketchHistory';
 export * from './services/SketchPath';
 export * from './services/SketchTheme';
 export * from './services/SketchSelection';
+export * from './services/DrawingWeight';
 export * from './models/GalaxyPosition';
 export * from './services/GalaxyPlacement';
 export * from './services/GalaxyLayout';
