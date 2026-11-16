@@ -25,7 +25,13 @@ export interface InplaceEditorHandle {
   focusTitle: () => void;
   /** Título, corpo e tags vazios agora (estado do editor, não do índice). */
   isEmpty: () => boolean;
+  /** Há algo ainda não gravado (autosave agendado, anexo pendente ou estado ≠ último save). */
+  isDirty: () => boolean;
+  /** O zettel tem exatamente o conteúdo do último save deste editor (foi o nosso save). */
+  matchesSaved: (z: Pick<Zettel, 'title' | 'body' | 'tags'>) => boolean;
 }
+
+const sameTags = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((t, i) => t === b[i]);
 
 const AUTOSAVE_MS = 1000;
 const TOOLBAR_KEY = 'zettel_mobile_toolbar';
@@ -62,8 +68,12 @@ export const InplaceEditor = forwardRef<
     renderedBlocks?: boolean;
     /** Ctrl/⌘+clique num `[[link]]` do corpo (título do alvo); grava antes de chamar. */
     onOpenWikiLink?: (title: string) => void;
+    /** Foca o corpo ao montar (padrão). O Foco "folha de papel" monta sem roubar o foco. */
+    autoFocus?: boolean;
+    /** Chamado uma vez, quando o TipTap existe (para trocar o placeholder sem salto). */
+    onReady?: () => void;
   }
->(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink, onPending, initialCaret, renderedBlocks, onOpenWikiLink }, ref) {
+>(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink, onPending, initialCaret, renderedBlocks, onOpenWikiLink, autoFocus = true, onReady }, ref) {
   const updateZettel = useZettelStore((s) => s.updateZettel);
   const zettels = useZettelStore((s) => s.zettels);
   const allTags = useMemo(() => [...new Set(zettels.flatMap((z) => z.tags))].sort(), [zettels]);
@@ -173,15 +183,38 @@ export const InplaceEditor = forwardRef<
         const { title: t, body: b, tags: tg } = latestRef.current;
         return t.trim() === '' && b.trim() === '' && tg.length === 0;
       },
+      isDirty: () => {
+        const cur = latestRef.current;
+        const saved = savedRef.current;
+        return (
+          timerRef.current !== null ||
+          pendingImagesRef.current > 0 ||
+          cur.body !== saved.body ||
+          cur.title.trim() !== saved.title ||
+          !sameTags(cur.tags, saved.tags)
+        );
+      },
+      matchesSaved: (z) => {
+        const saved = savedRef.current;
+        return z.body === saved.body && z.title === saved.title && sameTags(z.tags, saved.tags);
+      },
     }),
     [saveContent, saveTitle],
   );
 
   useEffect(() => {
     if (autoFocusTitle) titleRef.current?.focus();
-    else if (!initialCaret) editorRef.current?.focus({ scrollIntoView: false });
+    else if (autoFocus && !initialCaret) editorRef.current?.focus({ scrollIntoView: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const readyDoneRef = useRef(false);
+  useEffect(() => {
+    if (!editor || readyDoneRef.current) return;
+    readyDoneRef.current = true;
+    onReady?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
 
   // Duplo clique na leitura: cursor no trecho clicado, uma única vez, assim que
   // o TipTap existe (o título tem precedência).

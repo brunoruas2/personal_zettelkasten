@@ -654,9 +654,23 @@ function CodeBlockNodeView({ node, updateAttributes, editor, getPos }: {
     </>
   );
 
+  // "Salvar" da transposição: troca o conteúdo deste bloco numa transação (desfazível);
+  // o autosave do editor persiste. `getPos` garante que só este bloco muda.
+  const saveChords = (next: string) => {
+    const pos = getPos();
+    if (typeof pos !== 'number' || !editor.isEditable) return;
+    const { state } = editor;
+    const current = state.doc.nodeAt(pos);
+    if (!current || current.type.name !== 'codeBlock') return;
+    const from = pos + 1;
+    const to = pos + current.nodeSize - 1;
+    const tr = next ? state.tr.replaceWith(from, to, state.schema.text(next)) : state.tr.delete(from, to);
+    editor.view.dispatch(tr);
+  };
+
   const renderedView =
     language === 'chords' ? (
-      <Chords source={node.textContent} />
+      <Chords source={node.textContent} onSave={editor.isEditable ? saveChords : undefined} />
     ) : language === 'abc' ? (
       <AbcNotation source={node.textContent} />
     ) : isMermaid ? (
