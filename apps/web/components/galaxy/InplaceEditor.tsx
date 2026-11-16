@@ -60,8 +60,10 @@ export const InplaceEditor = forwardRef<
     initialCaret?: CaretAnchor | null;
     /** ZK//OS: blocos pesados renderizados no editor, com lápis. */
     renderedBlocks?: boolean;
+    /** Ctrl/⌘+clique num `[[link]]` do corpo (título do alvo); grava antes de chamar. */
+    onOpenWikiLink?: (title: string) => void;
   }
->(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink, onPending, initialCaret, renderedBlocks }, ref) {
+>(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink, onPending, initialCaret, renderedBlocks, onOpenWikiLink }, ref) {
   const updateZettel = useZettelStore((s) => s.updateZettel);
   const zettels = useZettelStore((s) => s.zettels);
   const allTags = useMemo(() => [...new Set(zettels.flatMap((z) => z.tags))].sort(), [zettels]);
@@ -271,6 +273,7 @@ export const InplaceEditor = forwardRef<
               onPendingImagesChange={setPendingImages}
               onCreateLink={onCreateLink}
               renderedBlocks={renderedBlocks}
+              onWikiLinkOpen={onOpenWikiLink}
             />
           </DrawingEditHost>
         </div>

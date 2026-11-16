@@ -173,6 +173,18 @@ select {
   }
 }
 
+/* ── Wiki link no editor (lib/editorDecorations.ts): mesma cara do link da leitura.
+   A sintaxe `[[`/`]]` (e `alvo|`) fica visível, porém esmaecida — é texto editável. */
+.ProseMirror .zk-wikilink {
+  color: rgb(var(--color-brand-light));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ProseMirror .zk-wikilink-syntax {
+  opacity: 0.45;
+  text-decoration: none;
+}
+
 /* ── highlight.js — transparent bg so the wrapper div controls background */
 .hljs {
   background: transparent !important;
