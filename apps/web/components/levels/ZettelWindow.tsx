@@ -150,12 +150,15 @@ export function requestTitleFocus(id: string): void {
   titleFocusId = id;
 }
 
+const STALE_NOTICE = 'Corpo desatualizado neste aparelho. Aguarde o sync para editar.';
+
 export interface ZettelWindowProps {
   id: string;
   /** Cor do cluster (a janela vira âmbar enquanto edita). */
   accent: string;
   editing: boolean;
-  onStartEdit: () => void;
+  /** Entra em edição explícita. Sem ele (Mesa), a janela é só leitura: sem EDIT nem duplo clique. */
+  onStartEdit?: () => void;
   onStopEdit: () => void;
   /** Depois de gravar e sair da edição; `empty` = título, corpo e tags vazios. */
   onFinished?: (info: { empty: boolean }) => void;
@@ -177,12 +180,19 @@ export interface ZettelWindowProps {
   label?: string;
   /** Celular no Foco: sem barra de título nem rodapé, só o zettel. */
   compact?: boolean;
+  /**
+   * Folha de papel (Foco no desktop): o editor é a própria página, sem modo de
+   * leitura. A leitura só aparece como placeholder enquanto o editor monta e
+   * quando o corpo está desatualizado.
+   */
+  alwaysEdit?: boolean;
 }
 
 /**
  * Janela de um zettel: leitura (MarkdownRenderer) e edição (InplaceEditor) no
  * mesmo lugar. Clicar no texto ou num diagrama, ou "Editar", entra em
- * edição; "Concluir"/Esc grava e volta à leitura.
+ * edição; "Concluir"/Esc grava e volta à leitura. Com `alwaysEdit`, não há
+ * troca de modo: o editor está sempre montado (spec focus-screen).
  */
 export function ZettelWindow({
   id,
@@ -202,19 +212,26 @@ export function ZettelWindow({
   style,
   label,
   compact = false,
+  alwaysEdit = false,
 }: ZettelWindowProps) {
   const { isMobile, resolveTitle, createLinked } = useLevelsEnv();
+  const paper = alwaysEdit && !editing;
+  const editorOn = editing || paper;
+  const [focused, setFocused] = useState(false);
+  const amber = editing || (paper && focused);
   const scalePercent = useReadingScale();
   const scaleStyle = {
     ...style,
     '--zk-read-scale': scalePercent / 100,
     '--zk-title-size': `${isMobile || compact ? 23 : 39}px`,
-    '--zk-title-color': editing ? EDIT_ACCENT : accent,
+    '--zk-title-color': amber ? EDIT_ACCENT : accent,
     '--zk-pad-x': isMobile ? '0.75rem' : '3.5rem',
   } as CSSProperties;
   const zettels = useZettelStore((s) => s.zettels);
   const meta = useMemo(() => indexById(zettels).get(id), [zettels, id]);
   const { body, status: bodyStatus } = useZettelBody(id);
+  // Folha de papel: o editor só monta com o corpo em dia (stale = leitura com aviso).
+  const paperReady = paper ? bodyStatus === 'ready' : true;
 
   const updateZettel = useZettelStore((s) => s.updateZettel);
 
@@ -231,29 +248,46 @@ export function ZettelWindow({
   const [notice, setNotice] = useState<string | null>(null);
   const [save, setSave] = useState<SaveStatus>('idle');
   const [focusTitle, setFocusTitle] = useState(false);
+  const [readyKey, setReadyKey] = useState<string | null>(null);
   const editorRef = useRef<InplaceEditorHandle>(null);
   // Ponto do duplo clique, consumido pelo editor ao montar; limpo ao sair da edição.
   const caretRef = useRef<CaretAnchor | null>(null);
   const stopRef = useRef(onStopEdit);
   stopRef.current = onStopEdit;
+  const idRef = useRef(id);
+  idRef.current = id;
+  const focusedRef = useRef(false);
+  focusedRef.current = focused;
+  // Mudança vinda de outro aparelho com o cursor no editor: recarrega no blur.
+  const pendingReloadRef = useRef(false);
+  const editRootRef = useRef<HTMLDivElement>(null);
 
-  // Entrou em edição: carrega o zettel inteiro. Corpo desatualizado não edita
+  // Editor ligado: carrega o zettel inteiro. Corpo desatualizado não edita
   // (escrever dele sobrescreveria a versão de outro aparelho).
   useEffect(() => {
-    if (!editing) {
+    if (!editorOn) {
       caretRef.current = null;
       setZettel(null);
       setSave('idle');
+      return;
+    }
+    if (!paperReady) {
+      // Com alteração local pendente o editor fica: gravar com corpo novo é
+      // permitido e vence pelo LWW, como numa sessão de edição longa.
+      if (editorRef.current?.isDirty()) return;
+      setZettel(null);
+      if (bodyStatus === 'stale') setNotice(STALE_NOTICE);
       return;
     }
     let cancelled = false;
     void loadZettel(id).then(({ zettel: z, stale }) => {
       if (cancelled) return;
       if (!z) {
-        stopRef.current();
+        if (!paper) stopRef.current();
       } else if (stale) {
-        setNotice('Corpo desatualizado neste aparelho. Aguarde o sync para editar.');
-        stopRef.current();
+        setNotice(STALE_NOTICE);
+        if (paper) setZettel(null);
+        else stopRef.current();
       } else {
         setNotice(null);
         if (titleFocusId === id) {
@@ -266,7 +300,9 @@ export function ZettelWindow({
     return () => {
       cancelled = true;
     };
-  }, [editing, id]);
+    // bodyStatus só importa via paperReady (o aviso de stale é lido na hora).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorOn, paper, paperReady, id]);
 
   // Registra o flush enquanto o editor está montado; sair da janela grava.
   useEffect(() => {
@@ -279,6 +315,31 @@ export function ZettelWindow({
       void handle?.flush();
     };
   }, [zettel]);
+
+  // Folha de papel: zettel alterado por fora (pull) com o editor montado. Nosso
+  // próprio save é ignorado; alteração local pendente vence; senão remonta
+  // com a versão nova (no blur, se o cursor está no editor).
+  const reloadIfClean = useCallback(() => {
+    void loadZettel(idRef.current).then(({ zettel: z, stale }) => {
+      const h = editorRef.current;
+      if (!z || stale || !h || z.id !== idRef.current) return;
+      if (h.matchesSaved(z) || h.isDirty()) {
+        pendingReloadRef.current = false;
+        return;
+      }
+      if (focusedRef.current) {
+        pendingReloadRef.current = true;
+        return;
+      }
+      pendingReloadRef.current = false;
+      setZettel(z);
+    });
+  }, []);
+  const metaUpdatedAt = meta?.updatedAt ?? 0;
+  useEffect(() => {
+    if (!paper || !zettel || zettel.id !== id || metaUpdatedAt <= zettel.updatedAt) return;
+    reloadIfClean();
+  }, [paper, zettel, id, metaUpdatedAt, reloadIfClean]);
 
   const finish = useCallback(async () => {
     const empty = editorRef.current?.isEmpty() ?? false;
@@ -302,9 +363,26 @@ export function ZettelWindow({
     return () => window.removeEventListener('keydown', onKey);
   }, [editing, finish]);
 
+  // Folha de papel: Esc dentro do editor só tira o cursor dele (e grava).
+  useEffect(() => {
+    if (!paper) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const t = e.target as HTMLElement | null;
+      if (!t || !editRootRef.current?.contains(t)) return;
+      const inEditor = !!t.closest?.('.ProseMirror');
+      if (e.defaultPrevented && !inEditor) return;
+      void editorRef.current?.flush();
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [paper]);
+
   // Duplo clique no corpo entra em edição com o cursor onde se clicou. O clique
   // simples só seleciona/segue links. EDIT e atalhos entram sem âncora (início).
   const onBodyDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (!onStartEdit) return;
     const t = e.target as HTMLElement;
     if (t.closest('a,button,input,textarea,summary,[data-no-edit]')) return;
     caretRef.current = captureCaretAnchor(e, e.currentTarget);
@@ -316,29 +394,49 @@ export function ZettelWindow({
   const tags = meta?.tags ?? [];
   const code = zkCode(id);
   const pad = isMobile ? 'px-3' : 'px-14';
-  const winAccent = editing ? EDIT_ACCENT : accent;
+  const winAccent = amber ? EDIT_ACCENT : accent;
 
   const readingMenu: MenuAction[] = [
     ...(onBack ? [{ label: '← Voltar', onClick: onBack }] : []),
     ...(menuActions ?? []),
   ];
 
-  const header = `${code} — ${title.toUpperCase()}${editing ? ' · EDITANDO' : titleSuffix ? ` · ${titleSuffix}` : ''}`;
+  const header = `${code} — ${title.toUpperCase()}${amber ? ' · EDITANDO' : titleSuffix ? ` · ${titleSuffix}` : ''}`;
+
+  const openWikiLink = (t: string) => {
+    // As actions (focus/consult) já gravam a edição antes de trocar.
+    const target = resolveTitle(t);
+    if (target) onOpenLink(target);
+  };
+
+  const editorKey = zettel ? `${zettel.id}:${zettel.updatedAt}` : null;
+  const editorMounted = paper && !!zettel && zettel.id === id;
+  const editorShown = editorMounted && readyKey === editorKey;
+
+  // Zettel novo na folha de papel: cursor no título assim que o editor aparece
+  // (antes disso ele está `invisible` e não aceita foco).
+  useEffect(() => {
+    if (!paper || !editorShown || !focusTitle) return;
+    editorRef.current?.focusTitle();
+    setFocusTitle(false);
+  }, [paper, editorShown, focusTitle]);
 
   return (
     <Win accent={winAccent} label={label ?? title} className={className} style={scaleStyle}>
       {!(compact && !editing) && <TitleBar>{header}</TitleBar>}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {!editing && (
+          {!editorOn && (
             <>
               {/* Celular: barra fixa fora da rolagem; o resto das ações mora no menu ⋯. */}
               {compact && (
                 <div className="flex flex-none flex-wrap items-center justify-end gap-1 px-2 pb-1 pt-2">
                   <FontSizeControl percent={scalePercent} />
-                  <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
-                    EDIT
-                  </NeonButton>
+                  {onStartEdit && (
+                    <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
+                      EDIT
+                    </NeonButton>
+                  )}
                   {readingMenu.length > 0 && <ActionsMenu items={readingMenu} />}
                 </div>
               )}
@@ -352,9 +450,11 @@ export function ZettelWindow({
                           ← VOLTAR
                         </NeonButton>
                       )}
-                      <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
-                        EDIT
-                      </NeonButton>
+                      {onStartEdit && (
+                        <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
+                          EDIT
+                        </NeonButton>
+                      )}
                     </div>
                   </div>
                 )}
@@ -374,13 +474,12 @@ export function ZettelWindow({
                       <MarkdownRenderer
                         body={body}
                         onBodyChange={bodyStatus === 'ready' ? onBodyChange : undefined}
-                        onLinkPress={(t) => {
-                          const target = resolveTitle(t);
-                          if (target) onOpenLink(target);
-                        }}
+                        onLinkPress={openWikiLink}
                       />
                     ) : (
-                      <p className="zk-display text-xl text-zk-dim">Sem conteúdo. Dê dois cliques para escrever.</p>
+                      <p className="zk-display text-xl text-zk-dim">
+                        {onStartEdit ? 'Sem conteúdo. Dê dois cliques para escrever.' : 'Sem conteúdo.'}
+                      </p>
                     )}
                   </div>
                 )}
@@ -396,7 +495,7 @@ export function ZettelWindow({
               {!compact && actions}
               {!compact && (
                 <StatusBar
-                  left={`${code} · duplo clique no texto ou no diagrama para editar`}
+                  left={`${code} · ${onStartEdit ? 'duplo clique no texto ou no diagrama para editar' : 'ABRIR EM FOCO para editar'}`}
                   right={
                     <>
                       <span className="text-zk-green">{linkCount}</span> ligações{meta ? ` · ${editedAgo(meta.updatedAt)}` : ''}
@@ -428,11 +527,7 @@ export function ZettelWindow({
                     renderedBlocks
                     onStatus={setSave}
                     onCreateLink={(t) => createLinked(t, meta?.title)}
-                    onOpenWikiLink={(t) => {
-                      // As actions (focus/consult) já gravam a edição antes de trocar.
-                      const target = resolveTitle(t);
-                      if (target) onOpenLink(target);
-                    }}
+                    onOpenWikiLink={openWikiLink}
                   />
                 ) : (
                   <p className={`zk-display text-xl text-zk-dim ${pad} py-4`}>carregando…</p>
@@ -446,6 +541,89 @@ export function ZettelWindow({
                   </>
                 }
                 right={`${saveLabel(save)} · ${code}`.replace(/^ · /, '')}
+              />
+            </>
+          )}
+          {paper && (
+            <>
+              {/* Sem EDIT/CONCLUIR: a página já é o editor. */}
+              <div className={`flex flex-none items-center justify-end gap-3 pt-4 ${pad}`}>
+                <div className="flex flex-none items-center gap-2">
+                  <FontSizeControl percent={scalePercent} />
+                  {onBack && (
+                    <NeonButton onClick={onBack} aria-label="Voltar ao zettel anterior">
+                      ← VOLTAR
+                    </NeonButton>
+                  )}
+                </div>
+              </div>
+              <div
+                ref={editRootRef}
+                className="zk-edit relative flex min-h-0 flex-1 flex-col overflow-hidden"
+                onFocus={() => setFocused(true)}
+                onBlur={(e) => {
+                  if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                  focusedRef.current = false;
+                  setFocused(false);
+                  if (pendingReloadRef.current) reloadIfClean();
+                }}
+              >
+                {!editorShown && (
+                  // Placeholder com a geometria do editor (head + rolagem): a troca não desloca o texto.
+                  <div className="flex h-full min-h-0 flex-col" aria-busy={paperReady}>
+                    <div data-zettel-head>
+                      <div data-zettel-title className="truncate">
+                        {meta?.title.trim() ? meta.title : ' '}
+                      </div>
+                    </div>
+                    <div data-card-scroll className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-3">
+                      {(bodyStatus === 'ready' || bodyStatus === 'stale') && body.trim() && (
+                        <div className="zk-md dark cursor-text">
+                          <MarkdownRenderer body={body} onLinkPress={openWikiLink} />
+                        </div>
+                      )}
+                      {bodyStatus === 'missing' && (
+                        <p className="zk-display text-xl text-zk-dim">Corpo ainda não baixado neste aparelho.</p>
+                      )}
+                      {notice && <p className="zk-display mt-3 text-lg text-zk-amber">{notice}</p>}
+                    </div>
+                  </div>
+                )}
+                {editorMounted && zettel && (
+                  <div className={editorShown ? 'flex min-h-0 flex-1 flex-col' : 'pointer-events-none invisible absolute inset-0 flex flex-col'}>
+                    <InplaceEditor
+                      key={editorKey}
+                      ref={editorRef}
+                      zettel={zettel}
+                      variant="card"
+                      autoFocus={false}
+                      renderedBlocks
+                      onStatus={setSave}
+                      onReady={() => setReadyKey(editorKey)}
+                      onCreateLink={(t) => createLinked(t, meta?.title)}
+                      onOpenWikiLink={openWikiLink}
+                    />
+                  </div>
+                )}
+              </div>
+              {actions}
+              <StatusBar
+                mode={focused ? 'edit' : 'read'}
+                left={
+                  focused ? (
+                    <>
+                      -- INSERIR -- <span className="zk-caret" />
+                    </>
+                  ) : (
+                    `${code} · clique no texto para escrever`
+                  )
+                }
+                right={
+                  <>
+                    {saveLabel(save) ? `${saveLabel(save)} · ` : ''}
+                    <span className="text-zk-green">{linkCount}</span> ligações{meta ? ` · ${editedAgo(meta.updatedAt)}` : ''}
+                  </>
+                }
               />
             </>
           )}

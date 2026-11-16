@@ -2,8 +2,9 @@
 
 import { EraserButton } from './EraserButton';
 import { PdfButton } from './PdfButton';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
+import { useZettelStore } from '../../store/useZettelStore';
 import { useLinkIndex } from '../../hooks/useLinkIndex';
 import { ZettelWindow } from './ZettelWindow';
 import { ConnectionsColumn } from './ConnectionsColumn';
@@ -29,6 +30,21 @@ export function FocusScreen() {
   // O foco atual é sempre o último da trilha; o anterior é para onde "Voltar" vai.
   const prevId = trail.length > 1 ? trail[trail.length - 2] : null;
 
+  // Folha de papel (desktop): não há "Concluir", então o zettel novo deixado
+  // vazio é descartado quando o foco troca. As actions gravam antes de trocar,
+  // então o índice já reflete o editor. Mudar de nível não descarta (puxaria de
+  // volta ao Foco).
+  const lastFocusRef = useRef(focusId);
+  useEffect(() => {
+    const prev = lastFocusRef.current;
+    lastFocusRef.current = focusId;
+    if (isMobile || !prev || prev === focusId) return;
+    const meta = useZettelStore.getState().zettels.find((z) => z.id === prev);
+    if (!meta) return;
+    const empty = meta.title.trim() === '' && meta.bodyLen === 0 && meta.tags.length === 0;
+    void discardIfEmpty(prev, empty);
+  }, [focusId, isMobile]);
+
   if (!focusId) {
     return (
       <div className="zk-display flex h-full items-center justify-center text-2xl text-zk-dim">
@@ -45,6 +61,7 @@ export function FocusScreen() {
         id={focusId}
         accent={accentOf(focusId)}
         editing={focusEditing}
+        alwaysEdit={!isMobile}
         onStartEdit={() => startEdit('focus')}
         onStopEdit={stopEdit}
         onFinished={({ empty }) => void discardIfEmpty(focusId, empty)}

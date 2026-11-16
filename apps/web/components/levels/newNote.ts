@@ -24,8 +24,11 @@ async function loadTemplate(): Promise<string> {
   return templateCache ?? '';
 }
 
-/** "+ Nova": cria um zettel, põe em foco e abre a edição com o cursor no título. */
-export async function createNote(): Promise<void> {
+/**
+ * "+ Nova": cria um zettel e põe em foco com o cursor no título. No desktop o
+ * Foco já é o editor (folha de papel); no celular abre a edição explícita.
+ */
+export async function createNote({ explicitEdit }: { explicitEdit: boolean }): Promise<void> {
   const { createZettel } = useZettelStore.getState();
   const z = await createZettel({ title: '', body: await loadTemplate(), tags: [] });
   fresh.add(z.id);
@@ -33,7 +36,7 @@ export async function createNote(): Promise<void> {
   await flushActiveEdit();
   const st = useLevelsStore.getState();
   st.setFocus(z.id);
-  st.startEdit('focus');
+  if (explicitEdit) st.startEdit('focus');
 }
 
 /**

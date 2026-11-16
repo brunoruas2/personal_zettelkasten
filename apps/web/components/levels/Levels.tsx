@@ -73,7 +73,10 @@ function LevelsInner() {
     toastTimer.current = setTimeout(() => setToast(null), 5000);
   }, []);
 
-  const onNew = useCallback(() => void createNote().catch(() => showToast('Não foi possível criar o zettel')), [showToast]);
+  const onNew = useCallback(
+    () => void createNote({ explicitEdit: isMobile }).catch(() => showToast('Não foi possível criar o zettel')),
+    [showToast, isMobile],
+  );
 
   const onMenu = useCallback(
     (a: MenuAction) => {
@@ -108,6 +111,9 @@ function LevelsInner() {
       } else if (e.altKey && e.code === 'KeyZ' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.repeat) {
         const lv = useLevelsStore.getState();
         if (overlayOpen || lv.level !== 'focus' || lv.editing) return;
+        // Folha de papel: com o cursor no editor ou num campo, Alt+Z é do texto.
+        const t = e.target as HTMLElement | null;
+        if (t?.closest?.('input, textarea, select, [contenteditable="true"], .ProseMirror')) return;
         const prevId = lv.trail.length > 1 ? lv.trail[lv.trail.length - 2] : null;
         if (!prevId) return;
         e.preventDefault();

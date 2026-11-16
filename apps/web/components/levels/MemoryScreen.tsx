@@ -85,16 +85,13 @@ export function MemoryScreen() {
   const consulted = useLevelsStore((s) => s.consulted);
   const activeId = useLevelsStore((s) => s.activeId);
   const focusId = useLevelsStore((s) => s.focusId);
-  const editing = useLevelsStore((s) => s.editing);
-  const startEdit = useLevelsStore((s) => s.startEdit);
+  // Mesa é só leitura (spec memory-screen): editar = "ABRIR EM FOCO".
   const stopEdit = useLevelsStore((s) => s.stopEdit);
   const { isMobile, accentOf } = useLevelsEnv();
   const actions = useLevelActions();
   const index = useLinkIndex();
   const zettels = useZettelStore((s) => s.zettels);
   const titles = useMemo(() => new Map(zettels.map((z) => [z.id, z.title])), [zettels]);
-
-  const memEditing = editing === 'memory';
 
   const header = (
     <div className="zk-display flex-none px-1 text-[22px] tracking-wider text-zk-amber">
@@ -120,8 +117,7 @@ export function MemoryScreen() {
     <ZettelWindow
       id={activeId}
       accent={accentOf(activeId)}
-      editing={memEditing}
-      onStartEdit={() => startEdit('memory')}
+      editing={false}
       onStopEdit={stopEdit}
       onOpenLink={(id) => void actions.consult(id)}
       linkCount={index.neighbors(activeId).length}
@@ -132,7 +128,6 @@ export function MemoryScreen() {
           <NeonButton variant="hot" className="flex-1" onClick={() => void actions.focus(activeId)}>
             ABRIR EM FOCO ▲
           </NeonButton>
-          <NeonButton onClick={() => startEdit('memory')}>EDIT</NeonButton>
           <NeonButton onClick={() => void actions.dismiss(activeId)}>FECHAR</NeonButton>
           <PdfButton onClick={() => void actions.requestExport(activeId)} />
           <EraserButton onClick={() => void actions.requestDelete(activeId)} />
@@ -163,7 +158,7 @@ export function MemoryScreen() {
             );
           })}
         </div>
-        {focusId && !memEditing && <MobileConnections focusId={focusId} onOpen={(id) => void actions.consult(id)} />}
+        {focusId && <MobileConnections focusId={focusId} onOpen={(id) => void actions.consult(id)} />}
         {active}
       </div>
     );
