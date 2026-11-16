@@ -44,6 +44,7 @@ import { ZettelImage } from './ZettelImage';
 import { Chords } from './Chords';
 import { AbcNotation } from './AbcNotation';
 import { placeCaret, type CaretAnchor } from '../lib/caretAnchor';
+import { createWikiLinkDecorations, createCodeHighlight } from '../lib/editorDecorations';
 import { useDrawingEditHost } from '../hooks/useDrawingEditHost';
 import { drawingStore, emptyDrawingRecord, subscribeDrawingsBusy, getDrawingsBusy } from '../lib/drawingSync';
 
@@ -147,6 +148,8 @@ interface Props {
   onCreateLink?: (title: string) => void | Promise<void>;
   /** ZK//OS: diagramas, cifras, partituras, imagens e desenhos renderizados no editor. */
   renderedBlocks?: boolean;
+  /** Ctrl/⌘+clique num `[[link]]` do editor: recebe o título do alvo. */
+  onWikiLinkOpen?: (title: string) => void;
 }
 
 /** Item sintético do autocomplete de `[[` que cria o zettel citado. */
@@ -921,8 +924,10 @@ function normalizeSentinelParagraphs(editor: Editor): void {
 // ── TipTapEditor ──────────────────────────────────────────────────────────────
 
 export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
-  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onPendingImagesChange, onCreateLink, renderedBlocks = false }, ref) {
+  function TipTapEditor({ value, onChange, placeholder, className, spellCheck, fontSize, zettels, onEditorReady, onPendingImagesChange, onCreateLink, renderedBlocks = false, onWikiLinkOpen }, ref) {
     const isExternalUpdate = useRef(false);
+    const onWikiLinkOpenRef = useRef(onWikiLinkOpen);
+    onWikiLinkOpenRef.current = onWikiLinkOpen;
 
     // Keep current zettels accessible inside extensions without recreating them
     const zettelsSuggestionRef = useRef<Zettel[]>([]);
@@ -1282,6 +1287,8 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         Placeholder.configure({ placeholder: placeholder ?? '' }),
         WikiLinkExtension,
         SlashCommandExtension,
+        createWikiLinkDecorations(() => onWikiLinkOpenRef.current),
+        createCodeHighlight(RENDERED_LANGS),
       ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);

@@ -428,6 +428,11 @@ export function ZettelWindow({
                     renderedBlocks
                     onStatus={setSave}
                     onCreateLink={(t) => createLinked(t, meta?.title)}
+                    onOpenWikiLink={(t) => {
+                      // As actions (focus/consult) já gravam a edição antes de trocar.
+                      const target = resolveTitle(t);
+                      if (target) onOpenLink(target);
+                    }}
                   />
                 ) : (
                   <p className={`zk-display text-xl text-zk-dim ${pad} py-4`}>carregando…</p>

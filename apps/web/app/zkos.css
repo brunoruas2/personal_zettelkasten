@@ -817,6 +817,12 @@
   color: var(--zk-black);
   opacity: 1;
 }
+/* Wiki link no editor: mesmo verde tracejado da leitura (o hover não inverte —
+   o clique simples posiciona o cursor; abrir é Ctrl/⌘+clique). */
+.zk-edit .ProseMirror .zk-wikilink {
+  color: var(--zk-green);
+  text-decoration-style: dashed;
+}
 
 .zk-hscroll {
   scrollbar-width: none;
