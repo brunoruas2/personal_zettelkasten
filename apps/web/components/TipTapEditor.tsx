@@ -579,20 +579,27 @@ function useSelectionInside(editor: Editor, getPos: () => number | undefined): b
   return inside;
 }
 
-function PencilButton({ onClick, label }: { onClick: () => void; label: string }) {
+/**
+ * Lápis "editar código-fonte" dos diagramas (cifra e partitura têm o seu na barra
+ * do bloco). Sempre montado e escondido por classe: montar/desmontar um nó editável
+ * dentro do node view é uma mutação que o TipTap não ignora no iOS/Android.
+ */
+function PencilButton({ onClick, label, hidden }: { onClick: () => void; label: string; hidden: boolean }) {
   return (
     <button
       type="button"
+      contentEditable={false}
       data-no-edit=""
+      data-edit-source=""
       aria-label={label}
       title={label}
       // mousedown não pode mover a seleção do ProseMirror antes do clique.
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      // right-11: à esquerda do botão de ampliar (right-2) dos blocos renderizados.
-      className="no-print absolute right-11 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-md bg-zinc-100 text-sm text-zinc-400 transition-opacity hover:text-zinc-700 dark:bg-zinc-800 dark:hover:text-zinc-200 lg:h-7 lg:w-7 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+      // right-11: à esquerda do botão de ampliar (right-2) dos diagramas.
+      className={`no-print absolute right-11 top-2 z-10 h-8 w-8 items-center justify-center rounded-md bg-zinc-100 text-sm text-zinc-400 transition-opacity hover:text-zinc-700 dark:bg-zinc-800 dark:hover:text-zinc-200 lg:h-7 lg:w-7 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 ${hidden ? 'hidden' : 'flex'}`}
     >
-      ✏️
+      ✎
     </button>
   );
 }
@@ -668,32 +675,61 @@ function CodeBlockNodeView({ node, updateAttributes, editor, getPos }: {
     editor.view.dispatch(tr);
   };
 
+  const openSource = () => {
+    const pos = getPos();
+    if (typeof pos === 'number') editor.chain().focus().setTextSelection(pos + 1).run();
+  };
+  // Fechado: o botão de editar mora na barra da cifra/partitura.
+  const editFromBar = isRenderedKind && !inside ? openSource : undefined;
+
   const renderedView =
     language === 'chords' ? (
-      <Chords source={node.textContent} onSave={editor.isEditable ? saveChords : undefined} />
+      <Chords source={node.textContent} onSave={editor.isEditable ? saveChords : undefined} onEditSource={editFromBar} />
     ) : language === 'abc' ? (
-      <AbcNotation source={node.textContent} />
+      <AbcNotation source={node.textContent} onEditSource={editFromBar} />
     ) : isMermaid ? (
       <MermaidBlock source={debouncedSource} />
     ) : (
       <PlantUmlBlock source={debouncedSource} />
     );
 
-  // Fechado: só o render + lápis. O NodeViewContent segue montado (escondido):
-  // é o contentDOM do ProseMirror. Selecionar o nó (lápis, setas, duplo clique
-  // na leitura) abre o código-fonte.
-  if (isRenderedKind && !inside) {
+  // Blocos renderizados (ZK//OS): UMA árvore só, aberta ou fechada. O
+  // NodeViewContent (contentDOM do ProseMirror) nunca muda de pai — fechado, a
+  // coluna de código só ganha `hidden`. Trocar de árvore movia o contentDOM, e no
+  // iOS/Android o TipTap não ignora essa mutação (`NodeView.ignoreMutation`): o
+  // ProseMirror relia o DOM, a seleção alternava dentro/fora e o editor travava
+  // num laço. Mudança de classe/atributo é ignorada.
+  if (isRenderedKind) {
+    const open = inside;
+    const side = diagramLayout === 'side';
+    const wrapperClass = !open
+      ? 'group relative my-2'
+      : isDiagram
+        ? side
+          ? 'group relative my-2 flex flex-col lg:flex-row overflow-hidden'
+          : 'group relative my-2 flex flex-col overflow-hidden'
+        : 'group relative my-2';
+    const codeColClass = !open
+      ? 'hidden'
+      : isDiagram
+        ? side
+          ? 'lg:w-1/2 min-w-0 overflow-x-auto'
+          : 'w-full min-w-0 overflow-x-auto'
+        : 'min-w-0 overflow-x-auto';
+    const renderColClass = !open
+      ? 'min-w-0'
+      : isDiagram
+        ? side
+          ? 'lg:w-1/2 min-w-0 max-h-64 lg:max-h-none overflow-y-auto p-2'
+          : 'w-full min-w-0 max-h-64 lg:max-h-[32rem] overflow-y-auto p-2'
+        : 'min-w-0 pt-2';
     return (
-      <NodeViewWrapper as="div" data-code-block data-rendered className="group relative my-2">
-        <div contentEditable={false} className="min-w-0">{renderedView}</div>
-        <PencilButton
-          label="Editar código-fonte"
-          onClick={() => {
-            const pos = getPos();
-            if (typeof pos === 'number') editor.chain().focus().setTextSelection(pos + 1).run();
-          }}
-        />
-        <NodeViewContent className="hidden" />
+      <NodeViewWrapper as="div" data-code-block data-rendered data-open={open ? '' : undefined} className={wrapperClass}>
+        <div data-code-col className={codeColClass}>{codeArea}</div>
+        <div contentEditable={false} data-render-col className={renderColClass}>
+          {renderedView}
+        </div>
+        {isDiagram && <PencilButton label="Editar código-fonte" hidden={open} onClick={openSource} />}
       </NodeViewWrapper>
     );
   }
@@ -702,11 +738,6 @@ function CodeBlockNodeView({ node, updateAttributes, editor, getPos }: {
     return (
       <NodeViewWrapper as="div" data-code-block className="my-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-x-auto">
         {codeArea}
-        {isRenderedKind && (
-          <div contentEditable={false} className="border-t border-zinc-200 p-2 dark:border-zinc-700">
-            {renderedView}
-          </div>
-        )}
       </NodeViewWrapper>
     );
   }

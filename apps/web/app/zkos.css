@@ -594,10 +594,29 @@
 
 /* Bloco de código (```) no editor: mesma caixa de terminal da leitura.
    Os utilitários zinc do NodeView perdem por especificidade (classe + atributo + *). */
-.zk-edit [data-code-block] {
+.zk-edit [data-code-block]:not([data-rendered]),
+.zk-edit [data-rendered] [data-code-col]:not(.hidden) {
   background: var(--zk-bg-inset);
   border: 1.5px solid var(--zk-line-strong);
   border-radius: 0;
+}
+/* Bloco renderizado (cifra, partitura, diagrama): sem moldura própria em volta do
+   render — a caixa é a do próprio render, igual à leitura. */
+.zk-edit [data-code-block][data-rendered] {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+/* Botão "editar código-fonte" (barra da partitura, lápis dos diagramas): botão do tema. */
+.zk-edit [data-edit-source] {
+  border: 1.5px solid var(--zk-cyan);
+  border-radius: 0;
+  color: var(--zk-cyan);
+  background: var(--zk-bg-inset);
+}
+.zk-edit [data-edit-source]:hover {
+  background: var(--zk-cyan);
+  color: var(--zk-black);
 }
 .zk-edit [data-code-block] [data-node-view-content] {
   color: var(--zk-text);
@@ -606,13 +625,14 @@
   color: var(--zk-dim);
   background: transparent;
 }
-.zk-edit [data-code-block] [contenteditable='false']:not(:has(svg)) {
+/* A coluna do render fica de fora: a cifra tem cores próprias (acordes âmbar, letra --zk-text). */
+.zk-edit [data-code-block] [contenteditable='false']:not(:has(svg)):not([data-render-col]) {
   color: var(--zk-dim);
 }
 .zk-edit [data-code-block] pre,
 .zk-edit [data-code-block] code,
 .zk-edit [data-code-block] [data-node-view-content],
-.zk-edit [data-code-block] > div,
+.zk-edit [data-code-block] > div:not([data-render-col]),
 .zk-edit [data-code-block] input {
   font-family: var(--font-vt323), ui-monospace, monospace;
   font-size: 19px;
@@ -769,7 +789,8 @@
 .zk-edit .ProseMirror table .selectedCell {
   background: #0a1626;
 }
-.zk-md .font-mono {
+.zk-md .font-mono,
+.zk-edit [data-render-col] .font-mono {
   font-size: calc(19px * var(--zk-read-scale, 1)); /* VT323 é pequena: cifra e código ganham corpo */
   line-height: 1.25;
 }
@@ -777,18 +798,20 @@
 /* Bloco de cifra: caixa de terminal, acordes âmbar (contraste). Ganchos
    data-* vêm do Chords.tsx; a especificidade (classe + atributo + *) vence
    os utilitários zinc/brand sem !important. */
-.zk-md [data-chords] {
+/* Leitura (.zk-md) e editor (.zk-edit) iguais (spec zkos-chord-block-style). */
+:is(.zk-md, .zk-edit) [data-chords] {
   background: var(--zk-bg-inset);
   border: 1.5px solid var(--zk-line-strong);
   border-radius: 0;
+  font-family: var(--font-vt323), ui-monospace, monospace;
 }
-.zk-md [data-chords-bar] {
+:is(.zk-md, .zk-edit) [data-chords-bar] {
   border-bottom: 1.5px solid var(--zk-line);
 }
-.zk-md [data-chords-bar] span {
+:is(.zk-md, .zk-edit) [data-chords-bar] span {
   color: var(--zk-dim);
 }
-.zk-md [data-chords-bar] button {
+:is(.zk-md, .zk-edit) [data-chords-bar] button {
   border: 1.5px solid var(--zk-cyan);
   border-radius: 0;
   color: var(--zk-cyan);
@@ -796,15 +819,20 @@
   padding: 0 8px;
   font-weight: 400;
 }
-.zk-md [data-chords-bar] button:hover {
+:is(.zk-md, .zk-edit) [data-chords-bar] button:hover {
   background: var(--zk-cyan);
   color: var(--zk-black);
-  opacity: 1;
 }
-.zk-md [data-chords-sheet] * {
+/* Hover tira o fade do botão de editar só no hover do mouse (no toque ele já é visível). */
+@media (hover: hover) {
+  :is(.zk-md, .zk-edit) [data-chords-bar] button:hover {
+    opacity: 1;
+  }
+}
+:is(.zk-md, .zk-edit) [data-chords-sheet] * {
   color: var(--zk-text);
 }
-.zk-md [data-chords-sheet] [data-chord] {
+:is(.zk-md, .zk-edit) [data-chords-sheet] [data-chord] {
   color: var(--zk-amber);
 }
 

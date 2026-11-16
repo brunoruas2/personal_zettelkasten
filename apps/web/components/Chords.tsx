@@ -154,10 +154,13 @@ export function Chords({
   source,
   fontSize,
   onSave,
+  onEditSource,
 }: {
   source: string;
   fontSize?: number;
   onSave?: (newSource: string) => void;
+  /** Editor do ZK//OS: botão "editar código-fonte" na barra (depois dos controles). */
+  onEditSource?: () => void;
 }) {
   const [semitones, setSemitones] = useState(0);
 
@@ -208,6 +211,20 @@ export function Chords({
             className="ml-1 px-1 text-xs font-medium text-brand hover:opacity-80"
           >
             Salvar
+          </button>
+        )}
+        {onEditSource && (
+          <button
+            type="button"
+            data-edit-source=""
+            // mousedown não pode mover a seleção do ProseMirror antes do clique.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onEditSource}
+            aria-label="Editar código-fonte"
+            title="Editar código-fonte"
+            className="ml-2 flex h-6 w-6 items-center justify-center rounded text-base leading-none text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+          >
+            ✎
           </button>
         )}
       </div>

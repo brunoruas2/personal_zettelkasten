@@ -13,6 +13,8 @@ import {
 
 interface Props {
   source: string;
+  /** Editor do ZK//OS: botão "editar código-fonte" na barra (depois do play). */
+  onEditSource?: () => void;
 }
 
 type PlayState = 'idle' | 'loading' | 'playing' | 'paused';
@@ -22,7 +24,7 @@ const MAX_BPM = 300;
 const BPM_STEP = 10;
 const PLAYING_CLASS = 'abcjs-playing';
 
-export function AbcNotation({ source }: Props) {
+export function AbcNotation({ source, onEditSource }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const [playState, setPlayState] = useState<PlayState>('idle');
@@ -173,6 +175,19 @@ export function AbcNotation({ source }: Props) {
           >
             {playIcon}
           </button>
+          {onEditSource && (
+            <button
+              type="button"
+              data-edit-source=""
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onEditSource}
+              aria-label="Editar código-fonte"
+              title="Editar código-fonte"
+              className={`${btn} ml-1 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100`}
+            >
+              ✎
+            </button>
+          )}
         </div>
       </div>
       <div
