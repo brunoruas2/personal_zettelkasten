@@ -702,7 +702,7 @@ export function SettingsPanel({ onBack, embedded = false }: { onBack?: () => voi
               {FONTS.find(f => f.id === fontId)?.label} · salvo neste dispositivo
             </p>
 
-            <p className="mb-3 mt-6 text-sm text-zinc-500">Diagramas no editor.</p>
+            <p className="mb-3 mt-6 text-sm text-zinc-500">Diagramas (PlantUML e Mermaid) no editor.</p>
             <div className="flex gap-3 flex-wrap">
               {DIAGRAM_LAYOUTS.map((layout) => {
                 const isActive = diagramLayoutId === layout.id;

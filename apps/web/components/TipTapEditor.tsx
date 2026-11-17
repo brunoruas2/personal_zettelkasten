@@ -44,7 +44,8 @@ import { ZettelImage } from './ZettelImage';
 import { Chords } from './Chords';
 import { AbcNotation } from './AbcNotation';
 import { placeCaret, type CaretAnchor } from '../lib/caretAnchor';
-import { createWikiLinkDecorations, createCodeHighlight } from '../lib/editorDecorations';
+import { createWikiLinkDecorations, createCodeHighlight, createChordDecorations } from '../lib/editorDecorations';
+import { transposeLine } from '../lib/chordSyntax';
 import { useDrawingEditHost } from '../hooks/useDrawingEditHost';
 import { drawingStore, emptyDrawingRecord, subscribeDrawingsBusy, getDrawingsBusy } from '../lib/drawingSync';
 
@@ -693,6 +694,58 @@ function CodeBlockNodeView({ node, updateAttributes, editor, getPos }: {
       <PlantUmlBlock source={debouncedSource} />
     );
 
+  // Cifra no ZK//OS: o próprio texto é a folha (pintado por `createChordDecorations`).
+  // Árvore fixa — nada aparece/some com o cursor (ver nota dos blocos renderizados).
+  if (renderedBlocks && language === 'chords') {
+    // −/+ transpõem o texto: uma transação, só as linhas que mudam, de baixo para
+    // cima (posições acima não se deslocam; cursor numa linha de letra fica onde está).
+    const transposeBlock = (semitones: number) => {
+      const pos = getPos();
+      if (typeof pos !== 'number' || !editor.isEditable) return;
+      const { state } = editor;
+      const current = state.doc.nodeAt(pos);
+      if (!current || current.type.name !== 'codeBlock') return;
+      const lines = current.textContent.split('\n');
+      const starts: number[] = [];
+      let offset = 0;
+      for (const line of lines) {
+        starts.push(offset);
+        offset += line.length + 1;
+      }
+      let tr = state.tr;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const next = transposeLine(lines[i], semitones);
+        if (next === lines[i]) continue;
+        const from = pos + 1 + starts[i];
+        tr = tr.insertText(next, from, from + lines[i].length);
+      }
+      if (tr.docChanged) editor.view.dispatch(tr);
+    };
+    // Botão não pode tirar o cursor do texto nem fechar o teclado do celular.
+    const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
+    const barBtn = 'flex h-6 w-6 items-center justify-center rounded text-base leading-none';
+    return (
+      <NodeViewWrapper as="div" data-code-block data-chords data-chords-direct className="my-3 overflow-hidden">
+        <div contentEditable={false} data-chords-bar className="flex select-none items-center gap-1 px-3 py-1.5">
+          <span className="flex-1 text-xs">cifra</span>
+          {editor.isEditable && (
+            <>
+              <button type="button" onPointerDown={keepFocus} onMouseDown={keepFocus} onClick={() => transposeBlock(-1)} aria-label="Diminuir tom" title="Diminuir tom" className={barBtn}>
+                −
+              </button>
+              <button type="button" onPointerDown={keepFocus} onMouseDown={keepFocus} onClick={() => transposeBlock(1)} aria-label="Aumentar tom" title="Aumentar tom" className={barBtn}>
+                +
+              </button>
+            </>
+          )}
+        </div>
+        {/* `style`: o NodeViewContent põe `white-space: pre-wrap` inline; a cifra não quebra
+            (desalinharia acorde e letra) — linha longa rola. */}
+        <NodeViewContent data-chords-sheet className="block overflow-x-auto p-3" style={{ whiteSpace: 'pre' }} />
+      </NodeViewWrapper>
+    );
+  }
+
   // Blocos renderizados (ZK//OS): UMA árvore só, aberta ou fechada. O
   // NodeViewContent (contentDOM do ProseMirror) nunca muda de pai — fechado, a
   // coluna de código só ganha `hidden`. Trocar de árvore movia o contentDOM, e no
@@ -1334,6 +1387,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
         SlashCommandExtension,
         createWikiLinkDecorations(() => onWikiLinkOpenRef.current),
         createCodeHighlight(RENDERED_LANGS),
+        createChordDecorations(),
       ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);

@@ -6,6 +6,7 @@ import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { highlightTokens, type HighlightToken } from './hljs';
+import { chordRanges } from './chordSyntax';
 
 // ── Wiki links ────────────────────────────────────────────────────────────────
 
@@ -155,6 +156,65 @@ export function createCodeHighlight(skip: readonly string[]) {
           },
           props: {
             decorations: (state) => codeKey.getState(state),
+          },
+        }),
+      ];
+    },
+  });
+}
+
+// ── Cifra (```chords) ─────────────────────────────────────────────────────────
+
+// Cache por texto do bloco: digitar numa cifra não refaz as outras.
+const CHORD_CACHE_MAX = 32;
+const chordCache = new Map<string, Array<[number, number]>>();
+
+function cachedChordRanges(text: string): Array<[number, number]> {
+  const hit = chordCache.get(text);
+  if (hit) {
+    chordCache.delete(text);
+    chordCache.set(text, hit);
+    return hit;
+  }
+  const ranges = chordRanges(text);
+  chordCache.set(text, ranges);
+  if (chordCache.size > CHORD_CACHE_MAX) chordCache.delete(chordCache.keys().next().value as string);
+  return ranges;
+}
+
+function chordDecorations(doc: PMNode): DecorationSet {
+  const decos: Decoration[] = [];
+  doc.descendants((node, pos) => {
+    if (node.type.name !== 'codeBlock') return true;
+    if (String(node.attrs.language ?? '').trim().toLowerCase() !== 'chords') return false;
+    const base = pos + 1;
+    for (const [from, to] of cachedChordRanges(node.textContent)) {
+      if (to > from) decos.push(Decoration.inline(base + from, base + to, { class: 'zk-chord' }));
+    }
+    return false;
+  });
+  return DecorationSet.create(doc, decos);
+}
+
+const chordKey = new PluginKey<DecorationSet>('zkChordDecorations');
+
+/**
+ * Pinta acordes (linha de acorde inteira ou `[Am]` inline válido) dos blocos
+ * ` ```chords ` com `.zk-chord`. Só o ZK//OS estiliza a classe (`zkos.css`).
+ */
+export function createChordDecorations() {
+  return Extension.create({
+    name: 'zkChordDecorations',
+    addProseMirrorPlugins() {
+      return [
+        new Plugin<DecorationSet>({
+          key: chordKey,
+          state: {
+            init: (_, state) => chordDecorations(state.doc),
+            apply: (tr, old) => (tr.docChanged ? chordDecorations(tr.doc) : old),
+          },
+          props: {
+            decorations: (state) => chordKey.getState(state),
           },
         }),
       ];

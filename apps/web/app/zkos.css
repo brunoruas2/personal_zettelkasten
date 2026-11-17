@@ -594,7 +594,7 @@
 
 /* Bloco de código (```) no editor: mesma caixa de terminal da leitura.
    Os utilitários zinc do NodeView perdem por especificidade (classe + atributo + *). */
-.zk-edit [data-code-block]:not([data-rendered]),
+.zk-edit [data-code-block]:not([data-rendered]):not([data-chords-direct]),
 .zk-edit [data-rendered] [data-code-col]:not(.hidden) {
   background: var(--zk-bg-inset);
   border: 1.5px solid var(--zk-line-strong);
@@ -632,11 +632,17 @@
 .zk-edit [data-code-block] pre,
 .zk-edit [data-code-block] code,
 .zk-edit [data-code-block] [data-node-view-content],
-.zk-edit [data-code-block] > div:not([data-render-col]),
+.zk-edit [data-code-block] > div:not([data-render-col]):not([data-chords-bar]),
 .zk-edit [data-code-block] input {
   font-family: var(--font-vt323), ui-monospace, monospace;
   font-size: 19px;
   line-height: 1.25;
+}
+/* Cifra editável direto (ZK//OS): o texto do bloco é a folha — mesma fonte e tamanho
+   da cifra na leitura; acordes pintados por `.zk-chord` (createChordDecorations). */
+.zk-edit [data-chords-direct] [data-chords-sheet] {
+  font-size: calc(19px * var(--zk-read-scale, 1));
+  line-height: 1.4;
 }
 
 /* Popups de autocomplete (`[[` e `/`): renderizados por portal no body,
@@ -833,6 +839,12 @@
   color: var(--zk-text);
 }
 :is(.zk-md, .zk-edit) [data-chords-sheet] [data-chord] {
+  color: var(--zk-amber);
+  /* Relativa à fonte: o `leading-5` (20px fixo) do componente encavalava as linhas
+     de acorde com o texto aumentado (--zk-read-scale). */
+  line-height: 1.25;
+}
+.zk-edit [data-chords-sheet] .zk-chord {
   color: var(--zk-amber);
 }
 

@@ -1,62 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Chord, Interval } from 'tonal';
 import { segmentChordPair } from '@zettelkasten/core';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function isChord(s: string): boolean {
-  return s.length > 0 && !Chord.get(s).empty;
-}
-
-// A line is a "chord line" when ≥60% of its space-separated tokens are valid
-// chord names. The optional %c marker forces chord interpretation.
-function isChordLine(line: string): boolean {
-  const tokens = line.replace(/^%c\s*/, '').trim().split(/\s+/).filter(Boolean);
-  if (!tokens.length) return false;
-  const n = tokens.filter(isChord).length;
-  return n > 0 && n / tokens.length >= 0.6;
-}
-
-// Inline chord format: [Am]letra [G]aqui
-function hasInlineChords(line: string): boolean {
-  return /\[[A-G][#b]?[^\]\n]*\]/.test(line);
-}
-
-function tx(chord: string, semitones: number): string {
-  if (!semitones) return chord;
-  return Chord.transpose(chord, Interval.fromSemitones(semitones)) || chord;
-}
-
-function transposeChordLine(line: string, semitones: number): string {
-  const prefixMatch = line.match(/^%c\s*/);
-  const prefix = prefixMatch ? prefixMatch[0] : '';
-  const rest = prefix ? line.slice(prefix.length) : line;
-  const parts = rest.split(/(\s+)/).map((p) => (/^\s+$/.test(p) ? p : isChord(p) ? tx(p, semitones) : p));
-  return prefix + parts.join('');
-}
-
-function transposeInlineLine(line: string, semitones: number): string {
-  return line.replace(/\[([A-G][#b]?[^\]]*)\]/g, (_, chord) => `[${tx(chord, semitones)}]`);
-}
-
-// Rebuilds the raw block source with each chord symbol transposed, leaving
-// lyrics/spacing/blank lines untouched — used to persist a transposition
-// into the zettel body instead of keeping it as ephemeral render state.
-function transposeSource(source: string, semitones: number): string {
-  if (!semitones) return source;
-  return source
-    .split('\n')
-    .map((line) => {
-      if (hasInlineChords(line)) return transposeInlineLine(line, semitones);
-      if (isChordLine(line)) return transposeChordLine(line, semitones);
-      return line;
-    })
-    .join('\n');
-}
+import { hasInlineChords, inlineChords, isChord, isChordLine, transposeSource, tx } from '../lib/chordSyntax';
 
 // ---------------------------------------------------------------------------
 // Line renderers
@@ -75,18 +21,16 @@ function ChordLine({ line, semitones }: { line: string; semitones: number }) {
 
 function InlineLine({ line, semitones }: { line: string; semitones: number }) {
   const nodes: React.ReactNode[] = [];
-  const re = /\[([A-G][#b]?[^\]]*)\]/g;
   let last = 0, k = 0;
-  let m: RegExpExecArray | null;
 
-  while ((m = re.exec(line)) !== null) {
+  for (const m of inlineChords(line)) {
     if (m.index > last) nodes.push(<span key={k++}>{line.slice(last, m.index)}</span>);
     nodes.push(
       <span key={k++} data-chord className="whitespace-nowrap font-semibold text-brand">
-        [{tx(m[1], semitones)}]
+        [{tx(m.chord, semitones)}]
       </span>
     );
-    last = m.index + m[0].length;
+    last = m.index + m.length;
   }
   if (last < line.length) nodes.push(<span key={k++}>{line.slice(last)}</span>);
 
