@@ -218,7 +218,9 @@ export function ZettelWindow({
   const paper = alwaysEdit && !editing;
   const editorOn = editing || paper;
   const [focused, setFocused] = useState(false);
-  const amber = editing || (paper && focused);
+  // Âmbar só na edição explícita (celular). A folha de papel do desktop tem um modo
+  // só: fica na cor do cluster mesmo com o cursor no editor (change foco-sem-ambar).
+  const amber = editing;
   const scalePercent = useReadingScale();
   const scaleStyle = {
     ...style,
@@ -608,7 +610,7 @@ export function ZettelWindow({
               </div>
               {actions}
               <StatusBar
-                mode={focused ? 'edit' : 'read'}
+                mode="read"
                 left={
                   focused ? (
                     <>
