@@ -185,6 +185,26 @@ select {
   text-decoration: none;
 }
 
+/* Botão "abrir ↗" do hover sobre links no editor (LinkHoverView em lib/editorDecorations.ts).
+   Fica em document.body, `position: fixed`; posição escrita pelo plugin. */
+.zk-link-hover {
+  position: fixed;
+  z-index: 45;
+  padding: 2px 8px;
+  border: 1px solid rgb(var(--color-brand));
+  border-radius: 6px;
+  background: rgb(24 24 27); /* zinc-900 */
+  color: rgb(var(--color-brand-light));
+  font: 500 12px/1.4 ui-sans-serif, system-ui, sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+}
+.zk-link-hover:hover {
+  background: rgb(var(--color-brand));
+  color: #fff;
+}
+
 /* ── highlight.js — transparent bg so the wrapper div controls background */
 .hljs {
   background: transparent !important;

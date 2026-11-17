@@ -863,6 +863,21 @@
   color: var(--zk-green);
   text-decoration-style: dashed;
 }
+/* Botão "abrir ↗" do hover (fica em document.body; o plugin põe a classe
+   --zkos quando o editor está dentro de `.zk-edit`). */
+.zk-link-hover.zk-link-hover--zkos {
+  border-color: var(--zk-green);
+  border-radius: 0;
+  background: var(--zk-black);
+  color: var(--zk-green);
+  font-family: var(--font-vt323), ui-monospace, monospace;
+  font-size: 16px;
+  box-shadow: none;
+}
+.zk-link-hover.zk-link-hover--zkos:hover {
+  background: var(--zk-green);
+  color: var(--zk-black);
+}
 
 .zk-hscroll {
   scrollbar-width: none;
