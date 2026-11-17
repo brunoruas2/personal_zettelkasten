@@ -5,6 +5,7 @@ import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
 import { NeonButton } from '../zkos';
 import { DEFAULT_ACCENT, useLevelsEnv } from './LevelsContext';
+import { useReadingScale, zkFont } from '../../lib/readingFontSize';
 import { allSlice, boundsOf, clampScale, computeSlice, fitView, type View } from './mapSlice';
 
 const HOT = '#ff2bd6';
@@ -46,6 +47,10 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const rafRef = useRef(0);
   const fontRef = useRef('monospace');
+  // A−/A+ (spec reading-font-size): só o texto dos rótulos escala; nós e posições não.
+  const readScale = useReadingScale() / 100;
+  const readScaleRef = useRef(readScale);
+  readScaleRef.current = readScale;
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [query, setQuery] = useState('');
   const [sel, setSel] = useState(0);
@@ -228,7 +233,8 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
 
     // Nomes de cluster.
     ctx.textAlign = 'center';
-    ctx.font = `26px ${fontRef.current}`;
+    const k = readScaleRef.current;
+    ctx.font = `${26 * k}px ${fontRef.current}`;
     for (const c of cl) {
       const x = px(c.x);
       const y = py(c.y) - 36;
@@ -250,15 +256,17 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       if (!inView(x, y, 20)) return;
       const text = d.metas[i].title.trim() || 'Sem título';
       const isFocus = i === fi;
-      ctx.font = `${isFocus ? 22 : 18}px ${fontRef.current}`;
-      const tw = Math.min(150, ctx.measureText(text).width);
-      const box = { x: x - tw / 2, y: y + 14, w: tw, h: 16 };
+      const fs = (isFocus ? 22 : 18) * k;
+      ctx.font = `${fs}px ${fontRef.current}`;
+      const tw = Math.min(150 * k, ctx.measureText(text).width);
+      // Abaixo da bolinha, afastado na proporção do texto (a 100% = posição de sempre).
+      const box = { x: x - tw / 2, y: y + 14 * k, w: tw, h: 16 * k };
       if (!force && placed.some((p) => box.x < p.x + p.w && box.x + box.w > p.x && box.y < p.y + p.h && box.y + box.h > p.y)) return;
       placed.push(box);
       ctx.fillStyle = isFocus ? '#ff7be9' : '#cfe9ee';
       ctx.shadowColor = '#04060b';
       ctx.shadowBlur = 4;
-      ctx.fillText(text.length > 22 ? `${text.slice(0, 21)}…` : text, x, y + 28);
+      ctx.fillText(text.length > 22 ? `${text.slice(0, 21)}…` : text, x, y + 28 * k);
       ctx.shadowBlur = 0;
     };
     for (const i of lo.first) tryLabel(i, true);
@@ -278,6 +286,11 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
   const schedule = useCallback(() => {
     if (!rafRef.current) rafRef.current = requestAnimationFrame(draw);
   }, [draw]);
+
+  // Mudou o tamanho do texto: redesenha os rótulos.
+  useEffect(() => {
+    schedule();
+  }, [readScale, schedule]);
 
   // Fonte do tema (VT323 vem de uma variável do next/font).
   useEffect(() => {
@@ -527,19 +540,19 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
               setQuery('');
             }
           }}
-          className="zk-display w-full border border-zk-line bg-zk-panel px-2 text-[19px] text-zk-text"
+          className="zk-display w-full border border-zk-line bg-zk-panel px-2 text-[length:calc(19px*var(--zk-read-scale,1))] text-zk-text"
           style={{ minHeight: isMobile ? 44 : 36 }}
         />
         {query.trim() && (
           <ul className="m-0 mt-1 list-none border border-zk-line bg-zk-panel p-0" role="listbox">
-            {results.length === 0 && <li className="zk-display px-2 py-1 text-[19px] text-zk-dim">&gt; nenhum resultado</li>}
+            {results.length === 0 && <li className="zk-display px-2 py-1 text-[length:calc(19px*var(--zk-read-scale,1))] text-zk-dim">&gt; nenhum resultado</li>}
             {results.map((i, n) => (
               <li key={data.ids[i]} role="option" aria-selected={n === sel}>
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => pick(i)}
-                  className="zk-display block w-full truncate px-2 text-left text-[19px]"
+                  className="zk-display block w-full truncate px-2 text-left text-[length:calc(19px*var(--zk-read-scale,1))]"
                   style={{
                     minHeight: isMobile ? 44 : 30,
                     background: n === sel ? '#19f2ff' : 'transparent',
@@ -564,14 +577,14 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
             </NeonButton>
           </>
         )}
-        <NeonButton onClick={fitSlice} style={{ minHeight: 36, padding: '0 10px', fontSize: 18 }}>
+        <NeonButton onClick={fitSlice} style={{ minHeight: 36, padding: '0 10px', fontSize: zkFont(18) }}>
           FOCO
         </NeonButton>
-        <NeonButton onClick={fitAll} style={{ minHeight: 36, padding: '0 10px', fontSize: 18 }}>
+        <NeonButton onClick={fitAll} style={{ minHeight: 36, padding: '0 10px', fontSize: zkFont(18) }}>
           VER TUDO
         </NeonButton>
       </div>
-      <div className="zk-display pointer-events-none absolute bottom-2 left-3 text-[19px] text-zk-dim">
+      <div className="zk-display pointer-events-none absolute bottom-2 left-3 text-[length:calc(19px*var(--zk-read-scale,1))] text-zk-dim">
         {data.count === 0
           ? '> nenhum zettel posicionado ainda'
           : `> ${data.count} zettels · clique numa bolinha para abrir na mesa`}

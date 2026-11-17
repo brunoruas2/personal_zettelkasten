@@ -42,7 +42,7 @@ export function MapScreen() {
       </Win>
       {isMobile && (
         <div className="flex flex-none items-center gap-3 border border-dashed bg-zk-panel px-3 py-2" style={{ borderColor: '#2a6f80' }}>
-          <p className="zk-display m-0 min-w-0 flex-1 text-xl leading-tight text-zk-dim">
+          <p className="zk-display m-0 min-w-0 flex-1 text-[length:calc(20px*var(--zk-read-scale,1))] leading-tight text-zk-dim">
             &gt; selecionado:
             <br />
             <span className="block truncate" style={{ color: activeId ? accentOf(activeId) : '#cfe9ee' }}>

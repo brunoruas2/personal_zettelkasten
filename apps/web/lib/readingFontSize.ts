@@ -23,7 +23,14 @@ export function getSavedReadingScale(): number {
   }
 }
 
-// Sem DOM: o fator é aplicado por React (variável CSS no ZettelWindow). O evento
+/** Tamanho de texto do ZK//OS que acompanha o A−/A+ (`--zk-read-scale`, gravada no
+ *  `<html>` pelo `Levels`). Para `style={{ fontSize }}`; em classe Tailwind, usar a
+ *  forma literal `text-[length:calc(…px*var(--zk-read-scale,1))]` (o Tailwind só vê strings). */
+export function zkFont(px: number): string {
+  return `calc(${px}px * var(--zk-read-scale, 1))`;
+}
+
+// Sem DOM: o fator é aplicado por React (variável CSS no <html>, pelo Levels). O evento
 // existe porque `storage` só dispara para *outras* abas.
 export function applyReadingScale(percent: number): void {
   try {

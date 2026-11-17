@@ -34,7 +34,7 @@ function FontSizeControl({ percent }: { percent: number }) {
       >
         A−
       </NeonButton>
-      <span className="zk-display min-w-[3ch] text-center text-xl text-zk-dim" aria-live="polite">
+      <span className="zk-display min-w-[3ch] text-center text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-dim" aria-live="polite">
         {percent}%
       </span>
       <NeonButton
@@ -221,10 +221,10 @@ export function ZettelWindow({
   // Âmbar só na edição explícita (celular). A folha de papel do desktop tem um modo
   // só: fica na cor do cluster mesmo com o cursor no editor (change foco-sem-ambar).
   const amber = editing;
+  // Só o percentual exibido no A−/A+: `--zk-read-scale` vem do `<html>` (Levels).
   const scalePercent = useReadingScale();
   const scaleStyle = {
     ...style,
-    '--zk-read-scale': scalePercent / 100,
     '--zk-title-size': `${isMobile || compact ? 23 : 39}px`,
     '--zk-title-color': amber ? EDIT_ACCENT : accent,
     '--zk-pad-x': isMobile ? '0.75rem' : '3.5rem',
@@ -466,9 +466,9 @@ export function ZettelWindow({
                 >
                   {title}
                 </h1>
-                {bodyStatus === 'loading' && <p className="zk-display text-xl text-zk-dim">carregando…</p>}
+                {bodyStatus === 'loading' && <p className="zk-display text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-dim">carregando…</p>}
                 {bodyStatus === 'missing' && (
-                  <p className="zk-display text-xl text-zk-dim">Corpo ainda não baixado neste aparelho.</p>
+                  <p className="zk-display text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-dim">Corpo ainda não baixado neste aparelho.</p>
                 )}
                 {(bodyStatus === 'ready' || bodyStatus === 'stale') && (
                   <div className="zk-md dark cursor-default lg:max-w-[900px]" onDoubleClick={onBodyDoubleClick}>
@@ -479,15 +479,15 @@ export function ZettelWindow({
                         onLinkPress={openWikiLink}
                       />
                     ) : (
-                      <p className="zk-display text-xl text-zk-dim">
+                      <p className="zk-display text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-dim">
                         {onStartEdit ? 'Sem conteúdo. Dê dois cliques para escrever.' : 'Sem conteúdo.'}
                       </p>
                     )}
                   </div>
                 )}
-                {notice && <p className="zk-display mt-3 text-lg text-zk-amber">{notice}</p>}
+                {notice && <p className="zk-display mt-3 text-[length:calc(18px*var(--zk-read-scale,1))] text-zk-amber">{notice}</p>}
                 {tags.length > 0 && (
-                  <div className="zk-tag mt-4 flex flex-wrap gap-x-3 text-[22px]">
+                  <div className="zk-tag mt-4 flex flex-wrap gap-x-3 text-[length:calc(22px*var(--zk-read-scale,1))]">
                     {tags.map((t) => (
                       <span key={t}>[{t}]</span>
                     ))}
@@ -532,7 +532,7 @@ export function ZettelWindow({
                     onOpenWikiLink={openWikiLink}
                   />
                 ) : (
-                  <p className={`zk-display text-xl text-zk-dim ${pad} py-4`}>carregando…</p>
+                  <p className={`zk-display text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-dim ${pad} py-4`}>carregando…</p>
                 )}
               </div>
               <StatusBar
@@ -585,9 +585,9 @@ export function ZettelWindow({
                         </div>
                       )}
                       {bodyStatus === 'missing' && (
-                        <p className="zk-display text-xl text-zk-dim">Corpo ainda não baixado neste aparelho.</p>
+                        <p className="zk-display text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-dim">Corpo ainda não baixado neste aparelho.</p>
                       )}
-                      {notice && <p className="zk-display mt-3 text-lg text-zk-amber">{notice}</p>}
+                      {notice && <p className="zk-display mt-3 text-[length:calc(18px*var(--zk-read-scale,1))] text-zk-amber">{notice}</p>}
                     </div>
                   </div>
                 )}

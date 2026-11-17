@@ -35,7 +35,7 @@ export function MemoryList() {
               type="button"
               onClick={() => void actions.consult(id)}
               aria-pressed={on}
-              className="zk-display min-h-[36px] flex-none truncate border px-3 text-left text-[19px]"
+              className="zk-display min-h-[36px] flex-none truncate border px-3 text-left text-[length:calc(19px*var(--zk-read-scale,1))]"
               style={{ borderColor: color, background: on ? color : '#070b14', color: on ? '#04060b' : '#cfe9ee' }}
             >
               {titles.get(id)?.trim() || `Sem título (${zkCode(id)})`}
@@ -60,7 +60,7 @@ function MobileConnections({ focusId, onOpen }: { focusId: string; onOpen: (id: 
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="zk-display flex min-h-[44px] w-full items-center justify-between px-3 text-left text-xl text-zk-amber"
+        className="zk-display flex min-h-[44px] w-full items-center justify-between px-3 text-left text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-amber"
       >
         <span>
           // CONEXÕES · {count}
@@ -94,7 +94,7 @@ export function MemoryScreen() {
   const titles = useMemo(() => new Map(zettels.map((z) => [z.id, z.title])), [zettels]);
 
   const header = (
-    <div className="zk-display flex-none px-1 text-[22px] tracking-wider text-zk-amber">
+    <div className="zk-display flex-none px-1 text-[length:calc(22px*var(--zk-read-scale,1))] tracking-wider text-zk-amber">
       // ABERTAS NA MESA · {consulted.length}
     </div>
   );
@@ -105,7 +105,7 @@ export function MemoryScreen() {
         {isMobile && header}
         <Win accent="#19f2ff" className="min-h-0 flex-1" label="Mesa vazia">
           <TitleBar>MESA — VAZIA</TitleBar>
-          <p className="zk-display m-0 p-6 text-2xl text-zk-dim">
+          <p className="zk-display m-0 p-6 text-[length:calc(24px*var(--zk-read-scale,1))] text-zk-dim">
             &gt; nada aberto. Toque numa bolinha do mapa ou numa conexão do foco.
           </p>
         </Win>
@@ -150,7 +150,7 @@ export function MemoryScreen() {
                 type="button"
                 onClick={() => void actions.consult(id)}
                 aria-pressed={on}
-                className="zk-display min-h-[44px] max-w-[170px] flex-none truncate border px-3 text-[19px]"
+                className="zk-display min-h-[44px] max-w-[170px] flex-none truncate border px-3 text-[length:calc(19px*var(--zk-read-scale,1))]"
                 style={{ borderColor: color, background: on ? color : '#070b14', color: on ? '#04060b' : '#cfe9ee' }}
               >
                 {titles.get(id)?.trim() || `Sem título (${zkCode(id)})`}

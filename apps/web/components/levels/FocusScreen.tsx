@@ -47,7 +47,7 @@ export function FocusScreen() {
 
   if (!focusId) {
     return (
-      <div className="zk-display flex h-full items-center justify-center text-2xl text-zk-dim">
+      <div className="zk-display flex h-full items-center justify-center text-[length:calc(24px*var(--zk-read-scale,1))] text-zk-dim">
         &gt; nenhum zettel em foco. Crie ou busque uma nota.
       </div>
     );

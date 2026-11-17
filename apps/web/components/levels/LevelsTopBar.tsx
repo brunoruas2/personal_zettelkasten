@@ -10,6 +10,7 @@ import { NeonButton } from '../zkos';
 import { GalaxyMenu, type MenuAction } from '../galaxy/GalaxyTopBar';
 import { useLevelActions } from './actions';
 import { useLevelsEnv } from './LevelsContext';
+import { zkFont } from '../../lib/readingFontSize';
 
 const SYNC: Record<SyncStatus, { text: string; color: string }> = {
   idle: { text: 'SYNC ■ OK', color: 'var(--zk-green)' },
@@ -73,10 +74,10 @@ export function LevelsTopBar({
   return (
     <header
       data-levels-topbar
-      className={`relative z-30 flex flex-none items-center gap-3 border-b-2 border-zk-cyan bg-zk-panel px-3 lg:gap-4 lg:px-5 ${isLandscape ? 'h-11' : 'h-14'}`}
+      className={`relative z-30 flex flex-none items-center gap-3 border-b-2 border-zk-cyan bg-zk-panel px-3 lg:gap-4 lg:px-5 ${isLandscape ? 'min-h-11' : 'min-h-14'}`}
     >
-      <div className={`zk-display tracking-widest text-zk-magenta lg:text-[32px] ${isLandscape ? 'text-[22px]' : 'text-[28px]'}`}>ZK//OS</div>
-      <div className={`zk-display border border-zk-cyan px-2 text-zk-cyan lg:text-xl ${isLandscape ? 'text-base leading-5' : 'text-lg leading-6'}`}>{LEVEL_TAG[level]}</div>
+      <div className={`zk-display tracking-widest text-zk-magenta lg:text-[length:calc(32px*var(--zk-read-scale,1))] ${isLandscape ? 'text-[length:calc(22px*var(--zk-read-scale,1))]' : 'text-[length:calc(28px*var(--zk-read-scale,1))]'}`}>ZK//OS</div>
+      <div className={`zk-display border border-zk-cyan px-2 text-zk-cyan lg:text-[length:calc(20px*var(--zk-read-scale,1))] ${isLandscape ? 'text-[length:calc(16px*var(--zk-read-scale,1))] leading-tight' : 'text-[length:calc(18px*var(--zk-read-scale,1))] leading-tight'}`}>{LEVEL_TAG[level]}</div>
 
       {!isMobile && (
         <>
@@ -84,18 +85,18 @@ export function LevelsTopBar({
             type="button"
             onClick={onSearch}
             aria-label="Buscar ou criar nota"
-            className="flex h-10 w-[300px] flex-none cursor-text items-center gap-2 border bg-zk-inset px-3 text-left text-sm text-zk-dim"
+            className="flex min-h-10 w-[300px] flex-none cursor-text items-center gap-2 border bg-zk-inset px-3 text-left text-[length:calc(14px*var(--zk-read-scale,1))] text-zk-dim"
             style={{ borderColor: '#2a6f80' }}
           >
-            <span className="zk-display text-[22px] text-zk-green">&gt;</span>
+            <span className="zk-display text-[length:calc(22px*var(--zk-read-scale,1))] text-zk-green">&gt;</span>
             buscar ou criar nota_
           </button>
-          <NeonButton variant="hot" onClick={onNew} style={{ fontSize: 20 }}>
+          <NeonButton variant="hot" onClick={onNew} style={{ fontSize: zkFont(20) }}>
             + NOVA
           </NeonButton>
           <div aria-hidden="true" className="h-[26px] w-px bg-zk-line" />
           <nav aria-label="Caminho" className="flex min-w-0 items-center gap-1 overflow-hidden">
-            <span className="zk-display text-xl text-zk-dim">~/zk</span>
+            <span className="zk-display text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-dim">~/zk</span>
             {trail.map((id) => {
               const on = id === focusId;
               return (
@@ -104,7 +105,7 @@ export function LevelsTopBar({
                   <button
                     type="button"
                     onClick={() => void actions.focus(id)}
-                    className="zk-display min-h-10 max-w-[150px] truncate px-2 text-xl"
+                    className="zk-display min-h-10 max-w-[150px] truncate px-2 text-[length:calc(20px*var(--zk-read-scale,1))]"
                     style={{ background: on ? 'var(--zk-cyan)' : 'transparent', color: on ? 'var(--zk-black)' : 'var(--zk-text)' }}
                   >
                     {titles.get(id)?.trim() || 'Sem título'}
@@ -116,12 +117,12 @@ export function LevelsTopBar({
         </>
       )}
 
-      <div className="zk-display ml-auto flex items-center gap-3 text-xl" style={{ color: sync.color }} aria-live="polite">
+      <div className="zk-display ml-auto flex items-center gap-3 text-[length:calc(20px*var(--zk-read-scale,1))]" style={{ color: sync.color }} aria-live="polite">
         {!isMobile && sync.text}
         {isMobile && <span aria-label={sync.text} className="h-2.5 w-2.5" style={{ background: sync.color }} />}
         {isMobile && (
           <>
-            <NeonButton aria-label="Buscar" onClick={onSearch} style={{ padding: '0 8px', minWidth: 44, fontSize: 20 }}>
+            <NeonButton aria-label="Buscar" onClick={onSearch} style={{ padding: '0 8px', minWidth: 44, fontSize: zkFont(20) }}>
               &gt;_
             </NeonButton>
             <NeonButton aria-label="Nova nota" onClick={onNew} style={{ padding: '0 8px', minWidth: 44 }}>

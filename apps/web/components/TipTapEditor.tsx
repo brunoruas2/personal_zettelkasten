@@ -528,9 +528,14 @@ async function insertImageFiles(
 // ── TableBubbleMenu ───────────────────────────────────────────────────────────
 
 function TableBubbleMenu({ editor }: { editor: Editor }) {
-  const btnClass =
-    'px-2 py-1 text-xs rounded hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors whitespace-nowrap';
-  const dividerClass = 'w-px bg-zinc-300 dark:bg-zinc-600 self-stretch mx-0.5';
+  // ZK//OS: dentro de `.zk-edit` usa as classes do tema (zkos.css), como os popups `[[`/`/`.
+  const themed = !!editor.view.dom.closest('.zk-edit');
+  const btnClass = themed
+    ? 'zk-table-menu-btn'
+    : 'px-2 py-1 text-xs rounded hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors whitespace-nowrap';
+  const dangerClass = themed ? btnClass : `${btnClass} text-red-500 dark:text-red-400`;
+  const dividerClass = themed ? 'zk-table-menu-sep' : 'w-px bg-zinc-300 dark:bg-zinc-600 self-stretch mx-0.5';
+  const danger = themed ? '' : undefined;
 
   return (
     <BubbleMenu
@@ -538,17 +543,21 @@ function TableBubbleMenu({ editor }: { editor: Editor }) {
       shouldShow={({ editor: e }) =>
         e.isActive('tableCell') || e.isActive('tableHeader')
       }
-      className="flex items-center gap-0.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg px-1 py-1 text-zinc-700 dark:text-zinc-200"
+      className={
+        themed
+          ? 'zk-table-menu'
+          : 'flex items-center gap-0.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg px-1 py-1 text-zinc-700 dark:text-zinc-200'
+      }
     >
       <button type="button" className={btnClass} onClick={() => editor.chain().focus().addColumnBefore().run()} title="Coluna antes">← Col</button>
       <button type="button" className={btnClass} onClick={() => editor.chain().focus().addColumnAfter().run()} title="Coluna depois">Col →</button>
-      <button type="button" className={`${btnClass} text-red-500 dark:text-red-400`} onClick={() => editor.chain().focus().deleteColumn().run()} title="Deletar coluna">✕ Col</button>
+      <button type="button" className={dangerClass} data-danger={danger} onClick={() => editor.chain().focus().deleteColumn().run()} title="Deletar coluna">✕ Col</button>
       <div className={dividerClass} />
       <button type="button" className={btnClass} onClick={() => editor.chain().focus().addRowBefore().run()} title="Linha antes">↑ Linha</button>
       <button type="button" className={btnClass} onClick={() => editor.chain().focus().addRowAfter().run()} title="Linha depois">Linha ↓</button>
-      <button type="button" className={`${btnClass} text-red-500 dark:text-red-400`} onClick={() => editor.chain().focus().deleteRow().run()} title="Deletar linha">✕ Linha</button>
+      <button type="button" className={dangerClass} data-danger={danger} onClick={() => editor.chain().focus().deleteRow().run()} title="Deletar linha">✕ Linha</button>
       <div className={dividerClass} />
-      <button type="button" className={`${btnClass} text-red-600 dark:text-red-500 font-medium`} onClick={() => editor.chain().focus().deleteTable().run()} title="Deletar tabela">✕ Tabela</button>
+      <button type="button" className={themed ? btnClass : `${btnClass} text-red-600 dark:text-red-500 font-medium`} data-danger={danger} onClick={() => editor.chain().focus().deleteTable().run()} title="Deletar tabela">✕ Tabela</button>
     </BubbleMenu>
   );
 }

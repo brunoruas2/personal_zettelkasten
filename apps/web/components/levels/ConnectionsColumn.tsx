@@ -31,9 +31,9 @@ export function ConnectionLists({ id, onOpen }: { id: string; onOpen: (id: strin
 
   return (
     <>
-      <div className="zk-display mt-1 text-xl text-zk-dim">LIGA A · {outs.length}</div>
+      <div className="zk-display mt-1 text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-dim">LIGA A · {outs.length}</div>
       {outs.map(row)}
-      <div className="zk-display mt-2 text-xl text-zk-dim">CITADA POR · {ins.length}</div>
+      <div className="zk-display mt-2 text-[length:calc(20px*var(--zk-read-scale,1))] text-zk-dim">CITADA POR · {ins.length}</div>
       {ins.map(row)}
     </>
   );
@@ -46,10 +46,10 @@ export function ConnectionsColumn({ id, onOpen }: { id: string; onOpen: (id: str
       aria-label="Conexões"
       className="flex w-[340px] flex-none flex-col gap-2 overflow-y-auto border-l border-zk-line bg-zk-panel p-[18px]"
     >
-      <div className="zk-display text-2xl tracking-wider text-zk-amber">// CONEXÕES</div>
+      <div className="zk-display text-[length:calc(24px*var(--zk-read-scale,1))] tracking-wider text-zk-amber">// CONEXÕES</div>
       <ConnectionLists id={id} onOpen={onOpen} />
       <div className="flex-1" />
-      <p className="zk-display m-0 border border-dashed border-zk-line p-[10px] text-[19px] leading-tight text-zk-dim" style={{ borderColor: '#2a6f80' }}>
+      <p className="zk-display m-0 border border-dashed border-zk-line p-[10px] text-[length:calc(19px*var(--zk-read-scale,1))] leading-tight text-zk-dim" style={{ borderColor: '#2a6f80' }}>
         &gt; todas já estão abertas na mesa. Abaixe para ver no mapa.
       </p>
     </aside>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Level } from '@zettelkasten/core';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
@@ -26,6 +26,7 @@ import { LevelsEnvProvider, useLevelsEnv } from './LevelsContext';
 import { useLevelsSync } from './useLevelsSync';
 import { useLevelActions, deleteFromLevels } from './actions';
 import { captureNote, createNote } from './newNote';
+import { useReadingScale, zkFont } from '../../lib/readingFontSize';
 
 const LEVEL_KEYS: Record<string, Level> = { Digit1: 'focus', Digit2: 'memory', Digit3: 'map' };
 
@@ -44,8 +45,23 @@ export function Levels() {
 
 type Toast = { msg: string; action?: { label: string; run: () => void } };
 
+/** A−/A+ vale para todo texto do ZK//OS (spec reading-font-size): a variável fica no
+ *  `<html>`, não no `.zk-root`, para alcançar os portais (popups do editor, menu de
+ *  tabela, menus) que ficam no `body`. A galáxia não lê a variável. */
+function useRootReadingScale() {
+  const scale = useReadingScale();
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--zk-read-scale', String(scale / 100));
+    return () => {
+      root.style.removeProperty('--zk-read-scale');
+    };
+  }, [scale]);
+}
+
 function LevelsInner() {
   useLevelsSync();
+  useRootReadingScale();
   const { isMobile, isLandscape, data } = useLevelsEnv();
   const editing = useLevelsStore((s) => s.editing);
   const actions = useLevelActions();
@@ -147,7 +163,7 @@ function LevelsInner() {
       <Vignette />
 
       {toast && (
-        <div role="status" aria-live="polite" className="zk-win absolute bottom-20 left-1/2 z-50 -translate-x-1/2 flex-row items-center gap-3 px-4 py-2 text-sm">
+        <div role="status" aria-live="polite" className="zk-win absolute bottom-20 left-1/2 z-50 -translate-x-1/2 flex-row items-center gap-3 px-4 py-2 text-[length:calc(14px*var(--zk-read-scale,1))]">
           {toast.msg}
           {toast.action && (
             <NeonButton
@@ -282,7 +298,7 @@ function DesktopLevels() {
           <FocusScreen />
         </div>
         <div className="absolute inset-x-0 bottom-3 flex justify-center">
-          <NeonButton variant="hot" onClick={() => void actions.go('memory')} style={{ fontSize: 24, minHeight: 50, padding: '0 28px' }}>
+          <NeonButton variant="hot" onClick={() => void actions.go('memory')} style={{ fontSize: zkFont(24), minHeight: 50, padding: '0 28px' }}>
             ▼ ABAIXAR PARA AS REFERÊNCIAS [{consulted.length}]
           </NeonButton>
         </div>
@@ -290,7 +306,7 @@ function DesktopLevels() {
 
       <section aria-label="Referências" aria-hidden={!second} className="zk-desk relative h-1/2 overflow-hidden">
         <div className="absolute inset-x-0 top-3 flex justify-center">
-          <NeonButton variant="hot" onClick={() => void actions.go('focus')} style={{ fontSize: 21 }}>
+          <NeonButton variant="hot" onClick={() => void actions.go('focus')} style={{ fontSize: zkFont(21) }}>
             ▲ SUBIR AO FOCO · {focusTitle.toUpperCase()}
           </NeonButton>
         </div>
@@ -364,7 +380,7 @@ function MobileLevels(): ReactNode {
                 type="button"
                 aria-current={on ? 'page' : undefined}
                 onClick={() => void actions.go(l)}
-                className={`zk-display flex-1 border text-[22px] leading-none ${isLandscape ? 'w-11' : 'min-h-[56px]'}`}
+                className={`zk-display flex-1 border text-[length:calc(22px*var(--zk-read-scale,1))] leading-none ${isLandscape ? 'w-11' : 'min-h-[56px]'}`}
                 style={{
                   ...(isLandscape ? { writingMode: 'vertical-rl', transform: 'rotate(180deg)' } : null),
                   borderColor: 'var(--zk-cyan)',
