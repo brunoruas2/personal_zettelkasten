@@ -79,9 +79,20 @@ func apiKeyFromRequest(r *http.Request) (key string, present bool) {
 }
 
 // apiKeyRouteAllowed is the allowlist for key-authenticated requests:
-// GET /api/zettels, POST /api/zettels, GET /api/zettels/{id}, PUT /api/zettels/{id}.
+// GET /api/zettels, POST /api/zettels, GET /api/zettels/{id}, PUT /api/zettels/{id},
+// GET /api/drawings/manifest, GET /api/drawings/{id}, PUT /api/drawings/{id}.
+// Everything else (DELETE included) is denied.
 func apiKeyRouteAllowed(method, path string) bool {
 	path = strings.TrimSuffix(path, "/")
+	if path == "/api/drawings/manifest" {
+		return method == http.MethodGet
+	}
+	if id, ok := strings.CutPrefix(path, "/api/drawings/"); ok {
+		if id == "" || strings.Contains(id, "/") {
+			return false
+		}
+		return method == http.MethodGet || method == http.MethodPut
+	}
 	if path == "/api/zettels" {
 		return method == http.MethodGet || method == http.MethodPost
 	}
@@ -93,7 +104,7 @@ func apiKeyRouteAllowed(method, path string) bool {
 }
 
 // RequireAuthOrKey accepts either a JWT (unrestricted, same as RequireAuth) or an
-// API key (restricted to apiKeyRouteAllowed). Use only on the zettel routes.
+// API key (restricted to apiKeyRouteAllowed). Use only on the zettel and drawing routes.
 func RequireAuthOrKey(jwtSecret string, store APIKeyStore) func(http.Handler) http.Handler {
 	jwtAuth := RequireAuth(jwtSecret)
 	return func(next http.Handler) http.Handler {

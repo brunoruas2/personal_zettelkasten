@@ -71,8 +71,19 @@ func newEnv(t *testing.T) *env {
 		r.Use(auth.RequireAuthOrKey(jwtSecret, authRepo))
 		r.Mount("/api/zettels", zHandler.Routes())
 	})
+	// Desenhos: mesmo grupo que main.go (JWT ou chave); handlers stub — o
+	// comportamento real é testado em internal/drawings.
+	ok := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireAuthOrKey(jwtSecret, authRepo))
+		r.Get("/api/drawings/manifest", ok)
+		r.Put("/api/drawings/{id}", ok)
+		r.Get("/api/drawings/{id}", ok)
+		r.Delete("/api/drawings/{id}", ok)
+	})
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireAuth(jwtSecret))
+		r.Get("/api/positions", ok)
 		r.Get("/api/images/x", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
 		r.Get("/api/auth/settings", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
 	})
@@ -154,10 +165,43 @@ func TestAPIKeyScope(t *testing.T) {
 		t.Fatal("zettel must survive forbidden DELETE")
 	}
 
-	for _, p := range []string{"/api/images/x", "/api/auth/settings"} {
+	for _, p := range []string{"/api/images/x", "/api/auth/settings", "/api/positions"} {
 		if got := e.do("GET", p, "", h).Code; got != 401 {
 			t.Errorf("key on %s: got %d want 401", p, got)
 		}
+	}
+}
+
+func TestAPIKeyDrawingScope(t *testing.T) {
+	e := newEnv(t)
+	h := bearer(e.keyA)
+
+	allowed := []struct{ method, path string }{
+		{"GET", "/api/drawings/manifest"},
+		{"GET", "/api/drawings/d1"},
+		{"PUT", "/api/drawings/d1"},
+	}
+	for _, c := range allowed {
+		if got := e.do(c.method, c.path, "", h).Code; got != 200 {
+			t.Errorf("%s %s: got %d want 200", c.method, c.path, got)
+		}
+	}
+
+	forbidden := []struct{ method, path string }{
+		{"DELETE", "/api/drawings/d1"},
+		{"PUT", "/api/drawings/manifest"},
+	}
+	// Método/rota que o router não conhece (POST, subcaminho) nem chega ao
+	// middleware: o chi responde 405/404 antes — negado do mesmo jeito.
+	for _, c := range forbidden {
+		if got := e.do(c.method, c.path, "", h).Code; got != 403 {
+			t.Errorf("%s %s: got %d want 403", c.method, c.path, got)
+		}
+	}
+
+	// JWT segue irrestrito, inclusive no DELETE.
+	if got := e.do("DELETE", "/api/drawings/d1", "", bearer(e.tokenA)).Code; got != 200 {
+		t.Errorf("jwt DELETE: got %d want 200", got)
 	}
 }
 

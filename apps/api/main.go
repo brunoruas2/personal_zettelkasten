@@ -86,6 +86,18 @@ func main() {
 		r.Mount("/api/zettels", zettelHandler.Routes())
 	})
 
+	// Desenhos: inline (o Mount em "/api" abaixo impede outro Mount no mesmo
+	// prefixo). JWT ou chave de API; a chave só passa em GET manifest e
+	// GET|PUT {id} — DELETE recebe 403 (allowlist em auth.RequireAuthOrKey).
+	// A rota estática precede a paramétrica.
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireAuthOrKey(jwtSecret, authRepo))
+		r.Get("/api/drawings/manifest", drawingHandler.Manifest)
+		r.Put("/api/drawings/{id}", drawingHandler.Put)
+		r.Get("/api/drawings/{id}", drawingHandler.Get)
+		r.Delete("/api/drawings/{id}", drawingHandler.Delete)
+	})
+
 	// Rotas protegidas (requerem JWT)
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireAuth(jwtSecret))
@@ -101,14 +113,6 @@ func main() {
 		r.Post("/api/images/{id}", imageHandler.Upload)
 		r.Get("/api/images/{id}", imageHandler.Get)
 		r.Delete("/api/images/{id}", imageHandler.Delete)
-
-		// Desenhos: inline pelo mesmo motivo. Só JWT — uma chave de API (zk_…)
-		// recebe 401 aqui, fora da allowlist de RequireAuthOrKey. A rota
-		// estática precede a paramétrica.
-		r.Get("/api/drawings/manifest", drawingHandler.Manifest)
-		r.Put("/api/drawings/{id}", drawingHandler.Put)
-		r.Get("/api/drawings/{id}", drawingHandler.Get)
-		r.Delete("/api/drawings/{id}", drawingHandler.Delete)
 
 		// Posições na galáxia: inline pelo mesmo motivo, só JWT.
 		r.Get("/api/positions", positionHandler.List)

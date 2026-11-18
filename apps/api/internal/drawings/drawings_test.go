@@ -1,6 +1,8 @@
 package drawings_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +33,7 @@ type env struct {
 	tokenA   string
 	tokenB   string
 	userAID  string
+	keyA     string
 	quotaPut int64
 }
 
@@ -72,15 +75,22 @@ func newEnv(t *testing.T, quota int64) *env {
 		r.Use(auth.RequireAuthOrKey(jwtSecret, authRepo))
 		r.Mount("/api/zettels", zHandler.Routes())
 	})
+	// Mesmo grupo que main.go: JWT ou chave de API (allowlist no middleware).
 	r.Group(func(r chi.Router) {
-		r.Use(auth.RequireAuth(jwtSecret))
+		r.Use(auth.RequireAuthOrKey(jwtSecret, authRepo))
 		r.Get("/api/drawings/manifest", h.Manifest)
 		r.Put("/api/drawings/{id}", h.Put)
 		r.Get("/api/drawings/{id}", h.Get)
 		r.Delete("/api/drawings/{id}", h.Delete)
 	})
 
-	return &env{srv: r, repo: repo, zRepo: zRepo, tokenA: token(a.ID), tokenB: token(b.ID), userAID: a.ID}
+	keyA := "zk_" + strings.Repeat("ab", 32)
+	sum := sha256.Sum256([]byte(keyA))
+	if err := authRepo.SetAPIKey(a.ID, hex.EncodeToString(sum[:])); err != nil {
+		t.Fatal(err)
+	}
+
+	return &env{srv: r, repo: repo, zRepo: zRepo, tokenA: token(a.ID), tokenB: token(b.ID), userAID: a.ID, keyA: keyA}
 }
 
 func (e *env) do(method, path, token, body string) *httptest.ResponseRecorder {
@@ -270,11 +280,82 @@ func TestRefsAndOrphanGC(t *testing.T) {
 	}
 }
 
-func TestAPIKeyGetsNoAccess(t *testing.T) {
+func TestAPIKeyReadsAndWritesOwnDrawings(t *testing.T) {
 	e := newEnv(t, 1<<20)
-	// Sem JWT válido a rota responde 401 (a chave zk_ só passa na allowlist de /api/zettels).
-	if rec := e.do("GET", "/api/drawings/manifest", "zk_"+strings.Repeat("ab", 32), ""); rec.Code != 401 {
-		t.Fatalf("api key must get 401, got %d", rec.Code)
+
+	// Grava por chave e lê de volta, pelo id e pelo manifesto.
+	rec := e.do("PUT", "/api/drawings/dk1", e.keyA, putBody(goodScene, goodSVG, 2000))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "stored") {
+		t.Fatalf("key put: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = e.do("GET", "/api/drawings/dk1", e.keyA, "")
+	if rec.Code != 200 {
+		t.Fatalf("key get: %d", rec.Code)
+	}
+	var d drawings.Drawing
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.Scene != goodScene || d.SVG != goodSVG || d.UpdatedAt != 2000 {
+		t.Fatalf("unexpected drawing: %+v", d)
+	}
+	rec = e.do("GET", "/api/drawings/manifest", e.keyA, "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"dk1"`) {
+		t.Fatalf("key manifest: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// O JWT do mesmo dono vê o que a chave gravou.
+	if rec := e.do("GET", "/api/drawings/dk1", e.tokenA, ""); rec.Code != 200 {
+		t.Fatalf("jwt get after key put: %d", rec.Code)
+	}
+
+	// Mesma validação do fluxo por JWT.
+	bad := `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`
+	if rec := e.do("PUT", "/api/drawings/dk2", e.keyA, putBody(goodScene, bad, 2000)); rec.Code != 400 {
+		t.Fatalf("key put with script: got %d want 400", rec.Code)
+	}
+	if d, _ := e.repo.Get(e.userAID, "dk2"); d != nil {
+		t.Fatal("rejected drawing must not be stored")
+	}
+}
+
+func TestAPIKeyDrawingIsolation(t *testing.T) {
+	e := newEnv(t, 1<<20)
+	e.do("PUT", "/api/drawings/bobs", e.tokenB, putBody(goodScene, goodSVG, 2000))
+
+	if rec := e.do("GET", "/api/drawings/bobs", e.keyA, ""); rec.Code != 404 {
+		t.Fatalf("key get of other user's drawing: got %d want 404", rec.Code)
+	}
+	// O PUT grava sob o dono da chave; o de B não muda.
+	newer := `{"type":"zk-sketch","version":1,"strokes":[]}`
+	if rec := e.do("PUT", "/api/drawings/bobs", e.keyA, putBody(newer, goodSVG, 3000)); rec.Code != 200 {
+		t.Fatalf("key put: %d %s", rec.Code, rec.Body.String())
+	}
+	rec := e.do("GET", "/api/drawings/bobs", e.tokenB, "")
+	var d drawings.Drawing
+	json.Unmarshal(rec.Body.Bytes(), &d)
+	if d.Scene != goodScene || d.UpdatedAt != 2000 {
+		t.Fatalf("bob's drawing changed: %+v", d)
+	}
+}
+
+func TestAPIKeyCannotDeleteDrawing(t *testing.T) {
+	e := newEnv(t, 1<<20)
+	e.do("PUT", "/api/drawings/keep", e.tokenA, putBody(goodScene, goodSVG, 2000))
+	// Referenciado: só um DELETE marcaria como órfão.
+	b, _ := json.Marshal(map[string]any{"title": "z", "body": "![](zk:draw/keep)", "tags": []string{}})
+	if rec := e.do("POST", "/api/zettels", e.tokenA, string(b)); rec.Code != 201 && rec.Code != 200 {
+		t.Fatalf("create zettel: %d %s", rec.Code, rec.Body.String())
+	}
+
+	if rec := e.do("DELETE", "/api/drawings/keep", e.keyA, ""); rec.Code != 403 {
+		t.Fatalf("key delete: got %d want 403", rec.Code)
+	}
+	if n, _ := e.repo.PurgeOrphans(time.Now().UnixMilli() + 1000); n != 0 {
+		t.Fatal("drawing must not be marked orphan by a forbidden DELETE")
+	}
+	if d, _ := e.repo.Get(e.userAID, "keep"); d == nil {
+		t.Fatal("drawing must survive")
 	}
 }
 
