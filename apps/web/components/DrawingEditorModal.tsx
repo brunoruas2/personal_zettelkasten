@@ -540,14 +540,11 @@ export function DrawingEditorModal({ id, onClose }: Props) {
 
               {eng.selectionCount > 0 && (
                 <div className="flex items-center gap-1" role="group" aria-label="Seleção">
-                  <span className="px-1 text-xs text-zinc-500 dark:text-zinc-400" aria-live="polite">
-                    {eng.selectionCount} {eng.selectionCount === 1 ? 'selecionado' : 'selecionados'}
-                  </span>
                   <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.duplicateSelection()} title="Duplicar a seleção (Ctrl+D)" aria-label="Duplicar a seleção" className={btn}>
-                    ⧉<span className="hidden sm:inline">Duplicar</span>
+                    ⧉
                   </button>
                   <button type="button" onMouseDown={keepFocus} onClick={() => canvasRef.current?.deleteSelection()} title="Excluir a seleção (Delete)" aria-label="Excluir a seleção" className={btn}>
-                    🗑<span className="hidden sm:inline">Excluir</span>
+                    🗑
                   </button>
                 </div>
               )}
