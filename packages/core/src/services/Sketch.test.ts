@@ -337,33 +337,55 @@ describe('outlineToSvgPath', () => {
   });
 });
 
-/** Reconstrói os pontos absolutos do path compacto: `[início, controle do q, fins…]`. */
-function decodeCompact(d: string): { start: number[]; ctrl: number[] | null; ends: number[][] } {
+/**
+ * Reconstrói os pontos absolutos do path compacto, na ordem dos comandos, como o
+ * SVG os interpreta: `ctrls[k]` é o controle da curva que termina em `ends[k]` —
+ * explícito no `q`, reflexo do anterior no ponto corrente no `t` (`null` no `l`).
+ */
+function decodeCompact(d: string): { start: number[]; ctrls: (number[] | null)[]; ends: number[][]; cmds: string } {
   const tokens = d.match(/[MqtlzZ]|-?\d+/g) ?? [];
-  let cmd = '';
-  const nums: Record<string, number[]> = { M: [], q: [], t: [], l: [] };
+  const groups: { cmd: string; nums: number[] }[] = [];
   for (const tk of tokens) {
-    if (/^[A-Za-z]$/.test(tk)) cmd = tk;
-    else nums[cmd].push(Number(tk));
+    if (/^[A-Za-z]$/.test(tk)) groups.push({ cmd: tk, nums: [] });
+    else groups[groups.length - 1].nums.push(Number(tk));
   }
-  let [cx, cy] = nums.M;
+  const [cx0, cy0] = groups[0].nums;
+  let cx = cx0;
+  let cy = cy0;
   const start = [cx, cy];
+  const ctrls: (number[] | null)[] = [];
   const ends: number[][] = [];
-  let ctrl: number[] | null = null;
-  if (nums.q.length) {
-    const [a, b, c, e] = nums.q;
-    ctrl = [cx + a, cy + b];
-    cx += c;
-    cy += e;
-    ends.push([cx, cy]);
+  let cmds = 'M';
+  let prevCtrl: number[] | null = null;
+  for (const { cmd, nums } of groups.slice(1)) {
+    cmds += cmd;
+    if (cmd === 'q') {
+      for (let i = 0; i < nums.length; i += 4) {
+        prevCtrl = [cx + nums[i], cy + nums[i + 1]];
+        cx += nums[i + 2];
+        cy += nums[i + 3];
+        ctrls.push(prevCtrl);
+        ends.push([cx, cy]);
+      }
+    } else if (cmd === 't') {
+      for (let i = 0; i < nums.length; i += 2) {
+        prevCtrl = prevCtrl ? [2 * cx - prevCtrl[0], 2 * cy - prevCtrl[1]] : [cx, cy];
+        cx += nums[i];
+        cy += nums[i + 1];
+        ctrls.push(prevCtrl);
+        ends.push([cx, cy]);
+      }
+    } else if (cmd === 'l') {
+      for (let i = 0; i < nums.length; i += 2) {
+        prevCtrl = null;
+        cx += nums[i];
+        cy += nums[i + 1];
+        ctrls.push(null);
+        ends.push([cx, cy]);
+      }
+    }
   }
-  const rest = [...nums.t, ...nums.l];
-  for (let i = 0; i < rest.length; i += 2) {
-    cx += rest[i];
-    cy += rest[i + 1];
-    ends.push([cx, cy]);
-  }
-  return { start, ctrl, ends };
+  return { start, ctrls, ends, cmds };
 }
 
 /** Outline sintético com coordenadas fracionárias (passeio determinístico). */
@@ -401,19 +423,42 @@ describe('outlineToCompactSvgPath', () => {
 
   it('sem erro acumulado: cada ponto fica a até 0,5 do valor exato', () => {
     const outline = wobblyOutline(1000);
-    const { start, ctrl, ends } = decodeCompact(outlineToCompactSvgPath(outline));
+    const { start, ctrls, ends } = decodeCompact(outlineToCompactSvgPath(outline));
     const near = (got: number[], want: number[]) => {
       expect(Math.abs(got[0] - want[0])).toBeLessThanOrEqual(0.5);
       expect(Math.abs(got[1] - want[1])).toBeLessThanOrEqual(0.5);
     };
     near(start, outline[0]);
-    near(ctrl!, outline[1]);
+    near(ctrls[0]!, outline[1]);
     // Fins: ponto médio de cada aresta i→i+1, i = 1..len−2.
     expect(ends).toHaveLength(outline.length - 2);
     ends.forEach((p, k) => {
       const a = outline[k + 1];
       const b = outline[k + 2];
       near(p, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+    });
+  });
+
+  it('controle implícito não deriva: todo controle a até 1,5 do vértice exato', () => {
+    // Passeio pseudoaleatório (LCG com semente): fins com frações variadas, como um traço real.
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const outline: number[][] = [];
+    let x = 300.3;
+    let y = 200.7;
+    for (let i = 0; i < 1000; i++) {
+      x += 1.3 + rnd() * 0.9;
+      y += (rnd() - 0.5) * 0.8;
+      outline.push([x, y]);
+    }
+    const { ctrls, cmds } = decodeCompact(outlineToCompactSvgPath(outline));
+    expect(cmds).toMatch(/^Mq[qt]*z$/);
+    expect(ctrls).toHaveLength(outline.length - 2);
+    ctrls.forEach((c, k) => {
+      // Curva k vai do ponto médio da aresta k→k+1 ao da aresta k+1→k+2: controle = vértice k+1.
+      const v = outline[k + 1];
+      expect(Math.abs(c![0] - v[0])).toBeLessThanOrEqual(1.5);
+      expect(Math.abs(c![1] - v[1])).toBeLessThanOrEqual(1.5);
     });
   });
 

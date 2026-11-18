@@ -41,12 +41,22 @@ function joinNums(nums: number[]): string {
   return s;
 }
 
+/** Desvio máximo (px, por eixo) do controle implícito de um `t` antes de virar `q` explícito. */
+const MAX_CTRL_DRIFT = 1;
+
 /**
  * Mesma geometria de `outlineToSvgPath`, para o preview SVG gravado: `M` absoluto
  * e o resto em comandos relativos (`q`, `t`, `l`, `z`) com deltas inteiros. Cada
  * coordenada absoluta é arredondada **antes** do delta, então o erro por ponto
- * fica em até 0,5 px e não se acumula ao longo do traço. O canvas não usa isto:
- * no zoom do editor, 1 px de passo serrilharia o traço.
+ * fica em até 0,5 px e não se acumula ao longo do traço.
+ *
+ * O `t` não carrega controle: o SVG o calcula refletindo o anterior no ponto
+ * corrente, e com fins arredondados esse reflexo deriva (o erro de cada passo soma
+ * no seguinte — chegava a 15 px e hachurava o traço). Por isso o controle implícito
+ * é acompanhado no espaço quantizado: enquanto fica a até `MAX_CTRL_DRIFT` do
+ * vértice arredondado sai `t`; senão sai `q` com o controle explícito, e os `t`
+ * seguintes refletem a partir dele. O canvas não usa isto: no zoom do editor, 1 px
+ * de passo serrilharia o traço.
  */
 export function outlineToCompactSvgPath(outline: ReadonlyArray<ReadonlyArray<number>>): string {
   const len = outline.length;
@@ -71,19 +81,43 @@ export function outlineToCompactSvgPath(outline: ReadonlyArray<ReadonlyArray<num
     return `${d}l${joinNums(nums)}z`;
   }
 
-  const b = outline[1];
-  const c = outline[2];
-  // No `q`, controle e fim são relativos ao início do segmento.
-  const ctrl = [Math.round(b[0]) - cx, Math.round(b[1]) - cy];
-  const end = step(mid(b[0], c[0]), mid(b[1], c[1]));
-  d += `q${joinNums([...ctrl, ...end])}`;
+  // Comandos consecutivos da mesma letra compartilham a letra (`t1,2,3,4` = dois `t`).
+  let cmd = '';
+  let nums: number[] = [];
+  const flush = () => {
+    if (nums.length > 0) d += cmd + joinNums(nums);
+    nums = [];
+  };
+  const emit = (letter: string, values: number[]) => {
+    if (letter !== cmd) {
+      flush();
+      cmd = letter;
+    }
+    nums.push(...values);
+  };
 
-  const ts: number[] = [];
-  for (let i = 2; i < len - 1; i++) {
+  // Controle (absoluto, quantizado) da última curva, como o SVG o enxerga.
+  let icx = 0;
+  let icy = 0;
+  for (let i = 1; i < len - 1; i++) {
     const p = outline[i];
     const q = outline[i + 1];
-    ts.push(...step(mid(p[0], q[0]), mid(p[1], q[1])));
+    const vx = Math.round(p[0]);
+    const vy = Math.round(p[1]);
+    const rx = 2 * cx - icx;
+    const ry = 2 * cy - icy;
+    if (i > 1 && Math.abs(rx - vx) <= MAX_CTRL_DRIFT && Math.abs(ry - vy) <= MAX_CTRL_DRIFT) {
+      icx = rx;
+      icy = ry;
+      emit('t', step(mid(p[0], q[0]), mid(p[1], q[1])));
+    } else {
+      // No `q`, controle e fim são relativos ao início do segmento.
+      const ctrl = [vx - cx, vy - cy];
+      icx = vx;
+      icy = vy;
+      emit('q', [...ctrl, ...step(mid(p[0], q[0]), mid(p[1], q[1]))]);
+    }
   }
-  if (ts.length > 0) d += `t${joinNums(ts)}`;
+  flush();
   return d + 'z';
 }
