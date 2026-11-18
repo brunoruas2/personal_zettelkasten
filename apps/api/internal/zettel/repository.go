@@ -71,6 +71,9 @@ func (r *Repository) Create(z *models.Zettel) error {
 		INSERT INTO zettels (id, user_id, title, body, tags, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, z.ID, z.UserID, z.Title, z.Body, string(tags), z.CreatedAt, z.UpdatedAt)
+	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		return conflict("id already exists")
+	}
 	return err
 }
 
@@ -87,7 +90,7 @@ func (r *Repository) Update(z *models.Zettel) error {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("not found")
+		return ErrNotFound
 	}
 	return nil
 }
@@ -105,7 +108,7 @@ func (r *Repository) Delete(userID, id string, now int64) error {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("not found")
+		return ErrNotFound
 	}
 	// A vaga na galáxia é liberada junto; o cliente apaga a sua ao receber o
 	// zettel deletado pelo pull.

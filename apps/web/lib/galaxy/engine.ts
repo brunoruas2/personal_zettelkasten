@@ -165,6 +165,8 @@ export class GalaxyEngine {
 
   private fly: { from: Camera; to: Camera; start: number } | null = null;
   private highlight: { idx: number; until: number } | null = null;
+  /** Pontos tocados pelo agente (tempo real): anel pulsante, sem mover a câmera. */
+  private pulse: number[] = [];
 
   private accent = '#7c3aed';
   private fontTitle = 'Georgia, serif';
@@ -246,6 +248,12 @@ export class GalaxyEngine {
     this.selectedIdx = -1;
     this.tagMask = null;
     this.dimKey = '';
+    this.markScene();
+  }
+
+  /** Anel pulsante nestes índices (atividade do agente); `[]` limpa. Não mexe na câmera. */
+  setPulse(idxs: number[]): void {
+    this.pulse = idxs;
     this.markScene();
   }
 
@@ -881,6 +889,8 @@ export class GalaxyEngine {
       if (now > this.highlight.until) this.highlight = null;
       this.sceneDirty = true;
     }
+    // Pulso do agente anima enquanto houver índices (o React limpa ao expirar).
+    if (this.pulse.length > 0) this.sceneDirty = true;
 
     if (this.sceneDirty) {
       this.sceneDirty = false;
@@ -1028,6 +1038,22 @@ export class GalaxyEngine {
       ctx.beginPath();
       ctx.arc(toSx(d.xs[i]), toSy(d.ys[i]), pointRadius(d.degree[i], scale) + 8 + pulse * 4, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    if (this.pulse.length > 0) {
+      const wave = 0.5 + 0.5 * Math.sin(now / 200);
+      ctx.strokeStyle = this.accent;
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 0.35 + 0.55 * wave;
+      for (const i of this.pulse) {
+        if (i < 0 || i >= d.ids.length) continue;
+        const sx = toSx(d.xs[i]);
+        const sy = toSy(d.ys[i]);
+        ctx.beginPath();
+        ctx.arc(sx, sy, pointRadius(d.degree[i], scale) + 10 + wave * 6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.globalAlpha = 1;
     }
 

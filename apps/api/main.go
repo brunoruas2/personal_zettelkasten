@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -12,7 +13,9 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
 	"github.com/brunofullstack/zettelkasten/api/internal/db"
 	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
+	"github.com/brunofullstack/zettelkasten/api/internal/events"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
+	mcpserver "github.com/brunofullstack/zettelkasten/api/internal/mcp"
 	"github.com/brunofullstack/zettelkasten/api/internal/portability"
 	"github.com/brunofullstack/zettelkasten/api/internal/positions"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
@@ -58,7 +61,16 @@ func main() {
 	positionHandler := positions.NewHandler(positionRepo)
 
 	zettelRepo := zettel.NewRepository(database)
-	zettelHandler := zettel.NewHandler(zettelRepo, imageRepo).WithDrawings(drawingRepo)
+	// Ponto único de escrita de zettels: o REST e (depois) o MCP usam o mesmo serviço.
+	// Barramento de tempo real: escritas de zettel e desenho publicam aqui e
+	// GET /api/events entrega por SSE.
+	broker := events.NewBroker()
+	drawingHandler.WithNotify(func(ctx context.Context, userID, op, id string) {
+		broker.Publish(userID, events.Event{Kind: "drawing", Op: op, IDs: []string{id}, Source: auth.GetSource(ctx)})
+	})
+	zettelService := zettel.NewService(zettelRepo, imageRepo).WithDrawings(drawingRepo).
+		WithNotifier(events.ZettelNotifier{B: broker})
+	zettelHandler := zettel.NewHandlerWithService(zettelService)
 
 	portabilityHandler := portability.NewHandler(zettelRepo, authRepo, imageRepo).
 		WithDrawings(drawingRepo, drawingQuota).
@@ -71,17 +83,27 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware(allowedOrigin))
-	r.Use(middleware.Timeout(30 * time.Second))
+	// O timeout vale por grupo, não no r.Use global: GET /api/events é um
+	// stream longo e seria cortado em 30 s. Rota nova = dentro de um grupo com
+	// `timeout`, salvo stream.
+	timeout := middleware.Timeout(30 * time.Second)
 
 	// Auth routes (public + protected internamente)
-	r.Mount("/api/auth", authHandler.Routes(jwtSecret))
+	r.With(timeout).Mount("/api/auth", authHandler.Routes(jwtSecret))
 
 	// Public backup export (authenticated via backup key, not JWT)
-	r.Get("/api/backup/export", portabilityHandler.BackupExport)
+	r.With(timeout).Get("/api/backup/export", portabilityHandler.BackupExport)
+
+	// Tempo real (SSE): só JWT, sem timeout.
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireAuth(jwtSecret))
+		r.Get("/api/events", events.Handler(broker))
+	})
 
 	// Zettels: JWT ou chave de API. A chave só passa em GET /api/zettels,
 	// GET|PUT /api/zettels/{id} (allowlist em auth.RequireAuthOrKey).
 	r.Group(func(r chi.Router) {
+		r.Use(timeout)
 		r.Use(auth.RequireAuthOrKey(jwtSecret, authRepo))
 		r.Mount("/api/zettels", zettelHandler.Routes())
 	})
@@ -91,6 +113,7 @@ func main() {
 	// GET|PUT {id} — DELETE recebe 403 (allowlist em auth.RequireAuthOrKey).
 	// A rota estática precede a paramétrica.
 	r.Group(func(r chi.Router) {
+		r.Use(timeout)
 		r.Use(auth.RequireAuthOrKey(jwtSecret, authRepo))
 		r.Get("/api/drawings/manifest", drawingHandler.Manifest)
 		r.Put("/api/drawings/{id}", drawingHandler.Put)
@@ -98,8 +121,18 @@ func main() {
 		r.Delete("/api/drawings/{id}", drawingHandler.Delete)
 	})
 
+	// MCP (agentes de IA): só chave zk_, sem allowlist de rota — as tools
+	// passam pelo zettel.Service com origem "agent". Inline pelo mesmo motivo
+	// das imagens (Mount em "/api" abaixo). Sem sessão: GET/DELETE → 405.
+	r.Group(func(r chi.Router) {
+		r.Use(timeout)
+		r.Use(auth.RequireKey(authRepo))
+		r.Handle("/api/mcp", mcpserver.Handler(zettelService, drawingHandler))
+	})
+
 	// Rotas protegidas (requerem JWT)
 	r.Group(func(r chi.Router) {
+		r.Use(timeout)
 		r.Use(auth.RequireAuth(jwtSecret))
 
 		r.Mount("/api/admin", authHandler.AdminRoutes())

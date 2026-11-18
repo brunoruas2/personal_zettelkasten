@@ -17,6 +17,22 @@ type contextKey string
 const UserIDKey contextKey = "userID"
 const UserRoleKey contextKey = "userRole"
 
+// SourceKey guarda a origem da requisição: SourceAgent (chave zk_) ou SourceUI (JWT).
+const SourceKey contextKey = "source"
+
+const (
+	SourceAgent = "agent"
+	SourceUI    = "ui"
+)
+
+// GetSource devolve a origem gravada pelo middleware; SourceUI quando ausente.
+func GetSource(ctx context.Context) string {
+	if s, ok := ctx.Value(SourceKey).(string); ok && s != "" {
+		return s
+	}
+	return SourceUI
+}
+
 func RequireAuth(jwtSecret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +64,7 @@ func RequireAuth(jwtSecret string) func(http.Handler) http.Handler {
 			role, _ := claims["role"].(string)
 			ctx := context.WithValue(r.Context(), UserIDKey, userID)
 			ctx = context.WithValue(ctx, UserRoleKey, role)
+			ctx = context.WithValue(ctx, SourceKey, SourceUI)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -134,9 +151,43 @@ func RequireAuthOrKey(jwtSecret string, store APIKeyStore) func(http.Handler) ht
 			}
 			ctx := context.WithValue(r.Context(), UserIDKey, userID)
 			ctx = context.WithValue(ctx, UserRoleKey, role)
+			ctx = context.WithValue(ctx, SourceKey, SourceAgent)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// RequireKey aceita só a chave zk_ (Bearer ou X-API-Key), sem allowlist de rota:
+// é a porta do agente (MCP). JWT ou nada → 401. Grava userID e origem agent.
+func RequireKey(store APIKeyStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key, present := apiKeyFromRequest(r)
+			if !present || !apiKeyRe.MatchString(key) {
+				jsonErr(w, http.StatusUnauthorized, "api key required")
+				return
+			}
+			keyHash := hashAPIKey(key)
+			userID, role, err := store.FindUserIDByAPIKeyHash(keyHash)
+			if err != nil || userID == "" {
+				jsonErr(w, http.StatusUnauthorized, "invalid api key")
+				return
+			}
+			if err := store.TouchAPIKey(keyHash); err != nil {
+				log.Printf("touch api key: %v", err)
+			}
+			ctx := context.WithValue(r.Context(), UserIDKey, userID)
+			ctx = context.WithValue(ctx, UserRoleKey, role)
+			ctx = context.WithValue(ctx, SourceKey, SourceAgent)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// UserIDFromContext lê o userID gravado pelos middlewares de auth.
+func UserIDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(UserIDKey).(string)
+	return id
 }
 
 func RequireAdmin(next http.Handler) http.Handler {

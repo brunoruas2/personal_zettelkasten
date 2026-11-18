@@ -8,6 +8,8 @@ import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from './Inpl
 import { LinksFooter } from './LinksFooter';
 import { TagChip } from './TagChip';
 import { CARD_TOUCH } from '../../lib/galaxy/touch';
+import { AgentBadge } from './AgentBadge';
+import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 
 /** Altura do cabeçalho (título de até 2 linhas; as tags ficam no fim do corpo)
  *  que sai da altura máxima do corpo. */
@@ -255,7 +257,16 @@ export const GalaxyCard = memo(function GalaxyCard({
     if (drag.current) cancelAnimationFrame(drag.current.raf);
   }, []);
 
-  const border = editing || dragging ? 'border-brand/70' : highlighted ? 'border-[#f5f3ff]/70' : 'border-white/[0.08]';
+  // Tempo real: zettel que o agente acabou de mexer ganha contorno no accent e selo.
+  const byAgent = useAgentActivityStore((s) => s.active[meta.id] !== undefined);
+  const border =
+    editing || dragging
+      ? 'border-brand/70'
+      : byAgent
+        ? 'border-brand ring-2 ring-brand/40'
+        : highlighted
+          ? 'border-[#f5f3ff]/70'
+          : 'border-white/[0.08]';
 
   return (
     <>
@@ -310,6 +321,7 @@ export const GalaxyCard = memo(function GalaxyCard({
                 <h3 className="font-newsreader text-[22px] font-medium leading-snug text-[#f5f3ff]">
                   {meta.title || 'Sem título'}
                 </h3>
+                {byAgent && <AgentBadge className="mt-1" />}
               </div>
               <button
                 type="button"

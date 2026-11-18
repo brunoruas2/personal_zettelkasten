@@ -66,6 +66,7 @@ export default function AgentSkillPage() {
         <nav className={styles.toc}>
           <div className={styles.tocKicker}>Nesta página</div>
           <div className={styles.tocGrid}>
+            <a href="#mcp">Conectar por MCP</a>
             <a href="#overview">Visão geral</a>
             <a href="#auth">Autenticação</a>
             <a href="#api">Referência da API</a>
@@ -90,9 +91,79 @@ export default function AgentSkillPage() {
               <span className={styles.pill}>
                 API: chave <code>zk_…</code>
               </span>
-              <span className={styles.pill}>Escopo: listar · ler · criar · editar</span>
+              <span className={styles.pill}>MCP: buscar · ler · criar · editar · renomear · apagar</span>
             </div>
           </header>
+
+          <section className={styles.section} id="mcp">
+            <h2>
+              <span className={styles.num}>00</span> Conectar por MCP (caminho principal)
+            </h2>
+            <p className={styles.sectionLede}>
+              O jeito recomendado de um agente usar a base é o servidor MCP da própria API: as ferramentas já vêm
+              documentadas, com as convenções da base embutidas, e cada mudança aparece no app do usuário. Não é preciso
+              construir skill nenhuma — a skill REST abaixo continua valendo como acesso secundário.
+            </p>
+            <div className={styles.tblWrap}>
+              <table>
+                <tbody>
+                  <tr>
+                    <td>URL</td>
+                    <td>
+                      <code>https://&lt;host do app&gt;/api/mcp</code> (Streamable HTTP, sem sessão)
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Auth</td>
+                    <td>
+                      <code>Authorization: Bearer zk_…</code> — a chave de <b>Settings → Chave de API</b>. Login (JWT) não
+                      serve aqui.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3>Claude Code</h3>
+            <pre className={styles.code}>
+              claude mcp add --transport http zettel https://&lt;host&gt;/api/mcp \{'\n'}
+              {'  '}--header &quot;Authorization: Bearer <span className={styles.k}>$ZETTEL_API_KEY</span>&quot;
+            </pre>
+
+            <h3>Clientes que só falam stdio</h3>
+            <pre className={styles.code}>
+              npx mcp-remote https://&lt;host&gt;/api/mcp \{'\n'}
+              {'  '}--header &quot;Authorization: Bearer <span className={styles.k}>$ZETTEL_API_KEY</span>&quot;
+            </pre>
+
+            <h3>Ferramentas</h3>
+            <div className={styles.tblWrap}>
+              <table>
+                <tbody>
+                  <tr><td><code>search_zettels</code></td><td>busca por texto (título, corpo, tags), com filtro de tags</td></tr>
+                  <tr><td><code>read_zettel</code></td><td>lê por id ou título exato: corpo, tags, quem cita e quem é citado</td></tr>
+                  <tr><td><code>list_recent</code></td><td>zettels atualizados por último</td></tr>
+                  <tr><td><code>create_zettel</code></td><td>cria; recusa título que já existe e devolve o id dele</td></tr>
+                  <tr><td><code>edit_zettel</code></td><td>troca um trecho (old_string → new_string) ou o corpo inteiro</td></tr>
+                  <tr><td><code>set_tags</code></td><td>acrescenta e remove tags</td></tr>
+                  <tr><td><code>rename_zettel</code></td><td>troca o título e reescreve os [[links]] em toda a base</td></tr>
+                  <tr><td><code>delete_zettel</code></td><td>apaga (destrutivo) e lista quem citava</td></tr>
+                  <tr><td><code>get_links</code></td><td>links de saída e de entrada</td></tr>
+                  <tr><td><code>list_tags</code></td><td>tags em uso com contagem</td></tr>
+                  <tr><td><code>read_drawing</code></td><td>resumo e SVG de um desenho</td></tr>
+                  <tr><td><code>write_drawing</code></td><td>grava um desenho (cena zk-sketch + SVG)</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className={`${styles.note} ${styles.noteDanger}`}>
+              <span className={styles.noteIcon}>✕</span>
+              <p className={styles.noteBody}>
+                Pelo MCP a chave pode <b>apagar e renomear</b> zettels. Trate-a como senha: nunca em repositório, nunca em
+                query string. Regenerar em Settings invalida a anterior na hora.
+              </p>
+            </div>
+          </section>
 
           <section className={styles.section} id="overview">
             <h2>

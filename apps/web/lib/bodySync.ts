@@ -61,6 +61,25 @@ async function fetchBodies(ids: string[]): Promise<string[]> {
   return applied;
 }
 
+/**
+ * Baixa já os corpos desatualizados destes ids (tempo real: o que o agente
+ * acabou de mexer aparece antes da varredura geral). Falha de rede é silenciosa.
+ */
+export async function refreshBodies(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const metas = await repo.listMeta();
+  const want = new Set(ids);
+  const stale = metas.filter((m) => want.has(m.id) && isBodyStale(m)).map((m) => m.id);
+  for (let i = 0; i < stale.length; i += BATCH) {
+    try {
+      await fetchBodies(stale.slice(i, i + BATCH));
+    } catch (err) {
+      if (err instanceof AuthError) throw err;
+      return;
+    }
+  }
+}
+
 let running: Promise<void> | null = null;
 
 /**

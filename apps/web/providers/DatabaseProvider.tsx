@@ -17,7 +17,9 @@ import {
   pushPendingPositions,
 } from '../lib/positionSync';
 import { repo, controller } from '../lib/repo';
-import { downloadBodies } from '../lib/bodySync';
+import { downloadBodies, refreshBodies } from '../lib/bodySync';
+import { startRealtime, type RealtimeEvent } from '../lib/realtime';
+import { useAgentActivityStore, type AgentChange } from '../store/useAgentActivityStore';
 import { invalidateBody } from '../lib/bodyCache';
 import { deferIfDrawing } from '../lib/drawingFocus';
 
@@ -63,6 +65,40 @@ async function syncGalaxy(positionsPulled: boolean) {
   await pushPendingPositions();
 }
 
+// Tempo real: um lote de eventos de GET /api/events vira um ciclo de
+// sincronização (o pull continua sendo a fonte da verdade — o evento só
+// antecipa o gatilho). Os corpos dos ids citados vêm antes da varredura geral,
+// e o que o agente mexeu vai para o destaque/toast. Ciclos em série.
+let realtimeChain: Promise<void> = Promise.resolve();
+
+function runRealtimeCycle(events: RealtimeEvent[], loadAll: () => Promise<void>): Promise<void> {
+  realtimeChain = realtimeChain.then(async () => {
+    const titleOf = (list: { id: string; title: string }[]) => new Map(list.map((z) => [z.id, z.title]));
+    const before = titleOf(useZettelStore.getState().zettels);
+    const pulled = await pullAll();
+    await loadAll();
+
+    const zettelEvents = events.filter((e) => e.kind === 'zettel');
+    const upserted = [...new Set(zettelEvents.filter((e) => e.op === 'upsert').flatMap((e) => e.ids ?? []))];
+    await refreshBodies(upserted).catch(() => {});
+    void prefetchImages();
+    void syncGalaxy(pulled).catch(() => {});
+    void downloadBodies().catch(() => {});
+
+    const after = titleOf(useZettelStore.getState().zettels);
+    const changes: AgentChange[] = [];
+    for (const e of zettelEvents) {
+      if (e.source !== 'agent') continue;
+      for (const id of e.ids ?? []) {
+        if (e.op === 'delete') changes.push({ id, op: 'delete', title: before.get(id) ?? '' });
+        else changes.push({ id, op: before.has(id) ? 'update' : 'create', title: after.get(id) ?? '' });
+      }
+    }
+    useAgentActivityStore.getState().record(changes);
+  }).catch(() => {});
+  return realtimeChain;
+}
+
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const { setController, loadAll, setGraphExcludedTags, setGraphNodeColors } = useZettelStore();
@@ -93,6 +129,8 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     }
 
     setController(controller);
+    let disposed = false;
+    let stopRealtime: (() => void) | null = null;
     loadAll().then(async () => {
       setReady(true);
 
@@ -155,6 +193,19 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         };
         // Com o editor de desenho aberto, adia para o fechamento (modo desenho).
         setSyncNow(async () => deferIfDrawing('sync-now', () => void runSync()));
+
+        // Tempo real: só depois da primeira sincronização. Queda + volta com a
+        // aba visível = ciclo completo (pode ter perdido eventos).
+        if (!disposed) {
+          stopRealtime = startRealtime({
+            onBatch: (events, reconnected) => {
+              deferIfDrawing('realtime', () => {
+                const full = reconnected || events.some((e) => e.kind === 'resync');
+                void runRealtimeCycle(full ? events.filter((e) => e.kind !== 'resync') : events, loadAll);
+              });
+            },
+          });
+        }
       } catch {
         // Network/auth errors during init are non-fatal — AuthError already redirects to /login
         // Other errors (e.g. server down) will be retried on next visibility change
@@ -193,6 +244,9 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     document.addEventListener('visibilitychange', onVisible);
 
     return () => {
+      disposed = true;
+      stopRealtime?.();
+      useAgentActivityStore.getState().clear();
       window.removeEventListener('online', onOnline);
       document.removeEventListener('visibilitychange', onVisible);
     };

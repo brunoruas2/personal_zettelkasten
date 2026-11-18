@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useLinkIndex } from '../../hooks/useLinkIndex';
 import { useZettelStore } from '../../store/useZettelStore';
+import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 import { NeonButton, TitleBar, Win } from '../zkos';
 import { ZettelWindow } from './ZettelWindow';
 import { useLevelActions } from './actions';
@@ -22,6 +23,7 @@ export function MemoryList() {
   const actions = useLevelActions();
   const zettels = useZettelStore((s) => s.zettels);
   const titles = useMemo(() => new Map(zettels.map((z) => [z.id, z.title])), [zettels]);
+  const agentActive = useAgentActivityStore((s) => s.active);
   return (
     <Win accent={DEFAULT_ACCENT} className="min-h-0 flex-1" label="Abertas na Mesa">
       <TitleBar>ABERTAS NA MESA · {consulted.length}</TitleBar>
@@ -39,6 +41,7 @@ export function MemoryList() {
               style={{ borderColor: color, background: on ? color : '#070b14', color: on ? '#04060b' : '#cfe9ee' }}
             >
               {titles.get(id)?.trim() || `Sem título (${zkCode(id)})`}
+              {agentActive[id] && ' · AGENTE'}
             </button>
           );
         })}

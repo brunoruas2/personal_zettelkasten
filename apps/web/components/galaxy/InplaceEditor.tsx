@@ -16,6 +16,8 @@ import type { CaretAnchor } from '../../lib/caretAnchor';
 import { LinkPickerModal } from '../LinkPickerModal';
 import { MarkdownCheatsheet } from '../MarkdownCheatsheet';
 import { LinksFooter } from './LinksFooter';
+import { loadZettel } from '../../lib/bodySync';
+import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'offline' | 'error';
 
@@ -208,6 +210,40 @@ export const InplaceEditor = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Tempo real: o agente alterou este zettel enquanto ele está aberto. Sem
+  // mudanças locais, recarrega em silêncio (senão a próxima digitação gravaria
+  // por cima da versão do agente); com mudanças, pergunta.
+  const agentTouchedAt = useAgentActivityStore((s) => s.touched[zettel.id] ?? 0);
+  const seenAgentRef = useRef(agentTouchedAt);
+  const [agentConflict, setAgentConflict] = useState(false);
+
+  const reloadFromStore = useCallback(async () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    await savingRef.current;
+    const { zettel: fresh, stale } = await loadZettel(zettel.id);
+    if (!fresh || stale) return;
+    savedRef.current = { title: fresh.title, body: fresh.body, tags: fresh.tags };
+    setTitle(fresh.title);
+    setBody(fresh.body);
+    setTags(fresh.tags);
+  }, [zettel.id]);
+
+  useEffect(() => {
+    if (agentTouchedAt <= seenAgentRef.current) return;
+    seenAgentRef.current = agentTouchedAt;
+    const cur = latestRef.current;
+    const saved = savedRef.current;
+    const dirty =
+      timerRef.current !== null ||
+      pendingImagesRef.current > 0 ||
+      cur.body !== saved.body ||
+      cur.title.trim() !== saved.title ||
+      !sameTags(cur.tags, saved.tags);
+    if (dirty) setAgentConflict(true);
+    else void reloadFromStore();
+  }, [agentTouchedAt, reloadFromStore]);
+
   const readyDoneRef = useRef(false);
   useEffect(() => {
     if (!editor || readyDoneRef.current) return;
@@ -275,6 +311,37 @@ export const InplaceEditor = forwardRef<
           className="w-full bg-transparent font-newsreader text-[22px] font-medium leading-snug text-[#f5f3ff] outline-none placeholder:text-[#6f7787]"
         />
       </div>
+
+      {agentConflict && (
+        <div
+          role="alert"
+          data-no-pan
+          className={`mt-2 flex flex-wrap items-center gap-2 rounded-md border border-brand/50 bg-brand/10 px-3 py-2 text-xs text-[#f5f3ff] ${isMobile ? 'mx-5' : 'mx-6'}`}
+        >
+          <span className="mr-auto">O agente alterou este zettel; suas mudanças locais ainda não foram salvas.</span>
+          <button
+            type="button"
+            className="rounded border border-white/20 px-2 py-1 hover:bg-white/10"
+            onClick={() => {
+              setAgentConflict(false);
+              void reloadFromStore();
+            }}
+          >
+            Ver versão do agente
+          </button>
+          <button
+            type="button"
+            className="rounded border border-white/20 px-2 py-1 hover:bg-white/10"
+            onClick={() => {
+              // A próxima gravação vence (LWW): grava já o que está na tela.
+              setAgentConflict(false);
+              schedule();
+            }}
+          >
+            Manter a minha
+          </button>
+        </div>
+      )}
 
       <div
         data-card-scroll

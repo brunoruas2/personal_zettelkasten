@@ -2,37 +2,43 @@ package zettel
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/brunofullstack/zettelkasten/api/internal/auth"
 	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
-	"github.com/brunofullstack/zettelkasten/api/internal/models"
 	"github.com/go-chi/chi/v5"
 )
 
+// Handler é a casca HTTP de /api/zettels: decodifica, chama o Service e
+// traduz os erros tipados. As regras moram no Service.
 type Handler struct {
-	repo     *Repository
-	images   *images.Repository
-	drawings *drawings.Repository
+	svc *Service
 }
 
+// NewHandler monta um Service próprio (compatível com quem só tem os repos).
 func NewHandler(repo *Repository, imageRepo *images.Repository) *Handler {
-	return &Handler{repo: repo, images: imageRepo}
+	return &Handler{svc: NewService(repo, imageRepo)}
+}
+
+// NewHandlerWithService usa um Service já montado (main.go, para compartilhar com o MCP).
+func NewHandlerWithService(svc *Service) *Handler {
+	return &Handler{svc: svc}
 }
 
 // WithDrawings liga a contagem de referências de desenho (`zk:draw/<id>`) aos
-// mesmos pontos em que as de imagem rodam. Opcional para não quebrar quem
-// constrói o handler só com imagens.
+// mesmos pontos em que as de imagem rodam.
 func (h *Handler) WithDrawings(repo *drawings.Repository) *Handler {
-	h.drawings = repo
+	h.svc.WithDrawings(repo)
 	return h
 }
+
+// Service expõe o serviço do handler.
+func (h *Handler) Service() *Service { return h.svc }
 
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
@@ -59,17 +65,17 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query().Get("q")
 	if r.URL.Query().Get("fields") == "meta" && q == "" {
-		metas, err := h.repo.ListMeta(userID, since)
+		metas, err := h.svc.ListMeta(userID, since)
 		if err != nil {
-			jsonError(w, http.StatusInternalServerError, err.Error())
+			writeErr(w, err)
 			return
 		}
 		jsonOK(w, metas)
 		return
 	}
-	zettels, err := h.repo.List(userID, since, q)
+	zettels, err := h.svc.List(userID, since, q)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, err)
 		return
 	}
 	jsonOK(w, zettels)
@@ -101,9 +107,9 @@ func (h *Handler) bodies(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	out, err := h.repo.Bodies(auth.GetUserID(r), req.IDs)
+	out, err := h.svc.Bodies(auth.GetUserID(r), req.IDs)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, err)
 		return
 	}
 	jsonOK(w, out)
@@ -111,14 +117,9 @@ func (h *Handler) bodies(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/zettels/:id
 func (h *Handler) getByID(w http.ResponseWriter, r *http.Request) {
-	userID := auth.GetUserID(r)
-	z, err := h.repo.GetByID(userID, chi.URLParam(r, "id"))
+	z, err := h.svc.Get(auth.GetUserID(r), chi.URLParam(r, "id"))
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if z == nil {
-		jsonError(w, http.StatusNotFound, "not found")
+		writeErr(w, err)
 		return
 	}
 	jsonOK(w, z)
@@ -126,7 +127,6 @@ func (h *Handler) getByID(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/zettels
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
-	userID := auth.GetUserID(r)
 	var input struct {
 		ID        string   `json:"id"`
 		Title     string   `json:"title"`
@@ -139,54 +139,20 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if input.Title == "" && input.ID == "" {
-		jsonError(w, http.StatusBadRequest, "title is required")
+	created, err := h.svc.Create(r.Context(), auth.GetUserID(r), CreateInput{
+		ID: input.ID, Title: input.Title, Body: input.Body, Tags: input.Tags,
+		CreatedAt: input.CreatedAt, UpdatedAt: input.UpdatedAt,
+	})
+	if err != nil {
+		writeErr(w, err)
 		return
 	}
-	now := time.Now().UnixMilli()
-	if input.Tags == nil {
-		input.Tags = []string{}
-	}
-	if input.CreatedAt == 0 {
-		input.CreatedAt = now
-	}
-	if input.UpdatedAt == 0 {
-		input.UpdatedAt = now
-	}
-	if input.ID == "" {
-		input.ID = fmt.Sprintf("%d", now)
-	}
-
-	z := &models.Zettel{
-		ID:        input.ID,
-		UserID:    userID,
-		Title:     input.Title,
-		Body:      input.Body,
-		Tags:      input.Tags,
-		CreatedAt: input.CreatedAt,
-		UpdatedAt: input.UpdatedAt,
-	}
-	if err := h.repo.Create(z); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			jsonError(w, http.StatusConflict, "id already exists")
-			return
-		}
-		jsonError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	h.syncLinks(userID, z.ID, z.Body)
-	h.syncImageRefs(userID, z.ID, z.Body)
-	h.syncDrawingRefs(userID, z.ID, z.Body)
-
-	created, _ := h.repo.GetByID(userID, z.ID)
 	w.WriteHeader(http.StatusCreated)
 	jsonOK(w, created)
 }
 
 // PUT /api/zettels/:id
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
-	userID := auth.GetUserID(r)
-	id := chi.URLParam(r, "id")
 	var input struct {
 		Title     string   `json:"title"`
 		Body      string   `json:"body"`
@@ -197,61 +163,30 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if input.Tags == nil {
-		input.Tags = []string{}
-	}
-	if input.UpdatedAt == 0 {
-		input.UpdatedAt = time.Now().UnixMilli()
-	}
-
-	z := &models.Zettel{
-		ID:        id,
-		UserID:    userID,
-		Title:     input.Title,
-		Body:      input.Body,
-		Tags:      input.Tags,
-		UpdatedAt: input.UpdatedAt,
-	}
-	if err := h.repo.Update(z); err != nil {
-		if err.Error() == "not found" {
-			jsonError(w, http.StatusNotFound, "not found")
-			return
-		}
-		jsonError(w, http.StatusInternalServerError, err.Error())
+	updated, err := h.svc.Update(r.Context(), auth.GetUserID(r), chi.URLParam(r, "id"), UpdateInput{
+		Title: input.Title, Body: input.Body, Tags: input.Tags, UpdatedAt: input.UpdatedAt,
+	})
+	if err != nil {
+		writeErr(w, err)
 		return
 	}
-	h.syncLinks(userID, id, z.Body)
-	h.syncImageRefs(userID, id, z.Body)
-	h.syncDrawingRefs(userID, id, z.Body)
-
-	updated, _ := h.repo.GetByID(userID, id)
 	jsonOK(w, updated)
 }
 
 // DELETE /api/zettels/:id
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
-	userID := auth.GetUserID(r)
-	id := chi.URLParam(r, "id")
-	if err := h.repo.Delete(userID, id, time.Now().UnixMilli()); err != nil {
-		if err.Error() == "not found" {
-			jsonError(w, http.StatusNotFound, "not found")
-			return
-		}
-		jsonError(w, http.StatusInternalServerError, err.Error())
+	if err := h.svc.Delete(r.Context(), auth.GetUserID(r), chi.URLParam(r, "id")); err != nil {
+		writeErr(w, err)
 		return
 	}
-	// Corpo vazio: solta todas as referências de imagem deste zettel.
-	h.syncImageRefs(userID, id, "")
-	h.syncDrawingRefs(userID, id, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // GET /api/zettels/:id/backlinks
 func (h *Handler) backlinks(w http.ResponseWriter, r *http.Request) {
-	userID := auth.GetUserID(r)
-	zettels, err := h.repo.GetBacklinks(userID, chi.URLParam(r, "id"))
+	zettels, err := h.svc.Backlinks(auth.GetUserID(r), chi.URLParam(r, "id"))
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, err)
 		return
 	}
 	jsonOK(w, zettels)
@@ -262,36 +197,11 @@ func (h *Handler) backlinks(w http.ResponseWriter, r *http.Request) {
 // Usado após migração inicial, quando zettels foram enviados um a um e a ordem de
 // criação pode ter impedido alguns links de serem resolvidos.
 func (h *Handler) rebuildLinks(w http.ResponseWriter, r *http.Request) {
-	userID := auth.GetUserID(r)
-	zettels, err := h.repo.List(userID, 0, "")
-	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+	if err := h.svc.RebuildLinks(auth.GetUserID(r)); err != nil {
+		writeErr(w, err)
 		return
 	}
-	for _, z := range zettels {
-		h.syncLinks(userID, z.ID, z.Body)
-		h.syncImageRefs(userID, z.ID, z.Body)
-	h.syncDrawingRefs(userID, z.ID, z.Body)
-	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// syncLinks resolve títulos de [[wiki links]] para IDs e atualiza a tabela links.
-func (h *Handler) syncLinks(userID, sourceID, body string) {
-	parsed := parseLinkTitles(body)
-	var links []models.Link
-	for _, p := range parsed {
-		z, err := h.repo.FindByTitle(userID, p.title)
-		if err != nil || z == nil {
-			continue
-		}
-		l := models.Link{SourceID: sourceID, TargetID: z.ID}
-		if p.isParentRef {
-			l.Type = "parent-ref"
-		}
-		links = append(links, l)
-	}
-	_ = h.repo.UpsertLinks(sourceID, links)
 }
 
 // imageRefRE casa as referências de imagem no corpo: ![alt](zk:img/<32 hex>).
@@ -299,33 +209,18 @@ var imageRefRE = regexp.MustCompile(`zk:img/([0-9a-f]{32})`)
 
 // ParseImageIDs extrai os ids de imagem referenciados por um corpo, sem repetir.
 func ParseImageIDs(body string) []string {
-	matches := imageRefRE.FindAllStringSubmatch(body, -1)
-	seen := make(map[string]struct{}, len(matches))
-	ids := make([]string, 0, len(matches))
-	for _, m := range matches {
-		if _, dup := seen[m[1]]; dup {
-			continue
-		}
-		seen[m[1]] = struct{}{}
-		ids = append(ids, m[1])
-	}
-	return ids
-}
-
-// syncImageRefs reescreve as referências de imagem do zettel e reconcilia
-// orphaned_at. Roda nos mesmos pontos que syncLinks.
-func (h *Handler) syncImageRefs(userID, zettelID, body string) {
-	if h.images == nil {
-		return
-	}
-	_ = h.images.SyncRefs(userID, zettelID, ParseImageIDs(body), time.Now().UnixMilli())
+	return uniqueSubmatches(imageRefRE, body)
 }
 
 var drawingRefRE = regexp.MustCompile(`zk:draw/([A-Za-z0-9]{1,64})`)
 
 // ParseDrawingIDs extrai os ids de desenho referenciados por um corpo, sem repetir.
 func ParseDrawingIDs(body string) []string {
-	matches := drawingRefRE.FindAllStringSubmatch(body, -1)
+	return uniqueSubmatches(drawingRefRE, body)
+}
+
+func uniqueSubmatches(re *regexp.Regexp, body string) []string {
+	matches := re.FindAllStringSubmatch(body, -1)
 	seen := make(map[string]struct{}, len(matches))
 	ids := make([]string, 0, len(matches))
 	for _, m := range matches {
@@ -338,16 +233,31 @@ func ParseDrawingIDs(body string) []string {
 	return ids
 }
 
-// syncDrawingRefs reescreve as referências de desenho do zettel e reconcilia
-// orphaned_at. Roda nos mesmos pontos que syncImageRefs.
-func (h *Handler) syncDrawingRefs(userID, zettelID, body string) {
-	if h.drawings == nil {
-		return
-	}
-	_ = h.drawings.SyncRefs(userID, zettelID, ParseDrawingIDs(body), time.Now().UnixMilli())
-}
-
 // --- helpers ---
+
+// writeErr traduz os erros tipados do Service: 404, 409, 400; o resto é 500.
+func writeErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		jsonError(w, http.StatusNotFound, "not found")
+	case errors.Is(err, ErrPatchMismatch):
+		jsonError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, ErrConflict):
+		msg := err.Error()
+		if len(msg) > len("conflict: ") {
+			msg = msg[len("conflict: "):]
+		}
+		jsonError(w, http.StatusConflict, msg)
+	case errors.Is(err, ErrInvalid):
+		msg := err.Error()
+		if len(msg) > len("invalid: ") {
+			msg = msg[len("invalid: "):]
+		}
+		jsonError(w, http.StatusBadRequest, msg)
+	default:
+		jsonError(w, http.StatusInternalServerError, err.Error())
+	}
+}
 
 func jsonOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")

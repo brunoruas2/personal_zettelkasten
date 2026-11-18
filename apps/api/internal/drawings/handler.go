@@ -2,6 +2,7 @@ package drawings
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -30,6 +31,16 @@ var idRE = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
 type Handler struct {
 	repo       *Repository
 	quotaBytes int64
+	notify     NotifyFunc
+}
+
+// NotifyFunc é avisada depois de cada escrita efetiva ("upsert" ou "delete").
+type NotifyFunc func(ctx context.Context, userID, op, id string)
+
+// WithNotify liga as escritas de desenho ao barramento de tempo real.
+func (h *Handler) WithNotify(fn NotifyFunc) *Handler {
+	h.notify = fn
+	return h
 }
 
 func NewHandler(repo *Repository, quotaBytes int64) *Handler {
@@ -72,23 +83,53 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	status, err := h.Store(r.Context(), userID, id, StoreInput(b))
+	if err != nil {
+		var se *StoreError
+		if errors.As(err, &se) {
+			jsonError(w, se.Status, se.Msg)
+			return
+		}
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonOK(w, map[string]string{"id": id, "status": status})
+}
 
+// StoreInput é o desenho a gravar (mesmos campos do corpo do PUT).
+type StoreInput putBody
+
+// StoreError é uma recusa de validação, tamanho ou quota, com o status HTTP.
+type StoreError struct {
+	Status int
+	Msg    string
+}
+
+func (e *StoreError) Error() string { return e.Msg }
+
+// ValidID diz se o id de desenho é aceito (alfanumérico, até 64).
+func ValidID(id string) bool { return idRE.MatchString(id) }
+
+// Store valida e grava um desenho (o PUT e o MCP usam o mesmo caminho).
+// Validação, nesta ordem: tamanho, cena JSON (zk-sketch, ou excalidraw
+// legada), SVG inofensivo, updated_at, quota. Devolve "stored" ou "ignored"
+// (last-write-wins: o armazenado é igual ou mais novo).
+func (h *Handler) Store(ctx context.Context, userID, id string, b StoreInput) (string, error) {
+	if !idRE.MatchString(id) {
+		return "", &StoreError{http.StatusBadRequest, "invalid drawing id"}
+	}
 	byteLen := int64(len(b.Scene) + len(b.SVG))
 	if byteLen > MaxDrawingBytes {
-		jsonError(w, http.StatusRequestEntityTooLarge, "drawing exceeds 5 MB")
-		return
+		return "", &StoreError{http.StatusRequestEntityTooLarge, "drawing exceeds 5 MB"}
 	}
 	if err := ValidateScene(b.Scene); err != nil {
-		jsonError(w, http.StatusBadRequest, err.Error())
-		return
+		return "", &StoreError{http.StatusBadRequest, err.Error()}
 	}
 	if err := ValidateSVG(b.SVG); err != nil {
-		jsonError(w, http.StatusBadRequest, err.Error())
-		return
+		return "", &StoreError{http.StatusBadRequest, err.Error()}
 	}
 	if b.UpdatedAt <= 0 {
-		jsonError(w, http.StatusBadRequest, "updated_at is required")
-		return
+		return "", &StoreError{http.StatusBadRequest, "updated_at is required"}
 	}
 	if b.CreatedAt <= 0 {
 		b.CreatedAt = b.UpdatedAt
@@ -103,17 +144,14 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request) {
 	// Regravar o mesmo id substitui o conteúdo, não soma à quota.
 	used, err := h.repo.UsedBytes(userID)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
-		return
+		return "", err
 	}
 	prev, err := h.repo.ByteLen(userID, id)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
-		return
+		return "", err
 	}
 	if used-prev+byteLen > h.quotaBytes {
-		jsonError(w, http.StatusRequestEntityTooLarge, "drawing quota exceeded")
-		return
+		return "", &StoreError{http.StatusRequestEntityTooLarge, "drawing quota exceeded"}
 	}
 
 	changed, err := h.repo.Upsert(userID, Drawing{
@@ -121,16 +159,19 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request) {
 		Width: b.Width, Height: b.Height, CreatedAt: b.CreatedAt, UpdatedAt: b.UpdatedAt,
 	})
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
-		return
+		return "", err
 	}
-	status := "stored"
 	if !changed {
-		// Escrita fora de ordem ou repetida: o armazenado é igual ou mais novo.
-		status = "ignored"
+		return "ignored", nil
 	}
-	jsonOK(w, map[string]string{"id": id, "status": status})
+	if h.notify != nil {
+		h.notify(ctx, userID, "upsert", id)
+	}
+	return "stored", nil
 }
+
+// Repo expõe o repositório (leitura de desenhos pelo MCP).
+func (h *Handler) Repo() *Repository { return h.repo }
 
 // GET /api/drawings/{id}
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
@@ -170,13 +211,17 @@ func (h *Handler) Manifest(w http.ResponseWriter, r *http.Request) {
 // DELETE /api/drawings/{id}
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID := auth.GetUserID(r)
-	if err := h.repo.MarkOrphan(userID, chi.URLParam(r, "id"), time.Now().UnixMilli()); err != nil {
+	id := chi.URLParam(r, "id")
+	if err := h.repo.MarkOrphan(userID, id, time.Now().UnixMilli()); err != nil {
 		if err.Error() == "not found" {
 			jsonError(w, http.StatusNotFound, "not found")
 			return
 		}
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if h.notify != nil {
+		h.notify(r.Context(), userID, "delete", id)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

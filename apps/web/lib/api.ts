@@ -91,4 +91,10 @@ export const api = {
     request(path, { method: 'PUT', body: JSON.stringify(body) }),
 
   delete: (path: string) => request(path, { method: 'DELETE' }),
+
+  // Stream longo (SSE em GET /api/events). O EventSource não manda Authorization
+  // e o token só existe em memória, por isso é fetch + leitura do body. O 401
+  // renova o token como nas outras chamadas.
+  stream: (path: string, signal: AbortSignal) =>
+    request(path, { method: 'GET', signal, headers: { Accept: 'text/event-stream' }, cache: 'no-store' }),
 }

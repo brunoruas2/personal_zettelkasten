@@ -11,6 +11,7 @@ import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from '../gal
 import { editedAgo } from '../galaxy/HoverCard';
 import { captureCaretAnchor, type CaretAnchor } from '../../lib/caretAnchor';
 import { NeonButton, StatusBar, TitleBar, Win } from '../zkos';
+import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 import { EDIT_ACCENT, useLevelsEnv } from './LevelsContext';
 import { saveLabel, zkCode } from './format';
 import {
@@ -403,7 +404,9 @@ export function ZettelWindow({
     ...(menuActions ?? []),
   ];
 
-  const header = `${code} — ${title.toUpperCase()}${amber ? ' · EDITANDO' : titleSuffix ? ` · ${titleSuffix}` : ''}`;
+  // Tempo real: selo no estilo do tema enquanto o agente acabou de mexer aqui.
+  const byAgent = useAgentActivityStore((st) => st.active[id] !== undefined);
+  const header = `${code} — ${title.toUpperCase()}${amber ? ' · EDITANDO' : titleSuffix ? ` · ${titleSuffix}` : ''}${byAgent ? ' · AGENTE' : ''}`;
 
   const openWikiLink = (t: string) => {
     // As actions (focus/consult) já gravam a edição antes de trocar.

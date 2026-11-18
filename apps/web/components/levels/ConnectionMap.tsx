@@ -7,6 +7,7 @@ import { NeonButton } from '../zkos';
 import { DEFAULT_ACCENT, useLevelsEnv } from './LevelsContext';
 import { useReadingScale, zkFont } from '../../lib/readingFontSize';
 import { allSlice, boundsOf, clampScale, computeSlice, fitView, type View } from './mapSlice';
+import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 
 const HOT = '#ff2bd6';
 const ACTIVE = '#ffb000';
@@ -31,6 +32,9 @@ interface Cluster {
  * Nível 3 · Mapa: bolinhas, manchas de cluster e linhas (sem cards). Desenha
  * todos os zettels posicionados. Canvas 2D, redesenho sob demanda.
  */
+/** Anel dos nós alterados agora pelo agente. */
+const AGENT_RING = '#7df9ff';
+
 export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) {
   const { data, isMobile } = useLevelsEnv();
   const focusId = useLevelsStore((s) => s.focusId);
@@ -44,6 +48,8 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
   const viewRef = useRef<View>({ cx: 0, cy: 0, scale: 0.2 });
   const hoverRef = useRef(-1);
   const pulseRef = useRef(-1);
+  /** Nós que o agente acabou de mexer (tempo real): anel extra. */
+  const agentRef = useRef<Set<number>>(new Set());
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const rafRef = useRef(0);
   const fontRef = useRef('monospace');
@@ -229,6 +235,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       if (isFocus) ring(HOT, 4, 2.5);
       if (i === hoverRef.current) ring('#cfe9ee', 9, 1);
       if (i === pulseRef.current) ring('#ffffff', 12, 2);
+      if (agentRef.current.has(i)) ring(AGENT_RING, 15, 2.5);
     }
 
     // Nomes de cluster.
@@ -386,6 +393,17 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
     [schedule],
   );
   useEffect(() => () => clearTimeout(pulseTimer.current), []);
+
+  const agentActive = useAgentActivityStore((st) => st.active);
+  useEffect(() => {
+    const set = new Set<number>();
+    for (const id of Object.keys(agentActive)) {
+      const i = data.indexById.get(id);
+      if (i !== undefined) set.add(i);
+    }
+    agentRef.current = set;
+    schedule();
+  }, [agentActive, data, schedule]);
 
   const pick = (idx: number) => {
     centerOn(idx);

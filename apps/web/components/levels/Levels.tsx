@@ -27,6 +27,7 @@ import { useLevelsSync } from './useLevelsSync';
 import { useLevelActions, deleteFromLevels } from './actions';
 import { captureNote, createNote } from './newNote';
 import { useReadingScale, zkFont } from '../../lib/readingFontSize';
+import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 
 const LEVEL_KEYS: Record<string, Level> = { Digit1: 'focus', Digit2: 'memory', Digit3: 'map' };
 
@@ -88,6 +89,15 @@ function LevelsInner() {
     setToast({ msg, action });
     toastTimer.current = setTimeout(() => setToast(null), 5000);
   }, []);
+
+  // Tempo real: atividade do agente vira toast com "Abrir" (leva ao Foco).
+  const agentToast = useAgentActivityStore((s) => s.toast);
+  useEffect(() => {
+    if (!agentToast) return;
+    const { text, openId } = agentToast;
+    showToast(text, openId ? { label: 'Abrir', run: () => void actions.focus(openId) } : undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentToast?.seq]);
 
   const onNew = useCallback(
     () => void createNote({ explicitEdit: isMobile }).catch(() => showToast('Não foi possível criar o zettel')),

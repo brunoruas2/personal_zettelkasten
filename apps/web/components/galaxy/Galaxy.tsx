@@ -44,6 +44,7 @@ import { QuickCapture } from './QuickCapture';
 import { ShortcutsHelp } from './ShortcutsHelp';
 import { keysOf } from '../../lib/galaxy/shortcuts';
 import { useSyncStore } from '../../store/useSyncStore';
+import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 import { GalaxySearch, type SearchFilters } from './GalaxySearch';
 import { SettingsPanel } from '../panels/SettingsPanel';
 import { TagsPanel } from '../panels/TagsPanel';
@@ -883,6 +884,25 @@ export function Galaxy() {
     engine.setFirstLines(linesRef.current);
     engine.setSelected(editingId ? (data.indexById.get(editingId) ?? -1) : -1);
   }, [data, editingId]);
+
+  // Tempo real: o que o agente acabou de mexer pulsa (sem mover a câmera) e
+  // vira toast com "Abrir". Os índices mudam a cada data, por isso o mapa.
+  const agentActive = useAgentActivityStore((s) => s.active);
+  useEffect(() => {
+    const idxs: number[] = [];
+    for (const id of Object.keys(agentActive)) {
+      const idx = data.indexById.get(id);
+      if (idx !== undefined) idxs.push(idx);
+    }
+    engineRef.current?.setPulse(idxs);
+  }, [agentActive, data]);
+  const agentToast = useAgentActivityStore((s) => s.toast);
+  useEffect(() => {
+    if (!agentToast) return;
+    const { text, openId } = agentToast;
+    showToast(text, openId ? { label: 'Abrir', run: () => void navigateToId(openId) } : undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentToast?.seq]);
 
   // Filtro de tag: máscara por índice. A tag que some de todos os zettels
   // visíveis limpa o filtro.
