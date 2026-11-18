@@ -1093,9 +1093,9 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
     // Modal hospedado aqui para o chip, o `/desenho` e a toolbar mobile abrirem o mesmo.
     const editorForDrawingRef = useRef<Editor | null>(null);
     const drawingHost = useDrawingEditHost((id, result) => {
-      // Cancelou um desenho que nunca teve conteúdo: não deixa referência nem
-      // registro vazio para trás.
-      if (result.outcome !== 'cancelled' || !result.wasEmpty) return;
+      // O desenho ficou sem conteúdo (fechado vazio ou descartado sem nada antes):
+      // não deixa referência nem registro vazio para trás.
+      if (result.outcome !== 'removed') return;
       void drawingStore.delete(id).catch(() => {});
       const ed = editorForDrawingRef.current;
       if (!ed || ed.isDestroyed) return;

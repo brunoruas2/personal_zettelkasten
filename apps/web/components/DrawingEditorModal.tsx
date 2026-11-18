@@ -31,18 +31,53 @@ import { useDrawingFocusStore } from '../store/useDrawingFocusStore'
 import { useThemeVariant } from './galaxy/themeVariant'
 import {
   drawingStore,
-  saveDrawing,
+  saveDrawingLocal,
+  scheduleDrawingUpload,
+  subscribeDrawingUpload,
   DrawingTooLargeError,
-  type SaveDrawingResult,
+  DRAWING_REJECTED_MESSAGE,
 } from '../lib/drawingSync'
 /** Marca a raiz do modal de desenho (portal no body), para identificá-lo no DOM. */
 const DRAWING_MODAL_ATTR = 'data-drawing-modal'
 
+/** Espera depois da última mudança da cena antes do autosave (o engine só avisa no pointerup). */
+const AUTOSAVE_MS = 1500
+
 export interface DrawingEditorResult {
-  /** `saved`: gravado no Dexie (mesmo que o servidor tenha recusado); `cancelled`: nada mudou. */
-  outcome: 'saved' | 'cancelled'
-  /** O desenho ainda não tinha conteúdo quando o editor abriu (criado por `/desenho`). */
-  wasEmpty: boolean
+  /**
+   * `saved`: o que está no Dexie é o desenho (autosalvo, ou restaurado pelo Descartar).
+   * `removed`: o desenho ficou sem conteúdo — quem hospeda apaga o registro e a referência no corpo.
+   */
+  outcome: 'saved' | 'removed'
+}
+
+/** Desenho como estava ao abrir o editor (para o Descartar); `null` = sem conteúdo. */
+interface Snapshot {
+  scene: string
+  svg: string
+  width: number
+  height: number
+}
+
+type SaveStatus = 'idle' | 'saving' | 'local' | 'synced' | 'rejected' | 'error'
+
+const SAVE_STATUS_TEXT: Record<SaveStatus, string> = {
+  idle: '',
+  saving: 'Salvando…',
+  local: 'Salvo neste aparelho',
+  synced: 'Sincronizado',
+  rejected: 'Só neste aparelho',
+  error: 'Não salvo',
+}
+
+/** Cor do status de gravação (strings completas para o Tailwind). */
+const SAVE_STATUS_CLASS: Record<SaveStatus, string> = {
+  idle: '',
+  saving: 'text-zinc-500 dark:text-zinc-400',
+  local: 'text-zinc-500 dark:text-zinc-400',
+  synced: 'text-zinc-500 dark:text-zinc-400',
+  rejected: 'text-amber-600 dark:text-amber-400',
+  error: 'text-red-600 dark:text-red-400',
 }
 
 interface Props {
@@ -103,8 +138,10 @@ const WEIGHT_CLASS = {
 
 /**
  * Editor de desenho: overlay `fixed` sobre um canvas 2D próprio (ver `SketchCanvas`).
- * Salvar e Cancelar são explícitos (sem autosave): salvar grava cena + SVG de
- * preview juntos no Dexie (ver `saveDrawing`).
+ * Autosave: cada mudança da cena é gravada no Dexie (cena + SVG de preview juntos,
+ * `saveDrawingLocal`) depois de um debounce, sem esperar o servidor; o upload vai
+ * pelo agendador (`scheduleDrawingUpload`). Fechar grava o que faltar e fecha;
+ * Descartar alterações restaura o desenho como estava ao abrir.
  *
  * Em `lg:` abre como painel grande com margem; abaixo de `lg` já ocupa a viewport.
  * Tela cheia tira a margem e, onde a Fullscreen API existe, esconde também a
@@ -114,8 +151,15 @@ const WEIGHT_CLASS = {
 export function DrawingEditorModal({ id, onClose }: Props) {
   const rootRef = React.useRef<HTMLDivElement>(null)
   const canvasRef = React.useRef<SketchCanvasHandle>(null)
-  const wasEmptyRef = React.useRef(true)
+  const snapshotRef = React.useRef<Snapshot | null>(null)
   const usedFullscreenApiRef = React.useRef(false)
+  // Autosave: versão do histórico já gravada (o engine nasce na 0), gravação em
+  // andamento (nunca duas do mesmo desenho) e se a sessão já gravou algo.
+  const savedVersionRef = React.useRef(0)
+  const writingRef = React.useRef<Promise<unknown> | null>(null)
+  const sessionSavedRef = React.useRef(false)
+  // Fechando/descartando: o autosave não grava mais nada por conta própria.
+  const closedRef = React.useRef(false)
 
   const [phase, setPhase] = React.useState<Phase>({ kind: 'loading' })
   const [eng, setEng] = React.useState<SketchEngineState>({
@@ -124,10 +168,11 @@ export function DrawingEditorModal({ id, onClose }: Props) {
     empty: true,
     dirty: false,
     selectionCount: 0,
+    version: 0,
   })
-  const [saving, setSaving] = React.useState(false)
+  const [closing, setClosing] = React.useState(false)
   const [notice, setNotice] = React.useState<{ text: string; tone: 'error' | 'warn' } | null>(null)
-  const [savedLocally, setSavedLocally] = React.useState(false)
+  const [saveStatus, setSaveStatus] = React.useState<SaveStatus>('idle')
   const [fullscreen, setFullscreen] = React.useState(false)
   const [penMode, setPenMode] = React.useState(false)
   const [tool, setTool] = React.useState<SketchTool>('pen')
@@ -139,12 +184,10 @@ export function DrawingEditorModal({ id, onClose }: Props) {
   const [theme, setTheme] = React.useState<SketchTheme>(readInitialTheme)
 
   // Refs espelham o estado lido pelos listeners nativos, que não re-registram a cada render.
-  const dirtyRef = React.useRef(false)
-  dirtyRef.current = eng.dirty
   const engRef = React.useRef(eng)
   engRef.current = eng
-  const savingRef = React.useRef(false)
-  savingRef.current = saving
+  const closingRef = React.useRef(false)
+  closingRef.current = closing
   const fullscreenRef = React.useRef(false)
   fullscreenRef.current = fullscreen
 
@@ -167,6 +210,106 @@ export function DrawingEditorModal({ id, onClose }: Props) {
       if (idleId !== undefined) window.cancelIdleCallback(idleId)
     }
   }, [eng])
+
+  /**
+   * Grava no Dexie a versão atual da cena, se ainda não foi gravada. Uma gravação por
+   * vez: chamada durante outra, espera e grava a versão que valer depois. Cena vazia
+   * não é gravada (o servidor recusa SVG vazio). Não espera o servidor — só agenda o
+   * upload. `force` ignora o `closedRef` (é o próprio Fechar quem chama).
+   */
+  const persistNow = React.useCallback(
+    async (force = false): Promise<'ok' | 'empty' | 'error'> => {
+      while (writingRef.current) await writingRef.current
+      const canvas = canvasRef.current
+      if (!canvas || (closedRef.current && !force)) return 'ok'
+      const version = engRef.current.version
+      if (version === savedVersionRef.current) return 'ok'
+      const scene = canvas.getScene()
+      const out = sceneToSvg(scene)
+      if (!out) return 'empty'
+      const write = (async (): Promise<'ok' | 'error'> => {
+        setSaveStatus('saving')
+        try {
+          await saveDrawingLocal({
+            id,
+            scene: serializeSketchScene(scene),
+            svg: out.svg,
+            width: out.width,
+            height: out.height,
+          })
+          savedVersionRef.current = version
+          sessionSavedRef.current = true
+          setSaveStatus('local')
+          scheduleDrawingUpload(id)
+          return 'ok'
+        } catch (err) {
+          setSaveStatus('error')
+          setNotice({
+            text:
+              err instanceof DrawingTooLargeError
+                ? err.message
+                : 'Não foi possível salvar o desenho neste aparelho.',
+            tone: 'error',
+          })
+          return 'error'
+        }
+      })()
+      writingRef.current = write
+      try {
+        return await write
+      } finally {
+        writingRef.current = null
+      }
+    },
+    [id],
+  )
+  const persistNowRef = React.useRef(persistNow)
+  persistNowRef.current = persistNow
+
+  // Autosave: depois do sinal do engine (pointerup, desfazer, mover…), espera
+  // AUTOSAVE_MS parado e grava em idle. Nunca durante o traço.
+  React.useEffect(() => {
+    if (phase.kind !== 'ready' || eng.empty || eng.version === savedVersionRef.current) return
+    let idleId: number | undefined
+    const run = () => void persistNowRef.current()
+    const timer = window.setTimeout(() => {
+      if (typeof window.requestIdleCallback === 'function') idleId = window.requestIdleCallback(run, { timeout: 1000 })
+      else run()
+    }, AUTOSAVE_MS)
+    return () => {
+      window.clearTimeout(timer)
+      if (idleId !== undefined) window.cancelIdleCallback(idleId)
+    }
+  }, [eng, phase.kind])
+
+  // Aba escondida ou fechando: grava o que faltar sem esperar o debounce (melhor esforço).
+  React.useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState === 'hidden') void persistNowRef.current()
+    }
+    const onPageHide = () => void persistNowRef.current()
+    document.addEventListener('visibilitychange', flush)
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      document.removeEventListener('visibilitychange', flush)
+      window.removeEventListener('pagehide', onPageHide)
+    }
+  }, [])
+
+  // Resultado dos uploads agendados deste desenho.
+  React.useEffect(
+    () =>
+      subscribeDrawingUpload(id, (s) => {
+        if (s.kind === 'synced') {
+          setSaveStatus((st) => (st === 'saving' ? st : 'synced'))
+          setNotice((n) => (n?.tone === 'warn' ? null : n))
+        } else if (s.kind === 'rejected') {
+          setSaveStatus((st) => (st === 'saving' ? st : 'rejected'))
+          setNotice({ text: s.message, tone: 'warn' })
+        }
+      }),
+    [id],
+  )
 
   // Modo desenho: galáxia suspensa e sync de background adiado enquanto o modal existe.
   // Layout effect: liga antes da primeira pintura do canvas.
@@ -207,7 +350,14 @@ export function DrawingEditorModal({ id, onClose }: Props) {
         record = undefined
       }
       if (cancelled) return
-      wasEmptyRef.current = !record?.scene
+      // Foto da abertura: é para ela que o "Descartar alterações" volta.
+      snapshotRef.current = record?.scene
+        ? { scene: record.scene, svg: record.svg, width: record.width, height: record.height }
+        : null
+      if (record?.syncState === 'rejected') {
+        setSaveStatus('rejected')
+        setNotice({ text: DRAWING_REJECTED_MESSAGE, tone: 'warn' })
+      }
       if (!record?.scene) {
         setPhase({ kind: 'ready', strokes: [] })
         return
@@ -263,18 +413,77 @@ export function DrawingEditorModal({ id, onClose }: Props) {
     }
   }, [])
 
-  const requestClose = React.useCallback(
-    (outcome: 'saved' | 'cancelled') => {
-      if (outcome === 'cancelled' && dirtyRef.current && !savedLocally) {
-        if (!window.confirm('Descartar as alterações deste desenho?')) return
+  /**
+   * Fechar: grava a versão que faltar (só o Dexie), antecipa o upload e fecha sem
+   * esperar a rede. Cena vazia remove o desenho — sem perguntar se ele nunca teve
+   * conteúdo, com confirmação se tinha.
+   */
+  const closeEditor = React.useCallback(async () => {
+    if (closingRef.current) return
+    if (!canvasRef.current) {
+      // Carregando ou desenho legado sem substituição: nada a gravar.
+      onClose({ outcome: 'saved' })
+      return
+    }
+    setClosing(true)
+    closingRef.current = true
+    try {
+      if (canvasRef.current.isEmpty()) {
+        const hadContent = snapshotRef.current !== null || sessionSavedRef.current
+        if (hadContent && !window.confirm('O desenho está vazio. Remover do zettel?')) return
+        closedRef.current = true
+        while (writingRef.current) await writingRef.current
+        onClose({ outcome: 'removed' })
+        return
       }
-      onClose({ outcome, wasEmpty: wasEmptyRef.current })
-    },
-    [onClose, savedLocally],
-  )
+      closedRef.current = true
+      const r = await persistNow(true)
+      if (r === 'error' && !window.confirm('As últimas alterações não puderam ser salvas. Fechar mesmo assim?')) {
+        closedRef.current = false
+        return
+      }
+      if (sessionSavedRef.current) scheduleDrawingUpload(id, { immediate: true })
+      onClose({ outcome: 'saved' })
+    } finally {
+      closingRef.current = false
+      setClosing(false)
+    }
+  }, [id, onClose, persistNow])
 
-  const requestCloseRef = React.useRef(requestClose)
-  requestCloseRef.current = requestClose
+  /** Descartar alterações: volta o desenho para como estava ao abrir o editor, e fecha. */
+  const discardChanges = React.useCallback(async () => {
+    if (closingRef.current) return
+    if (!window.confirm('Descartar as alterações feitas desde que o editor abriu?')) return
+    setClosing(true)
+    closingRef.current = true
+    closedRef.current = true
+    try {
+      while (writingRef.current) await writingRef.current
+      const snap = snapshotRef.current
+      if (!snap) {
+        onClose({ outcome: 'removed' })
+        return
+      }
+      if (sessionSavedRef.current) {
+        // A sessão já gravou (e talvez enviou) versões: regrava a da abertura por cima, mais nova.
+        try {
+          await saveDrawingLocal({ id, ...snap })
+        } catch {
+          closedRef.current = false
+          setNotice({ text: 'Não foi possível restaurar o desenho neste aparelho.', tone: 'error' })
+          return
+        }
+        scheduleDrawingUpload(id, { immediate: true })
+      }
+      onClose({ outcome: 'saved' })
+    } finally {
+      closingRef.current = false
+      setClosing(false)
+    }
+  }, [id, onClose])
+
+  const requestCloseRef = React.useRef(closeEditor)
+  requestCloseRef.current = closeEditor
   const toggleFullscreenRef = React.useRef(toggleFullscreen)
   const pickToolRef = React.useRef<(t: SketchTool) => void>(() => {})
   toggleFullscreenRef.current = toggleFullscreen
@@ -366,7 +575,7 @@ export function DrawingEditorModal({ id, onClose }: Props) {
         // Com fullscreen do navegador o Escape nem chega aqui: o navegador o consome.
         // Com seleção, o primeiro Esc só a limpa; o modal fecha no seguinte.
         if (engRef.current.selectionCount > 0) canvasRef.current?.clearSelection()
-        else if (!document.fullscreenElement && !savingRef.current) requestCloseRef.current('cancelled')
+        else if (!document.fullscreenElement && !closingRef.current) void requestCloseRef.current()
       }
       e.stopPropagation()
     }
@@ -385,47 +594,8 @@ export function DrawingEditorModal({ id, onClose }: Props) {
     }
   }, [])
 
-  const handleSave = async () => {
-    const canvas = canvasRef.current
-    if (!canvas || saving) return
-    const scene = canvas.getScene()
-    const out = sceneToSvg(scene)
-    if (!out) {
-      setNotice({ text: 'Desenhe algo antes de salvar.', tone: 'warn' })
-      return
-    }
-    setSaving(true)
-    setNotice(null)
-    try {
-      const result: SaveDrawingResult = await saveDrawing({
-        id,
-        scene: serializeSketchScene(scene),
-        svg: out.svg,
-        width: out.width,
-        height: out.height,
-      })
-      if (result.sync === 'rejected') {
-        // Já está salvo neste aparelho; só não foi para o servidor.
-        setSavedLocally(true)
-        setNotice({ text: result.error.message, tone: 'warn' })
-        return
-      }
-      onClose({ outcome: 'saved', wasEmpty: wasEmptyRef.current })
-    } catch (err) {
-      setNotice({
-        text:
-          err instanceof DrawingTooLargeError
-            ? err.message
-            : 'Não foi possível salvar o desenho neste aparelho.',
-        tone: 'error',
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const replaceLocked = () => {
-    if (!window.confirm('Substituir este desenho por um novo? O antigo só é perdido quando você salvar o novo.')) return
+    if (!window.confirm('Substituir este desenho por um novo? O antigo só é perdido quando você desenhar no novo (e volta com "Descartar alterações").')) return
     setPhase({ kind: 'ready', strokes: [] })
   }
 
@@ -508,7 +678,11 @@ export function DrawingEditorModal({ id, onClose }: Props) {
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
           <span className="mr-auto text-sm font-medium text-zinc-700 dark:text-zinc-200">
             Desenho
-            {eng.dirty ? <span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">não salvo</span> : null}
+            {saveStatus !== 'idle' ? (
+              <span aria-live="polite" className={`ml-2 text-xs font-normal ${SAVE_STATUS_CLASS[saveStatus]}`}>
+                {SAVE_STATUS_TEXT[saveStatus]}
+              </span>
+            ) : null}
           </span>
 
           {ready && (
@@ -634,20 +808,28 @@ export function DrawingEditorModal({ id, onClose }: Props) {
             )}
           </button>
 
-          <button type="button" onMouseDown={keepFocus} onClick={() => requestClose(savedLocally ? 'saved' : 'cancelled')} disabled={saving} className={btn}>
-            {savedLocally || !ready ? 'Fechar' : 'Cancelar'}
-          </button>
-          {ready && !savedLocally && (
+          {ready && eng.version !== 0 && (
             <button
               type="button"
               onMouseDown={keepFocus}
-              onClick={() => void handleSave()}
-              disabled={saving || eng.empty}
-              className="inline-flex h-9 items-center justify-center rounded-lg bg-brand px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              onClick={() => void discardChanges()}
+              disabled={closing}
+              title="Volta o desenho para como estava ao abrir o editor"
+              className={btn}
             >
-              {saving ? 'Salvando…' : 'Salvar'}
+              Descartar alterações
             </button>
           )}
+          <button
+            type="button"
+            onMouseDown={keepFocus}
+            onClick={() => void closeEditor()}
+            disabled={closing}
+            title="Fechar (Esc). O desenho é salvo automaticamente."
+            className="inline-flex h-9 items-center justify-center rounded-lg bg-brand px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            Fechar
+          </button>
         </div>
 
         {notice && (

@@ -58,6 +58,20 @@ export function livePath2D(stroke: Pick<Stroke, 'points' | 'size'>): Path2D {
   return new Path2D(outlineToSvgPath(strokeOutline(stroke)))
 }
 
+// `<path>` do preview por traço, mesmo raciocínio do `path2dCache`: traço confirmado é
+// imutável, então autosave e indicador de peso só calculam o outline dos traços novos.
+const svgPathCache = new WeakMap<Stroke, string>()
+
+function svgPathFor(stroke: Stroke): string {
+  let p = svgPathCache.get(stroke)
+  if (p === undefined) {
+    const d = outlineToCompactSvgPath(strokeOutline(stroke))
+    p = d ? `<path fill="${stroke.color}" d="${d}"/>` : ''
+    svgPathCache.set(stroke, p)
+  }
+  return p
+}
+
 export interface SketchSvg {
   svg: string
   width: number
@@ -85,8 +99,8 @@ export function sceneToSvg(scene: SketchScene): SketchSvg | null {
 
   const paths: string[] = []
   for (const stroke of scene.strokes) {
-    const d = outlineToCompactSvgPath(strokeOutline(stroke))
-    if (d) paths.push(`<path fill="${stroke.color}" d="${d}"/>`)
+    const p = svgPathFor(stroke)
+    if (p) paths.push(p)
   }
 
   const svg =

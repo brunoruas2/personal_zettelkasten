@@ -22,6 +22,9 @@ const UPLOAD_ERROR_MESSAGES: Record<DrawingUploadCause, string> = {
   unknown: 'Não foi possível sincronizar o desenho com o servidor. Ele ficou salvo só neste aparelho.',
 }
 
+/** Aviso de um desenho já `rejected` cuja causa não se sabe mais (ex.: ao reabrir o editor). */
+export const DRAWING_REJECTED_MESSAGE = 'O servidor não aceitou este desenho. Ele está salvo só neste aparelho.'
+
 /** Recusa permanente do servidor: re-tentar não muda o resultado. */
 export class DrawingUploadError extends Error {
   readonly cause: DrawingUploadCause
@@ -110,16 +113,12 @@ export interface SaveDrawingInput {
   height: number
 }
 
-export type SaveDrawingResult =
-  | { record: DrawingRecord; sync: 'synced' | 'pending' }
-  | { record: DrawingRecord; sync: 'rejected'; error: DrawingUploadError }
-
 /**
  * Grava cena e preview na mesma escrita do Dexie (nunca um sem o outro) com
- * `syncState = pending` e já tenta o upload. Local-first: o desenho fica salvo
- * mesmo que o servidor recuse — nesse caso o resultado traz o erro para a UI.
+ * `syncState = pending`. **Não** espera o servidor: o upload é do agendador
+ * (`scheduleDrawingUpload`). Local-first — o desenho fica salvo mesmo offline.
  */
-export async function saveDrawing(input: SaveDrawingInput): Promise<SaveDrawingResult> {
+export async function saveDrawingLocal(input: SaveDrawingInput): Promise<DrawingRecord> {
   // O SVG do editor (sceneToSvg) só tem <rect> e <path>: nada a sanitizar antes de gravar.
   const svg = input.svg
   const byteLen = byteLength(input.scene) + byteLength(svg)
@@ -147,15 +146,123 @@ export async function saveDrawing(input: SaveDrawingInput): Promise<SaveDrawingR
     setBusy(-1)
   }
   emitDrawingChanged(input.id)
+  return record
+}
 
-  try {
-    const ok = await uploadOne(input.id)
-    return { record, sync: ok ? 'synced' : 'pending' }
-  } catch (err) {
-    if (err instanceof DrawingUploadError) return { record, sync: 'rejected', error: err }
-    // AuthError e afins: fica na fila para depois do login.
-    return { record, sync: 'pending' }
+// --- agendador de upload — no máximo um envio a cada UPLOAD_INTERVAL_MS por desenho ---
+
+export const UPLOAD_INTERVAL_MS = 15_000
+
+export type DrawingUploadStatus =
+  | { kind: 'synced' }
+  | { kind: 'pending' }
+  | { kind: 'rejected'; message: string }
+
+/** Resultado de um envio pelo agendador; `auth` = sem sessão (nenhum outro vai passar). */
+type UploadOutcome = 'synced' | 'pending' | 'rejected' | 'auth'
+
+interface UploadSlot {
+  /** Upload em voo (no máximo um por id). */
+  running: Promise<UploadOutcome> | null
+  /** Houve gravação depois do último envio começar: precisa de mais um. */
+  again: boolean
+  /** Fim da janela de espera atual. */
+  timer: ReturnType<typeof setTimeout> | null
+  /** Quando o último envio começou (para a janela). */
+  lastStart: number
+}
+
+const uploadSlots = new Map<string, UploadSlot>()
+const uploadListeners = new Map<string, Set<(s: DrawingUploadStatus) => void>>()
+
+export function subscribeDrawingUpload(id: string, listener: (s: DrawingUploadStatus) => void): () => void {
+  let set = uploadListeners.get(id)
+  if (!set) {
+    set = new Set()
+    uploadListeners.set(id, set)
   }
+  set.add(listener)
+  return () => {
+    set.delete(listener)
+    if (set.size === 0) uploadListeners.delete(id)
+  }
+}
+
+function emitUpload(id: string, status: DrawingUploadStatus): void {
+  uploadListeners.get(id)?.forEach((l) => l(status))
+}
+
+function slotFor(id: string): UploadSlot {
+  let slot = uploadSlots.get(id)
+  if (!slot) {
+    slot = { running: null, again: false, timer: null, lastStart: 0 }
+    uploadSlots.set(id, slot)
+  }
+  return slot
+}
+
+/** Envia um desenho pelo agendador: serializa com qualquer outro envio do mesmo id. */
+function runUpload(id: string): Promise<UploadOutcome> {
+  const slot = slotFor(id)
+  if (slot.running) {
+    slot.again = true
+    return slot.running
+  }
+  slot.lastStart = Date.now()
+  slot.again = false
+  const run = async (): Promise<UploadOutcome> => {
+    let outcome: UploadOutcome
+    try {
+      const ok = await uploadOne(id)
+      // `markSynced` só marca a versão enviada: edição durante o envio continua `pending`.
+      // `uploadOne` também devolve `true` sem enviar quando o registro já era `rejected`.
+      const record = ok ? await drawingStore.get(id) : undefined
+      if (record?.syncState === 'rejected') {
+        outcome = 'rejected'
+        emitUpload(id, { kind: 'rejected', message: DRAWING_REJECTED_MESSAGE })
+      } else {
+        outcome = ok && record?.syncState !== 'pending' ? 'synced' : 'pending'
+        emitUpload(id, { kind: outcome === 'synced' ? 'synced' : 'pending' })
+      }
+    } catch (err) {
+      if (err instanceof DrawingUploadError) {
+        outcome = 'rejected'
+        emitUpload(id, { kind: 'rejected', message: err.message })
+      } else {
+        outcome = 'auth' // AuthError: fica na fila para depois do login
+        emitUpload(id, { kind: 'pending' })
+      }
+    } finally {
+      slot.running = null
+    }
+    if (slot.again) scheduleDrawingUpload(id)
+    return outcome
+  }
+  slot.running = run()
+  return slot.running
+}
+
+/**
+ * Agenda o upload de um desenho recém-gravado. Dentro da janela de
+ * `UPLOAD_INTERVAL_MS` desde o último envio, só espera o fim dela; com
+ * `immediate` (fechar o editor) envia já. Falha de rede deixa `pending` sem
+ * reagendar — o laço de `online`/`drainQueue` cobre.
+ */
+export function scheduleDrawingUpload(id: string, opts: { immediate?: boolean } = {}): void {
+  const slot = slotFor(id)
+  if (slot.running) {
+    slot.again = true
+    return
+  }
+  const wait = opts.immediate ? 0 : Math.max(0, slot.lastStart + UPLOAD_INTERVAL_MS - Date.now())
+  if (slot.timer) {
+    if (!opts.immediate) return
+    clearTimeout(slot.timer)
+  }
+  slot.timer = setTimeout(() => {
+    slot.timer = null
+    void runUpload(id)
+  }, wait)
 }
 
 async function uploadCause(res: Response): Promise<DrawingUploadCause> {
@@ -224,14 +331,10 @@ export async function uploadPendingDrawings(): Promise<void> {
   }
 
   for (const record of pending) {
-    try {
-      await uploadOne(record.id)
-    } catch (err) {
-      // Recusa permanente já foi marcada `rejected`; segue a fila. Só AuthError
-      // interrompe — sem sessão, nenhum dos próximos vai passar.
-      if (err instanceof DrawingUploadError) continue
-      return
-    }
+    // Pelo agendador: nunca dois envios do mesmo id em voo. Recusa permanente já
+    // foi marcada `rejected`; segue a fila. Só falta de sessão interrompe —
+    // sem ela, nenhum dos próximos vai passar.
+    if ((await runUpload(record.id)) === 'auth') return
   }
 }
 

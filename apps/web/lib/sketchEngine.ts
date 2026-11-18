@@ -42,6 +42,8 @@ export interface SketchEngineState {
   dirty: boolean
   /** Quantos traços estão selecionados (a seleção em si não suja o desenho). */
   selectionCount: number
+  /** Versão do histórico: muda a cada operação (inclusive desfazer/refazer). O autosave a compara. */
+  version: number
 }
 
 /** Traço em andamento passa deste tamanho: fecha e continua num traço novo, sem o usuário notar. */
@@ -484,6 +486,7 @@ export class SketchEngine {
       empty: this.history.strokes.length === 0,
       dirty: this.history.version !== this.baseVersion,
       selectionCount: this.selection.size,
+      version: this.history.version,
     }
   }
 
