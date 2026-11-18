@@ -1,5 +1,6 @@
 import { getStroke } from 'perfect-freehand'
 import {
+  outlineToCompactSvgPath,
   outlineToSvgPath,
   sceneBounds,
   type SketchPoint,
@@ -22,8 +23,9 @@ function usesRealPressure(points: readonly SketchPoint[]): boolean {
 }
 
 /**
- * Polígono do outline de um traço. Os mesmos outlines alimentam o canvas e o
- * preview SVG, então o que se vê no editor é o que fica salvo. `last: true`
+ * Polígono do outline de um traço. O mesmo polígono alimenta o canvas (path
+ * preciso, 2 casas) e o preview SVG (path compacto, quantizado a px inteiro), então
+ * o que se vê no editor é o que fica salvo, a menos de 0,5 px por ponto. `last: true`
  * também no traço em andamento: sem ele o `streamline` deixa a ponta ~metade do
  * caminho atrás do cursor, e a tinta não acompanha a caneta.
  */
@@ -63,7 +65,8 @@ export interface SketchSvg {
 }
 
 /**
- * Preview SVG da cena: um `<path>` por traço (os mesmos outlines do canvas),
+ * Preview SVG da cena: um `<path>` por traço (o outline do canvas em path
+ * compacto: relativo, deltas inteiros),
  * viewBox no bounding box + margem, fundo branco. Sem texto, fonte, estilo, script
  * nem href — não há nada para sanitizar. Cena vazia não gera SVG.
  */
@@ -82,7 +85,7 @@ export function sceneToSvg(scene: SketchScene): SketchSvg | null {
 
   const paths: string[] = []
   for (const stroke of scene.strokes) {
-    const d = outlineToSvgPath(strokeOutline(stroke))
+    const d = outlineToCompactSvgPath(strokeOutline(stroke))
     if (d) paths.push(`<path fill="${stroke.color}" d="${d}"/>`)
   }
 

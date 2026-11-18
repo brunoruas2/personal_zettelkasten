@@ -206,6 +206,15 @@ func TestRejectsOverSizeLimit(t *testing.T) {
 	}
 }
 
+// Entre o teto antigo (2 MB) e o atual (5 MB): aceito.
+func TestAcceptsDrawingBetween2And5MB(t *testing.T) {
+	e := newEnv(t, 100<<20)
+	mid := `<svg xmlns="http://www.w3.org/2000/svg"><desc>` + strings.Repeat("a", 3<<20) + `</desc></svg>`
+	if rec := e.do("PUT", "/api/drawings/mid", e.tokenA, putBody(goodScene, mid, 2000)); rec.Code != 200 {
+		t.Fatalf("want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestQuota(t *testing.T) {
 	size := int64(len(goodScene) + len(goodSVG))
 	e := newEnv(t, size+size/2) // cabe um, não cabe dois
@@ -361,14 +370,17 @@ func TestAPIKeyCannotDeleteDrawing(t *testing.T) {
 
 // SVG gerado de verdade pelo editor (sceneToSvg com dois traços, ver
 // apps/web/lib/sketchRender.ts): o validador do servidor precisa aceitá-lo sem
-// nenhum ajuste prévio no cliente.
+// nenhum ajuste prévio no cliente. sketch.svg = path absoluto (clientes antigos);
+// sketch-compact.svg = path compacto relativo (outlineToCompactSvgPath).
 func TestValidateSVGAcceptsEditorOutput(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("testdata", "sketch.svg"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := drawings.ValidateSVG(string(data)); err != nil {
-		t.Fatalf("editor svg must be accepted: %v", err)
+	for _, name := range []string{"sketch.svg", "sketch-compact.svg"} {
+		data, err := os.ReadFile(filepath.Join("testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := drawings.ValidateSVG(string(data)); err != nil {
+			t.Fatalf("%s: editor svg must be accepted: %v", name, err)
+		}
 	}
 }
 

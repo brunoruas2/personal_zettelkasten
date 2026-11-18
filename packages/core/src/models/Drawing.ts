@@ -23,7 +23,7 @@ export interface DrawingRecord {
 }
 
 /** Teto por desenho (cena + SVG), igual ao do servidor. */
-export const MAX_DRAWING_BYTES = 2 * 1024 * 1024;
+export const MAX_DRAWING_BYTES = 5 * 1024 * 1024;
 
 /** Forma de um desenho no servidor (`GET /api/drawings/{id}`); timestamps em ms. */
 export interface ServerDrawing {

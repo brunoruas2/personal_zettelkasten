@@ -245,7 +245,7 @@ opcional). O ZIP é o único export que leva o conteúdo: `drawings/<id>.zksketc
 `drawings/<id>.svg`.
 
 No import do ZIP, **os dois arquivos do mesmo id são obrigatórios**, e cada desenho passa pela
-mesma validação do upload: até 2 MB (cena + SVG), cena JSON com `"type": "zk-sketch"` (`"version": 1`, `"strokes"` em array) ou `"type": "excalidraw"` (cena legada), SVG bem
+mesma validação do upload: até 5 MB (cena + SVG), cena JSON com `"type": "zk-sketch"` (`"version": 1`, `"strokes"` em array) ou `"type": "excalidraw"` (cena legada), SVG bem
 formado sem `<script>`, `<foreignObject>`, atributos `on*` ou referências externas, e a quota do
 usuário (`DRAWING_QUOTA_BYTES`, padrão 100 MB). Um desenho inválido vai para `errors` e não
 impede o resto do import. O nome da cena pode ser `.zksketch` ou `.excalidraw` (backups antigos); **quem decide o tipo é o campo `type` dentro do JSON**, não a extensão. O export Markdown troca `zk:draw/<id>` por `drawings/<id>.svg` e leva

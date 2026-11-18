@@ -18,7 +18,7 @@ import (
 // MaxDrawingBytes é o teto por desenho: cena + SVG. O corpo da requisição tem
 // folga extra (escape JSON da cena embutida como string) — o teto que vale é o
 // da soma dos dois campos.
-const MaxDrawingBytes int64 = 2 << 20
+const MaxDrawingBytes int64 = 5 << 20
 
 const maxBodyBytes int64 = 2*MaxDrawingBytes + 64<<10
 
@@ -61,7 +61,7 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			jsonError(w, http.StatusRequestEntityTooLarge, "drawing exceeds 2 MB")
+			jsonError(w, http.StatusRequestEntityTooLarge, "drawing exceeds 5 MB")
 			return
 		}
 		jsonError(w, http.StatusBadRequest, "could not read body")
@@ -75,7 +75,7 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request) {
 
 	byteLen := int64(len(b.Scene) + len(b.SVG))
 	if byteLen > MaxDrawingBytes {
-		jsonError(w, http.StatusRequestEntityTooLarge, "drawing exceeds 2 MB")
+		jsonError(w, http.StatusRequestEntityTooLarge, "drawing exceeds 5 MB")
 		return
 	}
 	if err := ValidateScene(b.Scene); err != nil {
@@ -184,7 +184,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 // ValidateScene aceita a cena do editor novo (`zk-sketch`, versão 1, com `strokes`
 // em array) e a do editor antigo (`excalidraw`), que continua valendo como legado:
 // rejeitar o que já foi sincronizado quebraria o pull dos outros dispositivos. O
-// servidor não renderiza a cena, então não confere os pontos — o teto de 2 MB e o
+// servidor não renderiza a cena, então não confere os pontos — o teto de 5 MB e o
 // parse do cliente já os limitam.
 func ValidateScene(scene string) error {
 	if scene == "" {

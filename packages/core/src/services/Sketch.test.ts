@@ -13,7 +13,7 @@ import {
   zoomAt,
 } from './SketchGeometry';
 import { MAX_HISTORY, SketchHistory } from './SketchHistory';
-import { outlineToSvgPath } from './SketchPath';
+import { outlineToCompactSvgPath, outlineToSvgPath } from './SketchPath';
 
 const stroke = (id: string, points: [number, number, number?][], size = 4, color = '#1e1e1e'): Stroke => ({
   id,
@@ -334,5 +334,91 @@ describe('outlineToSvgPath', () => {
   it('2 e 3 pontos viram polígono reto', () => {
     expect(outlineToSvgPath([[0, 0], [5, 5]])).toBe('M0.00,0.00 L5.00,5.00 Z');
     expect(outlineToSvgPath([[0, 0], [5, 5], [0, 5]])).toBe('M0.00,0.00 L5.00,5.00 L0.00,5.00 Z');
+  });
+});
+
+/** Reconstrói os pontos absolutos do path compacto: `[início, controle do q, fins…]`. */
+function decodeCompact(d: string): { start: number[]; ctrl: number[] | null; ends: number[][] } {
+  const tokens = d.match(/[MqtlzZ]|-?\d+/g) ?? [];
+  let cmd = '';
+  const nums: Record<string, number[]> = { M: [], q: [], t: [], l: [] };
+  for (const tk of tokens) {
+    if (/^[A-Za-z]$/.test(tk)) cmd = tk;
+    else nums[cmd].push(Number(tk));
+  }
+  let [cx, cy] = nums.M;
+  const start = [cx, cy];
+  const ends: number[][] = [];
+  let ctrl: number[] | null = null;
+  if (nums.q.length) {
+    const [a, b, c, e] = nums.q;
+    ctrl = [cx + a, cy + b];
+    cx += c;
+    cy += e;
+    ends.push([cx, cy]);
+  }
+  const rest = [...nums.t, ...nums.l];
+  for (let i = 0; i < rest.length; i += 2) {
+    cx += rest[i];
+    cy += rest[i + 1];
+    ends.push([cx, cy]);
+  }
+  return { start, ctrl, ends };
+}
+
+/** Outline sintético com coordenadas fracionárias (passeio determinístico). */
+function wobblyOutline(n: number): number[][] {
+  const pts: number[][] = [];
+  let x = 812.37;
+  let y = 433.91;
+  for (let i = 0; i < n; i++) {
+    x += Math.sin(i * 0.37) * 3.71 + 0.13;
+    y += Math.cos(i * 0.23) * 2.94 - 0.07;
+    pts.push([x, y]);
+  }
+  return pts;
+}
+
+describe('outlineToCompactSvgPath', () => {
+  it('M absoluto inteiro, q e t relativos, termina em z', () => {
+    const d = outlineToCompactSvgPath([[0.4, 0.6], [10.2, 0], [10, 10.7], [0, 10]]);
+    expect(d).toMatch(/^M0,1q/);
+    expect(d).toContain('t');
+    expect(d.endsWith('z')).toBe(true);
+    expect(d).not.toMatch(/[ .]/);
+  });
+
+  it('degenerado vira string vazia; 2 e 3 pontos viram l', () => {
+    expect(outlineToCompactSvgPath([])).toBe('');
+    expect(outlineToCompactSvgPath([[1, 1]])).toBe('');
+    expect(outlineToCompactSvgPath([[0, 0], [5, 5]])).toBe('M0,0l5,5z');
+    expect(outlineToCompactSvgPath([[0, 0], [5, 5], [0, 5]])).toBe('M0,0l5,5-5,0z');
+  });
+
+  it('delta negativo vem colado ao anterior, sem separador', () => {
+    expect(outlineToCompactSvgPath([[10, 10], [7, 12], [4, 9]])).toBe('M10,10l-3,2-3-3z');
+  });
+
+  it('sem erro acumulado: cada ponto fica a até 0,5 do valor exato', () => {
+    const outline = wobblyOutline(1000);
+    const { start, ctrl, ends } = decodeCompact(outlineToCompactSvgPath(outline));
+    const near = (got: number[], want: number[]) => {
+      expect(Math.abs(got[0] - want[0])).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(got[1] - want[1])).toBeLessThanOrEqual(0.5);
+    };
+    near(start, outline[0]);
+    near(ctrl!, outline[1]);
+    // Fins: ponto médio de cada aresta i→i+1, i = 1..len−2.
+    expect(ends).toHaveLength(outline.length - 2);
+    ends.forEach((p, k) => {
+      const a = outline[k + 1];
+      const b = outline[k + 2];
+      near(p, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+    });
+  });
+
+  it('menos da metade dos bytes do path preciso', () => {
+    const outline = wobblyOutline(200);
+    expect(outlineToCompactSvgPath(outline).length).toBeLessThan(outlineToSvgPath(outline).length / 2);
   });
 });

@@ -1,5 +1,6 @@
 import { DrawingStore } from '@zettelkasten/db-web'
 import {
+  DRAWING_LIMIT_LABEL,
   MAX_DRAWING_BYTES,
   serverDrawingToRecord,
   type DrawingManifestEntry,
@@ -16,7 +17,7 @@ export type DrawingUploadCause = 'quota' | 'too_large' | 'invalid' | 'unknown'
 
 const UPLOAD_ERROR_MESSAGES: Record<DrawingUploadCause, string> = {
   quota: 'Sua cota de desenhos está esgotada. O desenho ficou salvo só neste aparelho.',
-  too_large: 'Este desenho passa de 2 MB e não pôde ser sincronizado. Ele ficou salvo só neste aparelho.',
+  too_large: `Este desenho passa de ${DRAWING_LIMIT_LABEL} e não pôde ser sincronizado. Ele ficou salvo só neste aparelho.`,
   invalid: 'O servidor não aceitou este desenho. Ele ficou salvo só neste aparelho.',
   unknown: 'Não foi possível sincronizar o desenho com o servidor. Ele ficou salvo só neste aparelho.',
 }
@@ -35,7 +36,7 @@ export class DrawingUploadError extends Error {
 /** O desenho passa do teto e nem chega a ser gravado. */
 export class DrawingTooLargeError extends Error {
   constructor() {
-    super('O desenho passa de 2 MB. Simplifique a cena ou divida em dois desenhos.')
+    super(`O desenho passa de ${DRAWING_LIMIT_LABEL}. Simplifique a cena ou divida em dois desenhos.`)
     this.name = 'DrawingTooLargeError'
   }
 }

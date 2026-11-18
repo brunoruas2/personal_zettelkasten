@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_DRAWING_BYTES } from '../models/Drawing';
-import { drawingWeightLevel, formatDrawingBytes } from './DrawingWeight';
+import { DRAWING_LIMIT_LABEL, drawingWeightLevel, formatDrawingBytes } from './DrawingWeight';
 
 describe('drawingWeightLevel', () => {
   it('ok abaixo de 80%', () => {
@@ -24,6 +24,9 @@ describe('formatDrawingBytes', () => {
   });
   it('MB com 2 casas e vírgula', () => {
     expect(formatDrawingBytes(1024 * 1024)).toBe('1,00 MB');
-    expect(formatDrawingBytes(MAX_DRAWING_BYTES)).toBe('2,00 MB');
+    expect(formatDrawingBytes(MAX_DRAWING_BYTES)).toBe('5,00 MB');
+  });
+  it('rótulo do teto sem casas', () => {
+    expect(DRAWING_LIMIT_LABEL).toBe('5 MB');
   });
 });

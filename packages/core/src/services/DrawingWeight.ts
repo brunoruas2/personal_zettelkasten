@@ -17,3 +17,6 @@ export function formatDrawingBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2).replace('.', ',')} MB`;
 }
+
+/** Teto por desenho para textos da UI ("5 MB"), derivado de `MAX_DRAWING_BYTES`. */
+export const DRAWING_LIMIT_LABEL = formatDrawingBytes(MAX_DRAWING_BYTES).replace(',00', '');

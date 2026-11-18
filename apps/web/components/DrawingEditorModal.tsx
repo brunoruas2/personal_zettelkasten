@@ -10,6 +10,7 @@ import {
   SKETCH_COLORS,
   SKETCH_SIZES,
   MAX_DRAWING_BYTES,
+  DRAWING_LIMIT_LABEL,
   drawingWeightLevel,
   formatDrawingBytes,
   parseSketchScene,
@@ -513,10 +514,10 @@ export function DrawingEditorModal({ id, onClose }: Props) {
           {ready && (
             <span
               aria-live="polite"
-              title="Peso do desenho (cena + SVG). O servidor aceita até 2 MB; acima disso o desenho fica só neste aparelho."
+              title={`Peso do desenho (cena + SVG). O servidor aceita até ${DRAWING_LIMIT_LABEL}; acima disso o desenho fica só neste aparelho.`}
               className={`text-xs tabular-nums ${WEIGHT_CLASS[drawingWeightLevel(weight)]}`}
             >
-              {formatDrawingBytes(weight)} / {formatDrawingBytes(MAX_DRAWING_BYTES).replace(',00', '')}
+              {formatDrawingBytes(weight)} / {DRAWING_LIMIT_LABEL}
               {weight > MAX_DRAWING_BYTES ? ' — acima do limite, não sincroniza' : ''}
             </span>
           )}
