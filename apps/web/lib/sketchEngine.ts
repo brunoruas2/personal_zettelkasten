@@ -9,6 +9,7 @@ import {
   resizeStrokes,
   sceneBounds,
   screenToWorld,
+  simplifyStroke,
   strokeAtPoint,
   strokeBounds,
   strokeIntersectsRect,
@@ -47,8 +48,16 @@ export interface SketchEngineState {
 const SPLIT_AT_POINTS = 4000
 /** Raio da borracha em px de tela. */
 const ERASER_RADIUS_PX = 6
-/** Pontos mais próximos que isto (px de tela) do anterior são ruído e não entram. */
+/** Pontos mais próximos que isto (px de tela) do anterior são ruído e não entram (mouse/toque). */
 const MIN_POINT_DISTANCE_PX = 0.4
+/**
+ * O mesmo para caneta. Maior porque a caneta gera evento a taxa alta e o peso do desenho
+ * cresce com o número de pontos; com pressão real a espessura não depende do espaçamento.
+ * Mouse/toque ficam em 0,4: a pressão simulada do perfect-freehand afina com pontos espaçados.
+ */
+const MIN_POINT_DISTANCE_PEN_PX = 1.5
+/** Erro máximo (px de tela, no zoom do traço) da simplificação do traço de caneta ao confirmar. */
+const SIMPLIFY_TOLERANCE_PX = 0.75
 /** Margem do "Ajustar", em px de tela. */
 const FIT_PADDING_PX = 32
 /** O arraste de uma seleção só começa depois deste deslocamento (px de tela). */
@@ -892,11 +901,12 @@ export class SketchEngine {
   private extendStroke(e: PointerEvent): void {
     const d = this.drawing!
     const events = e.getCoalescedEvents?.() ?? []
+    const minDist = d.real ? MIN_POINT_DISTANCE_PEN_PX : MIN_POINT_DISTANCE_PX
     for (const ev of events.length ? events : [e]) {
       const w = this.world(ev)
       const last = d.points[d.points.length - 1]
       // Descarta o que mal se mexeu; mouse parado entre frames gera duplicatas.
-      if (Math.hypot(w.x - last[0], w.y - last[1]) * this.vp.scale < MIN_POINT_DISTANCE_PX) continue
+      if (Math.hypot(w.x - last[0], w.y - last[1]) * this.vp.scale < minDist) continue
       d.points.push([w.x, w.y, d.real ? ev.pressure || last[2] : 0.5])
     }
 
@@ -917,13 +927,25 @@ export class SketchEngine {
   /** Fecha o traço atual e continua num novo a partir do último ponto, de forma transparente. */
   private splitStroke(): void {
     const d = this.drawing!
+    // O próximo pedaço parte do último ponto bruto (a simplificação sempre o mantém): emenda contínua.
     const last = d.points[d.points.length - 1]
-    this.commitStroke(d.points)
+    this.commitStroke(d.points, d.real)
     d.points = [last]
   }
 
-  private commitStroke(points: SketchPoint[]): void {
-    const stroke: Stroke = { id: newStrokeId(), tool: 'pen', color: this.color, size: this.size, points: [...points] }
+  /** `real` = caneta com pressão real: só esses traços são simplificados (ver `MIN_POINT_DISTANCE_PEN_PX`). */
+  private commitStroke(raw: SketchPoint[], real: boolean): void {
+    let points: SketchPoint[]
+    if (real) {
+      const t0 = this.perf ? performance.now() : 0
+      points = simplifyStroke(raw, SIMPLIFY_TOLERANCE_PX / this.vp.scale)
+      if (this.perf) {
+        console.debug(`[sketch-perf] simplify: ${raw.length} → ${points.length} pontos, ${(performance.now() - t0).toFixed(2)} ms`)
+      }
+    } else {
+      points = [...raw]
+    }
+    const stroke: Stroke = { id: newStrokeId(), tool: 'pen', color: this.color, size: this.size, points }
     this.history.add(stroke)
     // O traço novo é o último da ordem de pintura. Não vai à estática agora: fica na viva
     // até a consolidação, para não custar uma escrita no bitmap grande antes do próximo traço.
@@ -990,12 +1012,12 @@ export class SketchEngine {
     if (this.pinch && this.touchCount() < 2) this.pinch = null
 
     if (this.drawing && this.drawing.pointerId === e.pointerId) {
-      const points = this.drawing.points
+      const { points, real } = this.drawing
       this.drawing = null
       this.predicted = []
       this.liveDirty = true
       this.schedule()
-      if (!cancelled && points.length > 0) this.commitStroke(points)
+      if (!cancelled && points.length > 0) this.commitStroke(points, real)
     }
 
     if (this.moving && this.moving.pointerId === e.pointerId) {
