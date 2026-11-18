@@ -74,8 +74,10 @@ export const InplaceEditor = forwardRef<
     autoFocus?: boolean;
     /** Chamado uma vez, quando o TipTap existe (para trocar o placeholder sem salto). */
     onReady?: () => void;
+    /** Sobe quando chega versão externa com alteração local pendente: liga o aviso de conflito. */
+    conflictTick?: number;
   }
->(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink, onPending, initialCaret, renderedBlocks, onOpenWikiLink, autoFocus = true, onReady }, ref) {
+>(function InplaceEditor({ zettel, variant, autoFocusTitle, onStatus, onCreateLink, onNavigateLink, onPending, initialCaret, renderedBlocks, onOpenWikiLink, autoFocus = true, onReady, conflictTick = 0 }, ref) {
   const updateZettel = useZettelStore((s) => s.updateZettel);
   const zettels = useZettelStore((s) => s.zettels);
   const allTags = useMemo(() => [...new Set(zettels.flatMap((z) => z.tags))].sort(), [zettels]);
@@ -243,6 +245,13 @@ export const InplaceEditor = forwardRef<
     if (dirty) setAgentConflict(true);
     else void reloadFromStore();
   }, [agentTouchedAt, reloadFromStore]);
+
+  const seenConflictRef = useRef(conflictTick);
+  useEffect(() => {
+    if (conflictTick <= seenConflictRef.current) return;
+    seenConflictRef.current = conflictTick;
+    setAgentConflict(true);
+  }, [conflictTick]);
 
   const readyDoneRef = useRef(false);
   useEffect(() => {

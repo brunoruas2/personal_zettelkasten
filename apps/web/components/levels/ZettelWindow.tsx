@@ -252,6 +252,11 @@ export function ZettelWindow({
   const [save, setSave] = useState<SaveStatus>('idle');
   const [focusTitle, setFocusTitle] = useState(false);
   const [readyKey, setReadyKey] = useState<string | null>(null);
+  // Sobe quando chega versão externa com alteração local pendente (aviso no editor).
+  const [conflictTick, setConflictTick] = useState(0);
+  // Id do zettel do editor montado (o ref do editor ainda aponta o anterior ao trocar de id).
+  const mountedIdRef = useRef<string | null>(null);
+  mountedIdRef.current = zettel?.id ?? null;
   const editorRef = useRef<InplaceEditorHandle>(null);
   // Ponto do duplo clique, consumido pelo editor ao montar; limpo ao sair da edição.
   const caretRef = useRef<CaretAnchor | null>(null);
@@ -292,6 +297,16 @@ export function ZettelWindow({
         if (paper) setZettel(null);
         else stopRef.current();
       } else {
+        // Editor mantido com alteração local pendente: remontar (e o flush do
+        // cleanup) gravaria o corpo antigo por cima da versão externa.
+        const h = editorRef.current;
+        if (h && paper && mountedIdRef.current === id) {
+          if (h.matchesSaved(z)) return;
+          if (h.isDirty()) {
+            setConflictTick((t) => t + 1);
+            return;
+          }
+        }
         setNotice(null);
         if (titleFocusId === id) {
           titleFocusId = null;
@@ -326,8 +341,13 @@ export function ZettelWindow({
     void loadZettel(idRef.current).then(({ zettel: z, stale }) => {
       const h = editorRef.current;
       if (!z || stale || !h || z.id !== idRef.current) return;
-      if (h.matchesSaved(z) || h.isDirty()) {
+      if (h.matchesSaved(z)) {
         pendingReloadRef.current = false;
+        return;
+      }
+      if (h.isDirty()) {
+        pendingReloadRef.current = false;
+        setConflictTick((t) => t + 1);
         return;
       }
       if (focusedRef.current) {
@@ -604,6 +624,7 @@ export function ZettelWindow({
                       autoFocus={false}
                       renderedBlocks
                       onStatus={setSave}
+                      conflictTick={conflictTick}
                       onReady={() => setReadyKey(editorKey)}
                       onCreateLink={(t) => createLinked(t, meta?.title)}
                       onOpenWikiLink={openWikiLink}
