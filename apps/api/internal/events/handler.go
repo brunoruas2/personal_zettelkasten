@@ -20,7 +20,9 @@ func Handler(b *Broker) http.HandlerFunc {
 		rc := http.NewResponseController(w)
 		h := w.Header()
 		h.Set("Content-Type", "text/event-stream")
-		h.Set("Cache-Control", "no-cache")
+		// no-transform: proxy no caminho não pode comprimir o stream. O rewrite
+		// /api/* do Next aplicava gzip e o buffer do compressor retinha os eventos.
+		h.Set("Cache-Control", "no-cache, no-transform")
 		h.Set("Connection", "keep-alive")
 		h.Set("X-Accel-Buffering", "no")
 		w.WriteHeader(http.StatusOK)

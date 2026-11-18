@@ -140,6 +140,9 @@ func TestSSEDeliversHeartbeatsAndOutlivesTimeout(t *testing.T) {
 	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "text/event-stream" || resp.Header.Get("X-Accel-Buffering") != "no" {
 		t.Fatalf("resposta: %d %v", resp.StatusCode, resp.Header)
 	}
+	if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "no-transform") {
+		t.Fatalf("Cache-Control sem no-transform: %q", cc)
+	}
 
 	// Passa do timeout das outras rotas e continua recebendo heartbeats.
 	time.Sleep(300 * time.Millisecond)

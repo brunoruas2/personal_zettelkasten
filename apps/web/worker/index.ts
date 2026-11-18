@@ -94,6 +94,15 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
+  // Stream SSE do tempo real: o Workbox (registrado depois deste listener) tem
+  // NetworkFirst para todo GET /api/ e tentaria gravar no cache uma resposta
+  // que nunca termina, retendo os eventos. Parar a propagação esconde o request
+  // do Workbox; sem respondWith, o navegador faz o fetch nativo.
+  if (request.method === 'GET' && new URL(request.url).pathname === '/api/events') {
+    event.stopImmediatePropagation();
+    return;
+  }
+
   // Notas do soundfont: cache-first; o que não veio no precache entra no primeiro uso.
   if (request.method === 'GET' && new URL(request.url).pathname.startsWith(ABC_SOUND_PREFIX)) {
     event.respondWith(
