@@ -371,9 +371,10 @@ func TestAPIKeyCannotDeleteDrawing(t *testing.T) {
 // SVG gerado de verdade pelo editor (sceneToSvg com dois traços, ver
 // apps/web/lib/sketchRender.ts): o validador do servidor precisa aceitá-lo sem
 // nenhum ajuste prévio no cliente. sketch.svg = path absoluto (clientes antigos);
-// sketch-compact.svg = path compacto relativo (outlineToCompactSvgPath).
+// sketch-compact.svg = path compacto relativo (outlineToCompactSvgPath);
+// sketch-quarter.svg = grade de ¼ px, paths dentro de <g transform="scale(.25)">.
 func TestValidateSVGAcceptsEditorOutput(t *testing.T) {
-	for _, name := range []string{"sketch.svg", "sketch-compact.svg"} {
+	for _, name := range []string{"sketch.svg", "sketch-compact.svg", "sketch-quarter.svg"} {
 		data, err := os.ReadFile(filepath.Join("testdata", name))
 		if err != nil {
 			t.Fatal(err)

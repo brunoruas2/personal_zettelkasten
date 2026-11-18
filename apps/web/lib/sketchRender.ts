@@ -62,10 +62,16 @@ export function livePath2D(stroke: Pick<Stroke, 'points' | 'size'>): Path2D {
 // imutável, então autosave e indicador de peso só calculam o outline dos traços novos.
 const svgPathCache = new WeakMap<Stroke, string>()
 
+// Grade do path do preview: ¼ px. Com px inteiro o degrau de até 0,5 px virava
+// ondulação visível no preview ampliado; ¼ px custa ~12% a mais e fica igual ao
+// path preciso. Os paths saem ×4 e um único `<g transform="scale(.25)">` desfaz.
+const SVG_UNIT = 4
+const SVG_UNIT_SCALE = 'scale(.25)' // = 1 / SVG_UNIT
+
 function svgPathFor(stroke: Stroke): string {
   let p = svgPathCache.get(stroke)
   if (p === undefined) {
-    const d = outlineToCompactSvgPath(strokeOutline(stroke))
+    const d = outlineToCompactSvgPath(strokeOutline(stroke), SVG_UNIT)
     p = d ? `<path fill="${stroke.color}" d="${d}"/>` : ''
     svgPathCache.set(stroke, p)
   }
@@ -80,7 +86,8 @@ export interface SketchSvg {
 
 /**
  * Preview SVG da cena: um `<path>` por traço (o outline do canvas em path
- * compacto: relativo, deltas inteiros),
+ * compacto: relativo, deltas inteiros na grade de ¼ px, dentro de um único
+ * `<g transform="scale(.25)">`; `viewBox` e fundo ficam fora, em px),
  * viewBox no bounding box + margem, fundo branco. Sem texto, fonte, estilo, script
  * nem href — não há nada para sanitizar. Cena vazia não gera SVG.
  */
@@ -106,7 +113,8 @@ export function sceneToSvg(scene: SketchScene): SketchSvg | null {
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${n(x)} ${n(y)} ${n(w)} ${n(h)}" width="${width}" height="${height}">` +
     `<rect x="${n(x)}" y="${n(y)}" width="${n(w)}" height="${n(h)}" fill="#ffffff"/>` +
+    `<g transform="${SVG_UNIT_SCALE}">` +
     paths.join('') +
-    `</svg>`
+    `</g></svg>`
   return { svg, width, height }
 }

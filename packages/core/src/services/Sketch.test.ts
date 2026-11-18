@@ -462,8 +462,26 @@ describe('outlineToCompactSvgPath', () => {
     });
   });
 
+  it('unit = 4: pontos a até 0,125 px e controles a até 0,375 px do exato', () => {
+    const outline = wobblyOutline(1000);
+    const { start, ctrls, ends } = decodeCompact(outlineToCompactSvgPath(outline, 4));
+    const near = (got: number[], want: ReadonlyArray<number>, tol: number) => {
+      expect(Math.abs(got[0] / 4 - want[0])).toBeLessThanOrEqual(tol);
+      expect(Math.abs(got[1] / 4 - want[1])).toBeLessThanOrEqual(tol);
+    };
+    near(start, outline[0], 0.125);
+    expect(ends).toHaveLength(outline.length - 2);
+    ends.forEach((p, k) => {
+      const a = outline[k + 1];
+      const b = outline[k + 2];
+      near(p, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], 0.125);
+    });
+    ctrls.forEach((c, k) => near(c!, outline[k + 1], 0.375));
+  });
+
   it('menos da metade dos bytes do path preciso', () => {
     const outline = wobblyOutline(200);
     expect(outlineToCompactSvgPath(outline).length).toBeLessThan(outlineToSvgPath(outline).length / 2);
+    expect(outlineToCompactSvgPath(outline, 4).length).toBeLessThan(outlineToSvgPath(outline).length / 2);
   });
 });

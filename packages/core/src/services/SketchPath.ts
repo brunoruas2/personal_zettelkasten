@@ -41,14 +41,17 @@ function joinNums(nums: number[]): string {
   return s;
 }
 
-/** Desvio máximo (px, por eixo) do controle implícito de um `t` antes de virar `q` explícito. */
+/** Desvio máximo (unidades da grade, por eixo) do controle implícito de um `t` antes de virar `q` explícito. */
 const MAX_CTRL_DRIFT = 1;
 
 /**
  * Mesma geometria de `outlineToSvgPath`, para o preview SVG gravado: `M` absoluto
- * e o resto em comandos relativos (`q`, `t`, `l`, `z`) com deltas inteiros. Cada
- * coordenada absoluta é arredondada **antes** do delta, então o erro por ponto
- * fica em até 0,5 px e não se acumula ao longo do traço.
+ * e o resto em comandos relativos (`q`, `t`, `l`, `z`) com deltas inteiros, numa
+ * grade de `unit` subdivisões por px (as coordenadas saem multiplicadas por `unit`;
+ * quem monta o SVG desfaz com `scale(1/unit)`). Cada coordenada absoluta é
+ * arredondada **antes** do delta, então o erro por ponto fica em até 0,5 unidade
+ * e não se acumula ao longo do traço. Com `unit = 1` o degrau de 0,5 px aparece
+ * como ondulação no preview ampliado; o `sceneToSvg` usa 4 (¼ px).
  *
  * O `t` não carrega controle: o SVG o calcula refletindo o anterior no ponto
  * corrente, e com fins arredondados esse reflexo deriva (o erro de cada passo soma
@@ -58,16 +61,19 @@ const MAX_CTRL_DRIFT = 1;
  * seguintes refletem a partir dele. O canvas não usa isto: no zoom do editor, 1 px
  * de passo serrilharia o traço.
  */
-export function outlineToCompactSvgPath(outline: ReadonlyArray<ReadonlyArray<number>>): string {
+export function outlineToCompactSvgPath(
+  outline: ReadonlyArray<ReadonlyArray<number>>,
+  unit = 1,
+): string {
   const len = outline.length;
   if (len < 2) return '';
 
-  let cx = Math.round(outline[0][0]);
-  let cy = Math.round(outline[0][1]);
-  // Delta até (x, y) quantizado; avança o ponto corrente.
+  let cx = Math.round(outline[0][0] * unit);
+  let cy = Math.round(outline[0][1] * unit);
+  // Delta até (x, y) quantizado na grade; avança o ponto corrente.
   const step = (x: number, y: number): [number, number] => {
-    const qx = Math.round(x);
-    const qy = Math.round(y);
+    const qx = Math.round(x * unit);
+    const qy = Math.round(y * unit);
     const delta: [number, number] = [qx - cx, qy - cy];
     cx = qx;
     cy = qy;
@@ -102,8 +108,8 @@ export function outlineToCompactSvgPath(outline: ReadonlyArray<ReadonlyArray<num
   for (let i = 1; i < len - 1; i++) {
     const p = outline[i];
     const q = outline[i + 1];
-    const vx = Math.round(p[0]);
-    const vy = Math.round(p[1]);
+    const vx = Math.round(p[0] * unit);
+    const vy = Math.round(p[1] * unit);
     const rx = 2 * cx - icx;
     const ry = 2 * cy - icy;
     if (i > 1 && Math.abs(rx - vx) <= MAX_CTRL_DRIFT && Math.abs(ry - vy) <= MAX_CTRL_DRIFT) {
