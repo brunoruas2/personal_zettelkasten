@@ -1,8 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { levelBucket, levelFraction } from '@zettelkasten/core';
 import { useLevelsStore } from '../../store/useLevelsStore';
 import { useZettelStore } from '../../store/useZettelStore';
+import { useTypesStore } from '../../store/useTypesStore';
+import { MATURITY_BUCKETS, SPRITE_SIZE, nebulaSprite } from '../../lib/maturitySprites';
+import { MaturityHud } from './MaturityHud';
 import { NeonButton } from '../zkos';
 import { DEFAULT_ACCENT, useLevelsEnv } from './LevelsContext';
 import { useReadingScale, zkFont } from '../../lib/readingFontSize';
@@ -18,8 +22,23 @@ const GLOW_MAX = 400;
 /** Duração do anel de destaque no resultado da pesquisa. */
 const PULSE_MS = 1500;
 const MAX_RESULTS = 8;
+/**
+ * A partir desta escala de câmera, o zettel com nível vira quadrado com
+ * preenchimento e emoji; abaixo, segue bolinha e a maturidade é lida pela
+ * granulação da mancha. Calibrar com a base real (change maturity-map, 4.6).
+ */
+const MATURITY_NEAR_SCALE = 0.35;
+/** Opacidade do que o filtro de maturidade exclui. */
+const DIM_ALPHA = 0.25;
 
 const fold = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/** Maturidade por índice de `data`: fração do nível (−1 = sem nível), se o tipo tem escada e o emoji do nível. */
+interface Maturity {
+  fraction: Float32Array;
+  ladder: Uint8Array;
+  emoji: (string | null)[];
+}
 
 interface Cluster {
   color: string;
@@ -73,6 +92,46 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
     }
     return s;
   }, [data, focusIdx, consulted]);
+
+  // Maturidade por índice (mesma ordem de `data`): lida do store de tipos, sem tocar
+  // no índice global. fraction −1 = sem nível; ladder = o tipo tem escada.
+  const typeById = useTypesStore((st) => st.typeById);
+  const assignments = useTypesStore((st) => st.assignments);
+  const maturityFilter = useLevelsStore((st) => st.maturityFilter);
+  const setMaturityFilter = useLevelsStore((st) => st.setMaturityFilter);
+  const maturity = useMemo<Maturity>(() => {
+    const n = data.ids.length;
+    const fraction = new Float32Array(n).fill(-1);
+    const ladder = new Uint8Array(n);
+    const emoji: (string | null)[] = new Array(n).fill(null);
+    for (let i = 0; i < n; i++) {
+      const a = assignments.get(data.ids[i]);
+      const t = a ? typeById.get(a.typeId) : undefined;
+      if (!a || !t || t.levels.length === 0) continue;
+      ladder[i] = 1;
+      const f = levelFraction(t, a.level);
+      if (f === null) continue;
+      fraction[i] = f;
+      emoji[i] = t.levels.find((l) => l.key === a.level)?.emoji ?? null;
+    }
+    return { fraction, ladder, emoji };
+  }, [data, typeById, assignments]);
+
+  // Filtro do HUD: 1 = casa, 0 = esmaece. Não filtra o índice global.
+  const mask = useMemo<Uint8Array | null>(() => {
+    if (!maturityFilter) return null;
+    const m = new Uint8Array(data.ids.length);
+    for (let i = 0; i < m.length; i++) {
+      const a = assignments.get(data.ids[i]);
+      if (!a || a.typeId !== maturityFilter.typeId) continue;
+      const lv = maturityFilter.levelKey;
+      if (lv === null || (lv === '' ? a.level === null : a.level === lv)) m[i] = 1;
+    }
+    return m;
+  }, [maturityFilter, data, assignments]);
+
+  // Sair do Mapa (desmontar) limpa o filtro.
+  useEffect(() => () => setMaturityFilter(null), [setMaturityFilter]);
 
   const slice = useMemo(() => allSlice(data), [data]);
   // Vizinhança do foco: só enquadra a câmera (botão FOCO).
@@ -142,8 +201,8 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
     return { first: [...new Set(first)], others };
   }, [data, slice, focusIdx, consultedSet]);
 
-  const stateRef = useRef({ data, slice, focusSlice, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, isMobile });
-  stateRef.current = { data, slice, focusSlice, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, isMobile };
+  const stateRef = useRef({ data, slice, focusSlice, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, isMobile, maturity, mask });
+  stateRef.current = { data, slice, focusSlice, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, isMobile, maturity, mask };
 
   const draw = useCallback(() => {
     rafRef.current = 0;
@@ -155,11 +214,14 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const { data: d, slice: sl, edges: ed, clusters: cl, labelOrder: lo, focusIdx: fi, activeIdx: ai, consultedSet: cs } = stateRef.current;
+    const { data: d, slice: sl, edges: ed, clusters: cl, labelOrder: lo, focusIdx: fi, activeIdx: ai, consultedSet: cs, maturity: mat, mask: msk } = stateRef.current;
     const v = viewRef.current;
     const px = (x: number) => (x - v.cx) * v.scale + w / 2;
     const py = (y: number) => (y - v.cy) * v.scale + h / 2;
     const inView = (x: number, y: number, pad = 60) => x > -pad && x < w + pad && y > -pad && y < h + pad;
+    // Fora do filtro de maturidade: esmaecido (posição, linhas e seleção continuam).
+    const alphaOf = (i: number) => (msk !== null && msk[i] === 0 ? DIM_ALPHA : 1);
+    const near = v.scale >= MATURITY_NEAR_SCALE;
 
     // Manchas dos clusters.
     for (const i of sl.list) {
@@ -168,6 +230,14 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       const x = px(d.xs[i]);
       const y = py(d.ys[i]);
       if (!inView(x, y, 140)) continue;
+      ctx.globalAlpha = alphaOf(i);
+      const frac = mat.fraction[i];
+      if (frac >= 0) {
+        // Com nível: sprite granulado (esparso → sólido), na cor do cluster.
+        const half = SPRITE_SIZE / 2;
+        ctx.drawImage(nebulaSprite(col, levelBucket(frac, MATURITY_BUCKETS)), x - half, y - half, SPRITE_SIZE, SPRITE_SIZE);
+        continue;
+      }
       const g = ctx.createRadialGradient(x, y, 0, x, y, 120);
       g.addColorStop(0, hexAlpha(col, 0.22));
       g.addColorStop(1, hexAlpha(col, 0));
@@ -176,6 +246,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       ctx.arc(x, y, 120, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
 
     // Linhas: discretas, depois as do foco em destaque.
     ctx.lineCap = 'round';
@@ -209,20 +280,28 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       const col = d.nebula[i] ?? DEFAULT_ACCENT;
       const isFocus = i === fi;
       const r = isFocus ? 11 : 5 + Math.min(d.degree[i], 10) * 0.7;
+      // De perto, o zettel com escada vira quadrado (preenchido pelo nível); o resto é bolinha.
+      const square = near && mat.ladder[i] === 1;
       ctx.save();
+      ctx.globalAlpha = alphaOf(i);
       if (glow || isFocus) {
         ctx.shadowColor = col;
         ctx.shadowBlur = isFocus ? 18 : 10;
       }
-      ctx.fillStyle = col;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
+      if (square) {
+        drawMaturitySquare(ctx, x, y, r, col, mat.fraction[i], mat.emoji[i], readScaleRef.current);
+      } else {
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(1.5, r * 0.32), 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(x, y, Math.max(1.5, r * 0.32), 0, Math.PI * 2);
-      ctx.fill();
       const ring = (color: string, extra: number, width: number) => {
         ctx.strokeStyle = color;
         ctx.lineWidth = width;
@@ -273,7 +352,9 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
       ctx.fillStyle = isFocus ? '#ff7be9' : '#cfe9ee';
       ctx.shadowColor = '#04060b';
       ctx.shadowBlur = 4;
+      ctx.globalAlpha = alphaOf(i);
       ctx.fillText(text.length > 22 ? `${text.slice(0, 21)}…` : text, x, y + 28 * k);
+      ctx.globalAlpha = 1;
       ctx.shadowBlur = 0;
     };
     for (const i of lo.first) tryLabel(i, true);
@@ -348,7 +429,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
 
   useEffect(() => {
     schedule();
-  }, [data, slice, focusSlice, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, schedule]);
+  }, [data, slice, focusSlice, edges, clusters, labelOrder, focusIdx, activeIdx, consultedSet, maturity, mask, schedule]);
 
   const zoomAt = useCallback(
     (factor: number, ax: number, ay: number) => {
@@ -602,6 +683,7 @@ export function ConnectionMap({ onSelect }: { onSelect: (id: string) => void }) 
           VER TUDO
         </NeonButton>
       </div>
+      <MaturityHud />
       <div className="zk-display pointer-events-none absolute bottom-2 left-3 text-[length:calc(19px*var(--zk-read-scale,1))] text-zk-dim">
         {data.count === 0
           ? '> nenhum zettel posicionado ainda'
@@ -618,4 +700,45 @@ function hexAlpha(hex: string, a: number): string {
   if (!m) return hex;
   const n = parseInt(m[1], 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+/**
+ * Nó quadrado de um zettel com escada de níveis: contorno e preenchimento de
+ * baixo para cima na cor do cluster, proporcional à fração; `fraction < 0` (tipo
+ * com escada, sem nível) fica só no contorno. O emoji do nível é o selo no canto.
+ * A cor do nível nunca muda: só preenchimento e emoji dizem a maturidade.
+ */
+function drawMaturitySquare(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  color: string,
+  fraction: number,
+  emoji: string | null,
+  textScale: number,
+): void {
+  const side = r * 2;
+  const left = x - r;
+  const top = y - r;
+  ctx.fillStyle = hexAlpha(color, 0.16);
+  ctx.fillRect(left, top, side, side);
+  if (fraction > 0) {
+    const h = side * Math.min(1, fraction);
+    ctx.fillStyle = color;
+    ctx.fillRect(left, top + side - h, side, h);
+  }
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(left, top, side, side);
+  if (emoji) {
+    ctx.font = `${Math.round(13 * textScale)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(emoji, left + side, top);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  }
 }

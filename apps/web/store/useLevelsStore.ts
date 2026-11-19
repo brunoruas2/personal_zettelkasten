@@ -18,6 +18,12 @@ import {
 import { useZettelStore } from './useZettelStore';
 import { pushRecent } from '../lib/recentZettels';
 
+/** Filtro de maturidade do Mapa: tipo + nível ('' = sem nível; null = qualquer nível do tipo). */
+export interface MaturityFilter {
+  typeId: string;
+  levelKey: string | null;
+}
+
 /**
  * Estado da navegação em três níveis (Foco, Mesa, Mapa). A lógica das
  * transições é pura e mora em `@zettelkasten/core` (`Levels.ts`, testada);
@@ -31,6 +37,8 @@ interface LevelsActions {
   go: (level: Level) => void;
   /** Desktop: mapa ocupa toda a área das Referências (esconde abertos e viewer). Só UI. */
   setMapMaximized: (v: boolean) => void;
+  /** Filtro do HUD de maturidade. Só UI: não persiste; o `ConnectionMap` o zera ao desmontar (sair do Mapa). */
+  setMaturityFilter: (f: MaturityFilter | null) => void;
   startEdit: (where: EditingIn) => void;
   stopEdit: () => void;
   /** Aplica um estado inteiro (voltar do sistema). */
@@ -62,9 +70,10 @@ function isVisibleFn(): (id: string) => boolean {
   };
 }
 
-export const useLevelsStore = create<LevelsState & LevelsActions & { mapMaximized: boolean }>((set, get) => ({
+export const useLevelsStore = create<LevelsState & LevelsActions & { mapMaximized: boolean; maturityFilter: MaturityFilter | null }>((set, get) => ({
   ...initialLevels,
   mapMaximized: false,
+  maturityFilter: null,
 
   setFocus: (id) => {
     const { links } = useZettelStore.getState();
@@ -75,6 +84,7 @@ export const useLevelsStore = create<LevelsState & LevelsActions & { mapMaximize
   dismiss: (id) => set(dismiss(get(), id)),
   go: (level) => set({ ...goLevel(get(), level), ...(level === 'focus' ? { mapMaximized: false } : {}) }),
   setMapMaximized: (v) => set({ mapMaximized: v }),
+  setMaturityFilter: (f) => set({ maturityFilter: f }),
   startEdit: (where) => set(startEditing(get(), where)),
   stopEdit: () => set(stopEditing(get())),
   apply: (state) => set(state),

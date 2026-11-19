@@ -33,3 +33,4 @@ export * from './models/TypeAppearance';
 export * from './models/ZettelType';
 export * from './services/SectionParser';
 export * from './services/TypeRules';
+export * from './services/Maturity';
