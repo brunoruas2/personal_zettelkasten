@@ -49,8 +49,11 @@ import { GalaxySearch, type SearchFilters } from './GalaxySearch';
 import { SettingsPanel } from '../panels/SettingsPanel';
 import { TagsPanel } from '../panels/TagsPanel';
 import { PasskeysPanel } from '../panels/PasskeysPanel';
+import { TypesPanel } from '../panels/TypesPanel';
+import { useTypesStore } from '../../store/useTypesStore';
+import { assign, templateOf } from '../../lib/typeSync';
 
-type Modal = 'settings' | 'tags' | 'passkeys' | null;
+type Modal = 'settings' | 'tags' | 'types' | 'passkeys' | null;
 
 const CARD_HIDE_DELAY_MS = 150;
 /** Paradas mostradas na trilha do Voltar. */
@@ -549,23 +552,29 @@ export function Galaxy() {
 
   // --- criar ---
 
+  const types = useTypesStore((st) => st.types);
   const createAt = useCallback(
-    async (world: { x: number; y: number }, title = '') => {
+    async (world: { x: number; y: number }, title = '', typeId?: string) => {
       if (focusRootRef.current) exitFocus();
       if (!(await exitEdit())) return;
       const position = await snapPosition(world);
-      const body = title ? '' : await loadTemplate();
+      // Com tipo, o corpo inicial é o template dele e o zettel já nasce atribuído.
+      const body = typeId ? await templateOf(typeId) : title ? '' : await loadTemplate();
       const zettel = await createZettel({ title, body, tags: [] }, { position });
+      if (typeId) await assign(zettel.id, typeId);
       freshIdsRef.current.add(zettel.id);
       pendingNewRef.current = { zettel, mobile: isMobileDevice() };
     },
     [createZettel, exitEdit, exitFocus],
   );
 
-  const createAtCenter = useCallback(() => {
-    const cam = engineRef.current?.getCamera();
-    if (cam) void createAt({ x: cam.x, y: cam.y });
-  }, [createAt]);
+  const createAtCenter = useCallback(
+    (typeId?: string) => {
+      const cam = engineRef.current?.getCamera();
+      if (cam) void createAt({ x: cam.x, y: cam.y }, '', typeId);
+    },
+    [createAt],
+  );
 
   // O zettel novo entra no índice depois do loadAll + posição: aí voa e edita.
   useEffect(() => {
@@ -1088,7 +1097,10 @@ export function Galaxy() {
   // Ações da paleta: só as disponíveis agora (a lista é refeita a cada render com a paleta aberta).
   const paletteActions: PaletteAction[] = [];
   if (palette) {
-    paletteActions.push({ id: 'new', label: 'Novo zettel', run: createAtCenter });
+    paletteActions.push({ id: 'new', label: 'Novo zettel', run: () => createAtCenter() });
+    for (const t of types.slice(0, 12)) {
+      paletteActions.push({ id: `new-${t.id}`, label: `Novo zettel: ${t.icon} ${t.name}`, run: () => createAtCenter(t.id) });
+    }
     paletteActions.push({ id: 'capture', label: 'Captura rápida', keys: keysOf('capture'), run: () => setCapture(true) });
     paletteActions.push({ id: 'search', label: 'Buscar com filtros e prévia', keys: keysOf('search'), run: () => setSearch({}) });
     if (backTop) paletteActions.push({ id: 'back', label: 'Voltar ao zettel anterior', keys: keysOf('back'), run: () => void goBack() });
@@ -1101,6 +1113,7 @@ export function Galaxy() {
     if (tagFilter) paletteActions.push({ id: 'clear-tag', label: `Limpar o filtro #${tagFilter}`, keys: keysOf('escape'), run: () => setTagFilter(null) });
     paletteActions.push({ id: 'sync', label: 'Sincronizar agora', run: () => void useSyncStore.getState().syncNow?.() });
     paletteActions.push({ id: 'tags', label: 'Abrir tags', run: () => setModal('tags') });
+    paletteActions.push({ id: 'types', label: 'Tipos de zettel', run: () => setModal('types') });
     paletteActions.push({ id: 'settings', label: 'Abrir configurações', keys: keysOf('settings'), run: () => setModal('settings') });
     paletteActions.push({ id: 'help', label: 'Mostrar os atalhos', keys: keysOf('help'), run: () => setHelp(true) });
   }
@@ -1457,6 +1470,11 @@ export function Galaxy() {
               setSearch({ tags: [tag] });
             }}
           />
+        </GalaxyModal>
+      )}
+      {modal === 'types' && (
+        <GalaxyModal title="Tipos de zettel" onClose={() => setModal(null)}>
+          <TypesPanel embedded />
         </GalaxyModal>
       )}
       {modal === 'passkeys' && (

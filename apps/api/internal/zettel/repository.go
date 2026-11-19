@@ -19,29 +19,38 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) List(userID string, since int64, query string) ([]models.Zettel, error) {
+	return r.ListFiltered(userID, since, query, TypeFilter{})
+}
+
+// ListFiltered é o List restrito a um tipo e/ou nível (atribuições vivas).
+func (r *Repository) ListFiltered(userID string, since int64, query string, f TypeFilter) ([]models.Zettel, error) {
 	var (
 		rows *sql.Rows
 		err  error
 	)
+	clause, extra := f.sql("z")
 	switch {
 	case query != "":
+		args := append([]any{query + "*", userID}, extra...)
 		rows, err = r.db.Query(`
 			SELECT z.id, z.user_id, z.title, z.body, z.tags, z.created_at, z.updated_at, z.deleted_at
 			FROM zettels z
 			JOIN zettels_fts fts ON z.rowid = fts.rowid
-			WHERE zettels_fts MATCH ? AND z.user_id = ? AND z.deleted_at IS NULL
+			WHERE zettels_fts MATCH ? AND z.user_id = ? AND z.deleted_at IS NULL`+clause+`
 			ORDER BY rank
-		`, query+"*", userID)
+		`, args...)
 	case since > 0:
+		args := append([]any{userID, since}, extra...)
 		rows, err = r.db.Query(`
-			SELECT id, user_id, title, body, tags, created_at, updated_at, deleted_at
-			FROM zettels WHERE user_id = ? AND updated_at > ? ORDER BY updated_at DESC
-		`, userID, since)
+			SELECT z.id, z.user_id, z.title, z.body, z.tags, z.created_at, z.updated_at, z.deleted_at
+			FROM zettels z WHERE z.user_id = ? AND z.updated_at > ?`+clause+` ORDER BY z.updated_at DESC
+		`, args...)
 	default:
+		args := append([]any{userID}, extra...)
 		rows, err = r.db.Query(`
-			SELECT id, user_id, title, body, tags, created_at, updated_at, deleted_at
-			FROM zettels WHERE user_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC
-		`, userID)
+			SELECT z.id, z.user_id, z.title, z.body, z.tags, z.created_at, z.updated_at, z.deleted_at
+			FROM zettels z WHERE z.user_id = ? AND z.deleted_at IS NULL`+clause+` ORDER BY z.updated_at DESC
+		`, args...)
 	}
 	if err != nil {
 		return nil, err

@@ -9,6 +9,7 @@ import { LinksFooter } from './LinksFooter';
 import { TagChip } from './TagChip';
 import { CARD_TOUCH } from '../../lib/galaxy/touch';
 import { AgentBadge } from './AgentBadge';
+import { GalaxyTypeBadge, GalaxyTypePicker } from './TypeControl';
 import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 
 /** Altura do cabeçalho (título de até 2 linhas; as tags ficam no fim do corpo)
@@ -290,6 +291,7 @@ export const GalaxyCard = memo(function GalaxyCard({
           <>
             <div className="flex shrink-0 justify-end gap-2 px-4 pt-3" data-no-pan>
               <span className="mr-auto text-[11px] text-[#6f7787]">Editando · Esc para sair</span>
+              <GalaxyTypePicker id={meta.id} />
             </div>
             <InplaceEditor
               ref={editorRef}
@@ -322,6 +324,7 @@ export const GalaxyCard = memo(function GalaxyCard({
                   {meta.title || 'Sem título'}
                 </h3>
                 {byAgent && <AgentBadge className="mt-1" />}
+                <GalaxyTypeBadge id={meta.id} className="mt-1" />
               </div>
               <button
                 type="button"

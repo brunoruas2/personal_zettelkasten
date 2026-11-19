@@ -12,6 +12,9 @@ var (
 	ErrConflict      = errors.New("conflict")
 	ErrInvalid       = errors.New("invalid")
 	ErrPatchMismatch = errors.New("patch mismatch")
+	// ErrForbidden: a escrita é válida, mas a origem (agente) não pode fazê-la:
+	// seção protegida ou nível reservado ao usuário. Vira 403 no REST.
+	ErrForbidden = errors.New("forbidden")
 )
 
 // PatchMismatchError diz quantas vezes o trecho apareceu (0 ou mais de 1).
@@ -26,6 +29,9 @@ func (e *PatchMismatchError) Is(target error) bool { return target == ErrPatchMi
 
 // invalid embrulha ErrInvalid com uma mensagem legível.
 func invalid(msg string) error { return fmt.Errorf("%w: %s", ErrInvalid, msg) }
+
+// forbidden embrulha ErrForbidden com uma mensagem legível.
+func forbidden(msg string) error { return fmt.Errorf("%w: %s", ErrForbidden, msg) }
 
 // conflict embrulha ErrConflict com uma mensagem legível.
 func conflict(msg string) error { return fmt.Errorf("%w: %s", ErrConflict, msg) }

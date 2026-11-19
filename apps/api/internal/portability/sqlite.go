@@ -39,6 +39,8 @@ var snapshotTables = []snapshotTable{
 	{"drawings", "user_id = ?"},
 	{"drawing_refs", "user_id = ?"},
 	{"positions", "user_id = ?"},
+	{"zettel_types", "user_id = ?"},
+	{"zettel_type_assignments", "user_id = ?"},
 }
 
 // WriteUserSnapshot grava em dst um banco SQLite com o schema que a API cria

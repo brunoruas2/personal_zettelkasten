@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Zettel } from '@zettelkasten/core';
 import { InplaceEditor, type InplaceEditorHandle, type SaveStatus } from './InplaceEditor';
+import { GalaxyTypePicker } from './TypeControl';
 
 const STATUS_LABEL: Record<SaveStatus, string> = {
   idle: '',
@@ -73,6 +74,7 @@ export function FullscreenEditor({
           ← Galáxia
         </button>
         <span className="flex items-center gap-2 text-xs text-[#8b93a3]" aria-live="polite">
+          <GalaxyTypePicker id={zettel.id} />
           {pending > 0 && (
             <span>
               Aguardando {pending} anexo{pending > 1 ? 's' : ''}…

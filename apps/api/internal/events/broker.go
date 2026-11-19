@@ -13,7 +13,7 @@ import (
 
 // Event é o aviso de que algo mudou; nunca leva dados — o cliente faz pull.
 type Event struct {
-	Kind   string   `json:"kind"` // "zettel" | "drawing" | "resync"
+	Kind   string   `json:"kind"` // "zettel" | "drawing" | "type" | "resync"
 	Op     string   `json:"op,omitempty"`
 	IDs    []string `json:"ids,omitempty"`
 	Source string   `json:"source,omitempty"` // "agent" | "ui"

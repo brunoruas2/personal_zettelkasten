@@ -73,7 +73,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		jsonOK(w, metas)
 		return
 	}
-	zettels, err := h.svc.List(userID, since, q)
+	// type= (id ou slug) e level= (chave) restringem pelas atribuições de tipo.
+	zettels, err := h.svc.ListBy(userID, since, q, TypeRef{
+		Type:  r.URL.Query().Get("type"),
+		Level: r.URL.Query().Get("level"),
+	})
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -242,6 +246,12 @@ func writeErr(w http.ResponseWriter, err error) {
 		jsonError(w, http.StatusNotFound, "not found")
 	case errors.Is(err, ErrPatchMismatch):
 		jsonError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, ErrForbidden):
+		msg := err.Error()
+		if len(msg) > len("forbidden: ") {
+			msg = msg[len("forbidden: "):]
+		}
+		jsonError(w, http.StatusForbidden, msg)
 	case errors.Is(err, ErrConflict):
 		msg := err.Error()
 		if len(msg) > len("conflict: ") {

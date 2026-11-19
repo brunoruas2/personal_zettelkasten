@@ -4,6 +4,7 @@ import { splitCapture } from '@zettelkasten/core';
 import { api } from '../../lib/api';
 import { useZettelStore } from '../../store/useZettelStore';
 import { useLevelsStore } from '../../store/useLevelsStore';
+import { assign, templateOf } from '../../lib/typeSync';
 import { flushActiveEdit, requestTitleFocus } from './ZettelWindow';
 
 /** Zettels criados nesta sessão e ainda não editados: se saírem vazios, são apagados. */
@@ -27,10 +28,14 @@ async function loadTemplate(): Promise<string> {
 /**
  * "+ Nova": cria um zettel e põe em foco com o cursor no título. No desktop o
  * Foco já é o editor (folha de papel); no celular abre a edição explícita.
+ * Com `typeId`, o corpo inicial é o template do tipo (e não o das configurações)
+ * e o zettel já nasce atribuído a ele.
  */
-export async function createNote({ explicitEdit }: { explicitEdit: boolean }): Promise<void> {
+export async function createNote({ explicitEdit, typeId }: { explicitEdit: boolean; typeId?: string }): Promise<void> {
   const { createZettel } = useZettelStore.getState();
-  const z = await createZettel({ title: '', body: await loadTemplate(), tags: [] });
+  const body = typeId ? await templateOf(typeId) : await loadTemplate();
+  const z = await createZettel({ title: '', body, tags: [] });
+  if (typeId) await assign(z.id, typeId);
   fresh.add(z.id);
   requestTitleFocus(z.id);
   await flushActiveEdit();

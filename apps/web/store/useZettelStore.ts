@@ -7,6 +7,7 @@ import { syncService } from '../lib/sync'
 import { searchZettels } from '../lib/searchZettels';
 import { getNodeColorRules, saveNodeColorRules, type NodeColorRule } from '../lib/graphColors';
 import { neighborsOf, placeMissingAndQueue, positionStore, repositionOnLinks, setManualPosition } from '../lib/positionSync';
+import { dropAssignment } from '../lib/typeSync';
 import { downloadBodies } from '../lib/bodySync';
 import { clearBodyCache, invalidateBody, setCachedBody } from '../lib/bodyCache';
 
@@ -131,6 +132,7 @@ export const useZettelStore = create<ZettelStore>((set, get) => ({
     if (!controller) throw new Error('Controller not initialized');
     await controller.delete(id);
     await positionStore.delete(id);
+    await dropAssignment(id);
     invalidateBody(id);
     await loadAll();
     syncService.push({ op: 'delete', payload: { id } }).catch(() => {});

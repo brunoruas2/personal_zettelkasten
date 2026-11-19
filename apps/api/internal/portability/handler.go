@@ -17,6 +17,7 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/models"
 	"github.com/brunofullstack/zettelkasten/api/internal/positions"
+	"github.com/brunofullstack/zettelkasten/api/internal/types"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 )
@@ -42,6 +43,8 @@ type Handler struct {
 	drawingQuota int64
 	// Posições na galáxia: opcionais (ver WithPositions em positions.go).
 	positions *positions.Repository
+	// Tipos de zettel e atribuições: opcionais (ver WithTypes em types.go).
+	types *types.Repository
 	// Snapshot SQLite: opcional (ver WithSnapshot em sqlite.go). snapshotTmp
 	// vazio = os.TempDir().
 	snapshotDB  string
@@ -84,6 +87,10 @@ type exportPayload struct {
 	// Posições na galáxia (centro do card, coordenadas inteiras). `omitempty`
 	// pelo mesmo motivo; backup sem o campo importa e o cliente posiciona.
 	Positions []positions.Entry `json:"positions,omitempty"`
+	// Tipos de zettel e atribuição de tipo/nível (só os vivos). `omitempty` pelo
+	// mesmo motivo; backup sem os campos importa e os zettels ficam sem tipo.
+	Types           []types.Type       `json:"types,omitempty"`
+	TypeAssignments []types.Assignment `json:"type_assignments,omitempty"`
 }
 
 // GET /api/backup/export?key=<64-hex-char-key>
@@ -138,13 +145,15 @@ func (h *Handler) exportJSONForUser(w http.ResponseWriter, userID string) {
 	}
 
 	payload := exportPayload{
-		Version:    1,
-		ExportedAt: time.Now().UTC().Format(time.RFC3339),
-		Zettels:    zettels,
-		Links:      links,
-		Images:     h.imageManifest(userID),
-		Drawings:   h.drawingManifest(userID),
-		Positions:  h.positionsForExport(userID),
+		Version:         1,
+		ExportedAt:      time.Now().UTC().Format(time.RFC3339),
+		Zettels:         zettels,
+		Links:           links,
+		Images:          h.imageManifest(userID),
+		Drawings:        h.drawingManifest(userID),
+		Positions:       h.positionsForExport(userID),
+		Types:           h.typesForExport(userID),
+		TypeAssignments: h.assignmentsForExport(userID),
 	}
 
 	date := time.Now().Format("2006-01-02")
@@ -243,6 +252,7 @@ func (h *Handler) importJSON(w http.ResponseWriter, r *http.Request) {
 		h.syncDrawingRefs(userID, z.ID, z.Body)
 	}
 	errs = append(errs, h.importPositions(userID, payload.Positions)...)
+	errs = append(errs, h.importTypes(userID, payload.Types, payload.TypeAssignments)...)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{

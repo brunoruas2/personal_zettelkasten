@@ -12,12 +12,13 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/models"
+	"github.com/brunofullstack/zettelkasten/api/internal/types"
 )
 
 // ChangeEvent descreve uma escrita confirmada, para quem acompanha a base em
 // tempo real. Source é auth.SourceAgent ou auth.SourceUI.
 type ChangeEvent struct {
-	Kind   string   `json:"kind"` // "zettel"
+	Kind   string   `json:"kind"` // "zettel" | "type"
 	Op     string   `json:"op"`   // "upsert" | "delete"
 	IDs    []string `json:"ids"`
 	Source string   `json:"source"`
@@ -39,6 +40,7 @@ type Service struct {
 	repo     *Repository
 	images   *images.Repository
 	drawings *drawings.Repository
+	types    *types.Repository
 	notifier Notifier
 	now      func() time.Time
 }
@@ -125,8 +127,19 @@ var ftsWordRE = regexp.MustCompile(`[\p{L}\p{N}_]+`)
 // entre aspas (`"pal"*`, todas obrigatórias), então a sintaxe do FTS não vaza
 // para quem chama. limit ≤ 0 = 20.
 func (s *Service) Search(userID, query string, limit int) ([]models.Zettel, error) {
+	return s.searchFiltered(userID, query, limit, TypeFilter{})
+}
+
+func (s *Service) searchFiltered(userID, query string, limit int, f TypeFilter) ([]models.Zettel, error) {
 	words := ftsWordRE.FindAllString(query, -1)
 	if len(words) == 0 {
+		// Sem texto, mas com filtro: lista os mais recentes do tipo/nível.
+		if f.TypeID != "" || f.Level != "" {
+			if limit <= 0 {
+				limit = 20
+			}
+			return s.repo.ListRecentFiltered(userID, limit, f)
+		}
 		return []models.Zettel{}, nil
 	}
 	if limit <= 0 {
@@ -136,7 +149,7 @@ func (s *Service) Search(userID, query string, limit int) ([]models.Zettel, erro
 	for i, w := range words {
 		terms[i] = `"` + w + `"*`
 	}
-	return s.repo.SearchFTS(userID, strings.Join(terms, " "), limit)
+	return s.repo.SearchFTSFiltered(userID, strings.Join(terms, " "), limit, f)
 }
 
 // ListRecent devolve os mais atualizados. limit ≤ 0 = 20.
@@ -205,12 +218,21 @@ type CreateInput struct {
 	Tags      []string
 	CreatedAt int64
 	UpdatedAt int64
+	// Type (id ou slug) e Level atribuem tipo e nível ao zettel novo; sem Body,
+	// o corpo inicial é o template do tipo.
+	Type  string
+	Level string
 }
 
 // Create grava um zettel novo. Sem título e sem id = ErrInvalid; id repetido = ErrConflict.
 func (s *Service) Create(ctx context.Context, userID string, in CreateInput) (*models.Zettel, error) {
 	if in.Title == "" && in.ID == "" {
 		return nil, invalid("title is required")
+	}
+	// Tipo, nível e template são validados antes de gravar o zettel.
+	tp, err := s.prepareType(ctx, userID, &in)
+	if err != nil {
+		return nil, err
 	}
 	now := s.now()
 	if in.Tags == nil {
@@ -234,6 +256,11 @@ func (s *Service) Create(ctx context.Context, userID string, in CreateInput) (*m
 	}
 	s.syncRefs(userID, z.ID, z.Body)
 	s.relinkPending(userID, z.Title, z.ID)
+	if tp != nil {
+		if err := s.assign(ctx, userID, z.ID, tp, in.Level); err != nil {
+			return nil, err
+		}
+	}
 	s.notify(ctx, userID, "upsert", z.ID)
 	return s.Get(userID, z.ID)
 }
@@ -253,6 +280,10 @@ func (s *Service) Update(ctx context.Context, userID, id string, in UpdateInput)
 	}
 	if in.UpdatedAt == 0 {
 		in.UpdatedAt = s.now().UnixMilli()
+	}
+	// A origem agent não altera seção protegida do tipo do zettel.
+	if err := s.guardProtected(ctx, userID, id, in.Body); err != nil {
+		return nil, err
 	}
 	z := &models.Zettel{ID: id, UserID: userID, Title: in.Title, Body: in.Body, Tags: in.Tags, UpdatedAt: in.UpdatedAt}
 	if err := s.repo.Update(z); err != nil {
@@ -406,6 +437,9 @@ func (s *Service) Delete(ctx context.Context, userID, id string) error {
 	}
 	s.syncImageRefs(userID, id, "")
 	s.syncDrawingRefs(userID, id, "")
+	if s.types != nil {
+		_ = s.types.ReleaseZettel(userID, id, s.now().UnixMilli())
+	}
 	s.notify(ctx, userID, "delete", id)
 	return nil
 }

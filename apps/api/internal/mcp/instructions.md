@@ -13,3 +13,4 @@ Como trabalhar:
 3. Para mudar título use rename_zettel: ele reescreve os [[links]] em toda a base. Nunca renomeie mudando o texto do corpo.
 4. delete_zettel é destrutivo; confirme com o usuário e avise quem citava o zettel.
 5. Responda ao usuário em português, citando os títulos que criou ou alterou.
+6. Tipos de zettel são do usuário: chame list_types antes de atribuir (set_type, ou type em create_zettel). Nunca altere o texto de uma seção protegida do tipo (ex.: Minha síntese) nem marque nível «só o usuário». Se o servidor recusar, relate ao usuário; não contorne. trail_progress mostra o avanço de uma trilha.

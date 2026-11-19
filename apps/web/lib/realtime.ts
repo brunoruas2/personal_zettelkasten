@@ -2,7 +2,7 @@ import { api, AuthError } from './api';
 
 /** Evento de GET /api/events. Nunca traz dados: o cliente faz pull. */
 export interface RealtimeEvent {
-  kind: 'zettel' | 'drawing' | 'resync';
+  kind: 'zettel' | 'drawing' | 'type' | 'resync';
   op?: 'upsert' | 'delete';
   ids?: string[];
   source?: 'agent' | 'ui';

@@ -22,6 +22,8 @@ import { startRealtime, type RealtimeEvent } from '../lib/realtime';
 import { useAgentActivityStore, type AgentChange } from '../store/useAgentActivityStore';
 import { invalidateBody } from '../lib/bodyCache';
 import { deferIfDrawing } from '../lib/drawingFocus';
+import { dropAssignment, pullTypesAndAssignments, pushPendingTypes } from '../lib/typeSync';
+import { initTypesStore } from '../store/useTypesStore';
 
 // Pull zettels from server + sync links table from server. Devolve se o pull
 // de posições falou com o servidor — o congelamento do layout depende disso.
@@ -32,6 +34,7 @@ async function pullAll(): Promise<boolean> {
     async (id) => {
       await repo.delete(id);
       await positionStore.delete(id);
+      await dropAssignment(id);
       invalidateBody(id);
     },
   );
@@ -50,6 +53,10 @@ async function pullAll(): Promise<boolean> {
 
   // Desenhos: pull por manifesto (silencioso; nunca interrompe a sincronização).
   await pullDrawings();
+
+  // Tipos e atribuições (silencioso, como os desenhos): depois dos zettels,
+  // para o delete de zettel já ter levado a atribuição junto.
+  await pullTypesAndAssignments();
 
   // Posições da galáxia: depois dos zettels, para o delete de zettel já ter
   // levado a posição junto.
@@ -129,6 +136,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     }
 
     setController(controller);
+    const stopTypes = initTypesStore();
     let disposed = false;
     let stopRealtime: (() => void) | null = null;
     loadAll().then(async () => {
@@ -157,6 +165,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         void uploadPending();
         void uploadPendingDrawings();
         void pushPendingPositions();
+        void pushPendingTypes().catch(() => {});
 
         // 2. Push local IndexedDB data to server if this is the first sync ever
         //    (handles V1 → V2 migration for existing users)
@@ -201,7 +210,14 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
             onBatch: (events, reconnected) => {
               deferIfDrawing('realtime', () => {
                 const full = reconnected || events.some((e) => e.kind === 'resync');
-                void runRealtimeCycle(full ? events.filter((e) => e.kind !== 'resync') : events, loadAll);
+                const list = full ? events.filter((e) => e.kind !== 'resync') : events;
+                // Só mudou tipo ou nível: puxa tipos e atribuições, sem refazer
+                // o pull de zettels nem baixar corpos.
+                if (!full && list.length > 0 && list.every((e) => e.kind === 'type')) {
+                  void pullTypesAndAssignments().catch(() => {});
+                  return;
+                }
+                void runRealtimeCycle(list, loadAll);
               });
             },
           });
@@ -221,6 +237,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         void uploadPending();
         void uploadPendingDrawings();
         void pushPendingPositions().catch(() => {});
+        void pushPendingTypes().catch(() => {});
         void downloadBodies().catch(() => {});
       });
     };
@@ -245,6 +262,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       disposed = true;
+      stopTypes();
       stopRealtime?.();
       useAgentActivityStore.getState().clear();
       window.removeEventListener('online', onOnline);

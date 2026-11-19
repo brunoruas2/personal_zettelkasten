@@ -12,11 +12,19 @@ import (
 
 // ListRecent devolve os zettels vivos mais atualizados, com corpo.
 func (r *Repository) ListRecent(userID string, limit int) ([]models.Zettel, error) {
+	return r.ListRecentFiltered(userID, limit, TypeFilter{})
+}
+
+// ListRecentFiltered é o ListRecent restrito a um tipo e/ou nível.
+func (r *Repository) ListRecentFiltered(userID string, limit int, f TypeFilter) ([]models.Zettel, error) {
+	clause, extra := f.sql("z")
+	args := append([]any{userID}, extra...)
+	args = append(args, limit)
 	rows, err := r.db.Query(`
-		SELECT id, user_id, title, body, tags, created_at, updated_at, deleted_at
-		FROM zettels WHERE user_id = ? AND deleted_at IS NULL
-		ORDER BY updated_at DESC LIMIT ?
-	`, userID, limit)
+		SELECT z.id, z.user_id, z.title, z.body, z.tags, z.created_at, z.updated_at, z.deleted_at
+		FROM zettels z WHERE z.user_id = ? AND z.deleted_at IS NULL`+clause+`
+		ORDER BY z.updated_at DESC LIMIT ?
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -188,13 +196,22 @@ func (r *Repository) linkRefs(q string, args ...any) ([]LinkRef, error) {
 // SearchFTS roda uma expressão MATCH já montada (sem acrescentar nada), em ordem
 // de relevância, até limit resultados.
 func (r *Repository) SearchFTS(userID, match string, limit int) ([]models.Zettel, error) {
+	return r.SearchFTSFiltered(userID, match, limit, TypeFilter{})
+}
+
+// SearchFTSFiltered é o SearchFTS restrito a um tipo e/ou nível.
+func (r *Repository) SearchFTSFiltered(userID, match string, limit int, f TypeFilter) ([]models.Zettel, error) {
+	clause, extra := f.sql("z")
+	args := []any{match, userID}
+	args = append(args, extra...)
+	args = append(args, limit)
 	rows, err := r.db.Query(`
 		SELECT z.id, z.user_id, z.title, z.body, z.tags, z.created_at, z.updated_at, z.deleted_at
 		FROM zettels z
 		JOIN zettels_fts fts ON z.rowid = fts.rowid
-		WHERE zettels_fts MATCH ? AND z.user_id = ? AND z.deleted_at IS NULL
+		WHERE zettels_fts MATCH ? AND z.user_id = ? AND z.deleted_at IS NULL`+clause+`
 		ORDER BY rank LIMIT ?
-	`, match, userID, limit)
+	`, args...)
 	if err != nil {
 		return nil, err
 	}

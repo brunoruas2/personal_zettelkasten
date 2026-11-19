@@ -3,7 +3,7 @@
 O snapshot SQLite (Configurações → Exportar dados → **Baixar banco (.db)**, ou
 `ZETTEL_BACKUP_FORMAT=sqlite` no `scripts/backup.py`) é o próprio banco da API
 com só os seus dados: zettels (inclusive os apagados), links, índice de busca,
-imagens, desenhos, posições na galáxia e configurações. A API abre o arquivo
+imagens, desenhos, posições na galáxia, tipos de zettel (com a atribuição de tipo e nível) e configurações. A API abre o arquivo
 como está — não há import.
 
 Fica de fora: sessões, passkeys (presas ao domínio de produção), chave de API,
@@ -38,7 +38,7 @@ Pré-requisitos: Node 20+, pnpm, Go 1.26.2+ e este repositório clonado.
    ```
 
 3. Abra `http://localhost:3000` e entre com **o mesmo usuário e a mesma senha**.
-   O navegador baixa o índice, os corpos e as posições como num aparelho novo.
+   O navegador baixa o índice, os corpos, as posições e os tipos como num aparelho novo.
 
 Passkeys não funcionam aqui (estão presas ao domínio antigo); cadastre uma nova
 se quiser. A chave de backup e a de API precisam ser geradas de novo.

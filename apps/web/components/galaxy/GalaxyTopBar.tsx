@@ -41,7 +41,7 @@ const SYNC_DOT: Record<SyncStatus, string> = {
   error: 'bg-red-400',
 };
 
-export type MenuAction = 'new' | 'capture' | 'search' | 'tags' | 'settings' | 'passkeys' | 'palette' | 'help';
+export type MenuAction = 'new' | 'capture' | 'search' | 'tags' | 'types' | 'settings' | 'passkeys' | 'palette' | 'help';
 
 /** Parada da trilha do Voltar. `fromTop === null`: o zettel atual (ou o "…" de paradas mais antigas). */
 export interface TrailItem {
@@ -271,6 +271,7 @@ export function GalaxyMenu({
     { action: 'palette', label: 'Paleta de comandos', hint: keysOf('palette') },
     { action: 'search', label: 'Buscar', hint: keysOf('search') },
     { action: 'tags', label: 'Tags' },
+    { action: 'types', label: 'Tipos de zettel' },
     { action: 'settings', label: 'Configurações', hint: keysOf('settings') },
     { action: 'passkeys', label: 'Passkeys' },
     { action: 'help', label: 'Atalhos', hint: keysOf('help') },

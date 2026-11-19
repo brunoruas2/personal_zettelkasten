@@ -29,3 +29,7 @@ export * from './services/FocusGate';
 export * from './services/Levels';
 export * from './services/AbcNotes';
 export * from './services/ParentSeed';
+export * from './models/TypeAppearance';
+export * from './models/ZettelType';
+export * from './services/SectionParser';
+export * from './services/TypeRules';

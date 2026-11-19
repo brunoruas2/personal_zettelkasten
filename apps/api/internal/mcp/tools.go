@@ -40,22 +40,22 @@ func writes(title string, destructive, idempotent bool) *sdk.ToolAnnotations {
 func (t *tools) register(s *sdk.Server) {
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "search_zettels",
-		Description: "Busca zettels por texto (título, corpo e tags; cada palavra casa como prefixo, todas obrigatórias). Use antes de criar, para não duplicar. Devolve id, título, tags e um trecho.",
+		Description: "Busca zettels por texto (título, corpo e tags; cada palavra casa como prefixo, todas obrigatórias). Use antes de criar, para não duplicar. Filtra por type (slug ou id; ver list_types) e level (chave do nível); com texto vazio e um filtro, lista os do tipo. Devolve id, título, tags, tipo, nível e um trecho.",
 		Annotations: readOnly("Buscar zettels"),
 	}, t.search)
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "read_zettel",
-		Description: "Lê um zettel completo por id ou por título exato (sem diferenciar maiúsculas): corpo em Markdown, tags, datas, os zettels que ele cita e os que o citam. Leia antes de editar.",
+		Description: "Lê um zettel completo por id ou por título exato (sem diferenciar maiúsculas): corpo em Markdown, tags, tipo e nível, datas, os zettels que ele cita e os que o citam. Leia antes de editar.",
 		Annotations: readOnly("Ler zettel"),
 	}, t.read)
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "list_recent",
-		Description: "Lista os zettels atualizados mais recentemente (id, título, tags, data).",
+		Description: "Lista os zettels atualizados mais recentemente (id, título, tags, tipo, nível, data). Aceita os filtros type e level.",
 		Annotations: readOnly("Zettels recentes"),
 	}, t.recent)
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "create_zettel",
-		Description: "Cria um zettel. Título curto e único (uma ideia por zettel); corpo em Markdown, com [[título]] para ligar a outros zettels e [[^título]] para o pai; tags em kebab-case. Se já existir um zettel com o mesmo título, nada é criado e o id do existente é devolvido.",
+		Description: "Cria um zettel. Título curto e único (uma ideia por zettel); corpo em Markdown, com [[título]] para ligar a outros zettels e [[^título]] para o pai; tags em kebab-case. Com type (slug ou id; ver list_types) o zettel nasce atribuído ao tipo e, sem body, com o template dele; nunca preencha uma seção protegida nem um nível reservado ao usuário. Se já existir um zettel com o mesmo título, nada é criado e o id do existente é devolvido.",
 		Annotations: writes("Criar zettel", false, false),
 	}, t.create)
 	sdk.AddTool(s, &sdk.Tool{
@@ -89,6 +89,21 @@ func (t *tools) register(s *sdk.Server) {
 		Annotations: readOnly("Tags"),
 	}, t.tags)
 	sdk.AddTool(s, &sdk.Tool{
+		Name:        "list_types",
+		Description: "Lista os tipos de zettel cadastrados pelo usuário: slug, nome, seções protegidas (só o usuário as escreve), se contam no progresso das trilhas e a escada de níveis (chave, rótulo, emoji, user_only = só o usuário marca). Chame antes de atribuir um tipo.",
+		Annotations: readOnly("Tipos de zettel"),
+	}, t.listTypes)
+	sdk.AddTool(s, &sdk.Tool{
+		Name:        "set_type",
+		Description: "Atribui tipo e nível a um zettel (type vazio remove o tipo). Trocar de tipo limpa o nível, salvo se level vier; no mesmo tipo, level vazio mantém o atual. Níveis user_only só o usuário marca ou desfaz. Não altera o corpo.",
+		Annotations: writes("Atribuir tipo", false, true),
+	}, t.setType)
+	sdk.AddTool(s, &sdk.Tool{
+		Name:        "trail_progress",
+		Description: "Progresso de uma trilha, medido só pelo estado dos conteúdos que ela cita (tipos que contam no progresso): contagem por nível, total e lista na ordem do corpo. Testes, fontes, práticas, zettels sem tipo e links de pai ficam de fora.",
+		Annotations: readOnly("Progresso da trilha"),
+	}, t.trailProgress)
+	sdk.AddTool(s, &sdk.Tool{
 		Name:        "read_drawing",
 		Description: "Lê um desenho (referenciado no corpo como ![](zk:draw/<id>)): resumo da cena (tipo, traços, cores, área) e o SVG de preview.",
 		Annotations: readOnly("Ler desenho"),
@@ -108,14 +123,46 @@ type zettelSummary struct {
 	ID        string   `json:"id"`
 	Title     string   `json:"title"`
 	Tags      []string `json:"tags"`
+	Type      string   `json:"type,omitempty"`  // slug do tipo
+	Level     string   `json:"level,omitempty"` // chave do nível
 	UpdatedAt string   `json:"updated_at"`
 	Snippet   string   `json:"snippet,omitempty"`
+}
+
+// typeLabel resume tipo e nível para o texto legível: "conteudo/semente".
+func typeLabel(typ, level string) string {
+	switch {
+	case typ == "":
+		return ""
+	case level == "":
+		return typ
+	}
+	return typ + "/" + level
+}
+
+// annotate preenche tipo e nível de um conjunto de resultados, numa consulta só.
+func (t *tools) annotate(res []zettelSummary) {
+	ids := make([]string, len(res))
+	for i, r := range res {
+		ids[i] = r.ID
+	}
+	infos, err := t.svc.TypesOf(t.userID, ids)
+	if err != nil {
+		return
+	}
+	for i := range res {
+		if in, ok := infos[res[i].ID]; ok && in.Type != nil {
+			res[i].Type, res[i].Level = in.Type.Slug, in.Level
+		}
+	}
 }
 
 type zettelFull struct {
 	ID         string           `json:"id"`
 	Title      string           `json:"title"`
 	Tags       []string         `json:"tags"`
+	Type       string           `json:"type,omitempty"`
+	Level      string           `json:"level,omitempty"`
 	Body       string           `json:"body"`
 	CreatedAt  string           `json:"created_at"`
 	UpdatedAt  string           `json:"updated_at"`
@@ -160,6 +207,10 @@ func domainErr(err error, id string) error {
 		return fmt.Errorf("old_string aparece %d vezes no corpo do zettel %s; inclua mais contexto para que apareça uma vez só", pm.Count, id)
 	case errors.Is(err, zettel.ErrNotFound):
 		return fmt.Errorf("zettel não encontrado: %s; use search_zettels para achar o id", id)
+	case errors.Is(err, zettel.ErrForbidden):
+		// Seção protegida ou nível reservado ao usuário: não contorne por outro
+		// caminho; relate ao usuário.
+		return fmt.Errorf("recusado: %s", strings.TrimPrefix(err.Error(), "forbidden: "))
 	case errors.Is(err, zettel.ErrConflict), errors.Is(err, zettel.ErrInvalid):
 		return err
 	default:
@@ -217,6 +268,8 @@ func snippetFor(body, query string) string {
 type searchIn struct {
 	Query string   `json:"query" jsonschema:"texto a buscar"`
 	Tags  []string `json:"tags,omitempty" jsonschema:"só zettels com todas estas tags"`
+	Type  string   `json:"type,omitempty" jsonschema:"só zettels deste tipo (slug ou id; ver list_types)"`
+	Level string   `json:"level,omitempty" jsonschema:"só zettels neste nível (chave do nível)"`
 	Limit int      `json:"limit,omitempty" jsonschema:"máximo de resultados (padrão 20, teto 50)"`
 }
 
@@ -226,7 +279,7 @@ func (t *tools) search(_ context.Context, _ *sdk.CallToolRequest, in searchIn) (
 	if len(in.Tags) > 0 {
 		fetch = maxLimit * 4
 	}
-	zs, err := t.svc.Search(t.userID, in.Query, fetch)
+	zs, err := t.svc.SearchBy(t.userID, in.Query, fetch, zettel.TypeRef{Type: in.Type, Level: in.Level})
 	if err != nil {
 		return nil, listOut{}, domainErr(err, "")
 	}
@@ -237,22 +290,31 @@ func (t *tools) search(_ context.Context, _ *sdk.CallToolRequest, in searchIn) (
 		}
 	}
 	out := listOut{Results: []zettelSummary{}}
-	var b strings.Builder
 	for _, z := range zs {
 		if !hasAll(z.Tags, want) {
 			continue
 		}
-		s := summary(z, snippetFor(z.Body, in.Query))
-		out.Results = append(out.Results, s)
-		fmt.Fprintf(&b, "- %s (id %s, %s): %s\n", s.Title, s.ID, tagsText(s.Tags), s.Snippet)
+		out.Results = append(out.Results, summary(z, snippetFor(z.Body, in.Query)))
 		if len(out.Results) == limit {
 			break
 		}
 	}
+	t.annotate(out.Results)
 	if len(out.Results) == 0 {
 		return textResult("Nenhum zettel encontrado para %q.", in.Query), out, nil
 	}
+	var b strings.Builder
+	for _, s := range out.Results {
+		fmt.Fprintf(&b, "- %s (id %s, %s%s): %s\n", s.Title, s.ID, tagsText(s.Tags), typeSuffix(s), s.Snippet)
+	}
 	return textResult("%d zettel(s) para %q:\n%s", len(out.Results), in.Query, b.String()), out, nil
+}
+
+func typeSuffix(s zettelSummary) string {
+	if l := typeLabel(s.Type, s.Level); l != "" {
+		return ", tipo " + l
+	}
+	return ""
 }
 
 func hasAll(tags, want []string) bool {
@@ -307,8 +369,13 @@ func (t *tools) read(_ context.Context, _ *sdk.CallToolRequest, in readIn) (*sdk
 	if full.Tags == nil {
 		full.Tags = []string{}
 	}
-	return textResult("# %s\nid %s · %s · atualizado %s\nCita: %s\nCitado por: %s\n\n%s",
-		z.Title, z.ID, tagsText(full.Tags), full.UpdatedAt, refTitles(out), refTitles(in2), z.Body), full, nil
+	typeLine := ""
+	if info, err := t.svc.TypeOf(t.userID, z.ID); err == nil && info.Type != nil {
+		full.Type, full.Level = info.Type.Slug, info.Level
+		typeLine = " · tipo " + typeLabel(full.Type, full.Level)
+	}
+	return textResult("# %s\nid %s · %s%s · atualizado %s\nCita: %s\nCitado por: %s\n\n%s",
+		z.Title, z.ID, tagsText(full.Tags), typeLine, full.UpdatedAt, refTitles(out), refTitles(in2), z.Body), full, nil
 }
 
 func refTitles(refs []zettel.LinkRef) string {
@@ -326,20 +393,24 @@ func refTitles(refs []zettel.LinkRef) string {
 }
 
 type recentIn struct {
-	Limit int `json:"limit,omitempty" jsonschema:"máximo de resultados (padrão 20, teto 50)"`
+	Type  string `json:"type,omitempty" jsonschema:"só zettels deste tipo (slug ou id; ver list_types)"`
+	Level string `json:"level,omitempty" jsonschema:"só zettels neste nível (chave do nível)"`
+	Limit int    `json:"limit,omitempty" jsonschema:"máximo de resultados (padrão 20, teto 50)"`
 }
 
 func (t *tools) recent(_ context.Context, _ *sdk.CallToolRequest, in recentIn) (*sdk.CallToolResult, listOut, error) {
-	zs, err := t.svc.ListRecent(t.userID, clampLimit(in.Limit, 20))
+	zs, err := t.svc.ListRecentBy(t.userID, clampLimit(in.Limit, 20), zettel.TypeRef{Type: in.Type, Level: in.Level})
 	if err != nil {
 		return nil, listOut{}, domainErr(err, "")
 	}
 	out := listOut{Results: []zettelSummary{}}
-	var b strings.Builder
 	for _, z := range zs {
-		s := summary(z, "")
-		out.Results = append(out.Results, s)
-		fmt.Fprintf(&b, "- %s (id %s, %s, %s)\n", s.Title, s.ID, tagsText(s.Tags), s.UpdatedAt)
+		out.Results = append(out.Results, summary(z, ""))
+	}
+	t.annotate(out.Results)
+	var b strings.Builder
+	for _, s := range out.Results {
+		fmt.Fprintf(&b, "- %s (id %s, %s%s, %s)\n", s.Title, s.ID, tagsText(s.Tags), typeSuffix(s), s.UpdatedAt)
 	}
 	return textResult("%d zettel(s) recentes:\n%s", len(out.Results), b.String()), out, nil
 }
@@ -386,6 +457,8 @@ type createIn struct {
 	Title string   `json:"title" jsonschema:"título curto e único"`
 	Body  string   `json:"body,omitempty" jsonschema:"corpo em Markdown"`
 	Tags  []string `json:"tags,omitempty" jsonschema:"tags (kebab-case)"`
+	Type  string   `json:"type,omitempty" jsonschema:"tipo do zettel (slug ou id; ver list_types); sem body, o corpo vem do template do tipo"`
+	Level string   `json:"level,omitempty" jsonschema:"nível inicial (chave); níveis reservados ao usuário são recusados"`
 }
 
 type writeOut struct {
@@ -410,11 +483,17 @@ func (t *tools) create(ctx context.Context, _ *sdk.CallToolRequest, in createIn)
 			tags = append(tags, n)
 		}
 	}
-	z, err := t.svc.Create(agentCtx(ctx), t.userID, zettel.CreateInput{Title: title, Body: in.Body, Tags: tags})
+	z, err := t.svc.Create(agentCtx(ctx), t.userID, zettel.CreateInput{
+		Title: title, Body: in.Body, Tags: tags, Type: in.Type, Level: in.Level,
+	})
 	if err != nil {
 		return nil, writeOut{}, domainErr(err, "")
 	}
-	return textResult("Criado «%s» (id %s, %s).", z.Title, z.ID, tagsText(z.Tags)), writeOut{ID: z.ID, Title: z.Title, Tags: z.Tags}, nil
+	suffix := ""
+	if in.Type != "" {
+		suffix = ", tipo " + typeLabel(strings.TrimSpace(in.Type), in.Level)
+	}
+	return textResult("Criado «%s» (id %s, %s%s).", z.Title, z.ID, tagsText(z.Tags), suffix), writeOut{ID: z.ID, Title: z.Title, Tags: z.Tags}, nil
 }
 
 func contains(xs []string, x string) bool {

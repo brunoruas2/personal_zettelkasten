@@ -13,6 +13,7 @@ import { captureCaretAnchor, type CaretAnchor } from '../../lib/caretAnchor';
 import { NeonButton, StatusBar, TitleBar, Win } from '../zkos';
 import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 import { EDIT_ACCENT, useLevelsEnv } from './LevelsContext';
+import { TypePicker, TypeStamp } from './TypeControl';
 import { saveLabel, zkCode } from './format';
 import {
   READING_SCALE_MAX,
@@ -448,7 +449,12 @@ export function ZettelWindow({
 
   return (
     <Win accent={winAccent} label={label ?? title} className={className} style={scaleStyle}>
-      {!(compact && !editing) && <TitleBar>{header}</TitleBar>}
+      {!(compact && !editing) && (
+        <TitleBar>
+          {header}
+          <TypeStamp id={id} />
+        </TitleBar>
+      )}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {!editorOn && (
@@ -456,6 +462,7 @@ export function ZettelWindow({
               {/* Celular: barra fixa fora da rolagem; o resto das ações mora no menu ⋯. */}
               {compact && (
                 <div className="flex flex-none flex-wrap items-center justify-end gap-1 px-2 pb-1 pt-2">
+                  {onStartEdit && <TypePicker id={id} />}
                   <FontSizeControl percent={scalePercent} />
                   {onStartEdit && (
                     <NeonButton onClick={onStartEdit} aria-label="Editar zettel">
@@ -468,7 +475,8 @@ export function ZettelWindow({
               <div data-card-scroll className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${pad} pb-2 ${compact ? 'pt-1' : 'pt-4'}`}>
                 {!compact && (
                   <div className="flex items-center justify-end gap-3">
-                    <div className="flex flex-none items-center gap-2">
+                    <div className="flex flex-none flex-wrap items-center justify-end gap-2">
+                      {onStartEdit && <TypePicker id={id} />}
                       <FontSizeControl percent={scalePercent} />
                       {onBack && (
                         <NeonButton onClick={onBack} aria-label="Voltar ao zettel anterior">
@@ -534,7 +542,8 @@ export function ZettelWindow({
             <>
               {/* Mesma linha de controles da leitura: só o botão troca (EDIT → CONCLUIR). */}
               <div className={`flex flex-none items-center justify-end gap-3 pt-4 ${pad}`}>
-                <div className="flex flex-none items-center gap-2">
+                <div className="flex flex-none flex-wrap items-center justify-end gap-2">
+                  <TypePicker id={id} />
                   <FontSizeControl percent={scalePercent} />
                   <NeonButton variant="hot" onClick={() => void finish()}>
                     {isMobile ? 'OK' : 'CONCLUIR [ESC]'}
@@ -573,7 +582,8 @@ export function ZettelWindow({
             <>
               {/* Sem EDIT/CONCLUIR: a página já é o editor. */}
               <div className={`flex flex-none items-center justify-end gap-3 pt-4 ${pad}`}>
-                <div className="flex flex-none items-center gap-2">
+                <div className="flex flex-none flex-wrap items-center justify-end gap-2">
+                  <TypePicker id={id} />
                   <FontSizeControl percent={scalePercent} />
                   {onBack && (
                     <NeonButton onClick={onBack} aria-label="Voltar ao zettel anterior">

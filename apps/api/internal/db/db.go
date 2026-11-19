@@ -263,6 +263,48 @@ func migrate(db *sql.DB) error {
 		-- do cliente, que decide o LWW): um aparelho com relógio atrasado
 		-- gravaria abaixo do cursor dos outros e sumiria do pull.
 		CREATE INDEX IF NOT EXISTS idx_positions_synced ON positions(user_id, synced_at);
+
+		-- Tipos de zettel (cadastrados pelo usuário) e a atribuição de tipo/nível
+		-- a cada zettel. Tabelas próprias, no molde de positions: mudar o nível de
+		-- um zettel não pode disparar os triggers do FTS5 nem avançar o updated_at
+		-- do zettel (o corpo ficaria stale em todo aparelho).
+		-- updated_at = relógio do cliente (decide o LWW); synced_at = relógio do
+		-- servidor (cursor do delta). deleted_at = tombstone, para os outros
+		-- aparelhos saberem pelo delta que o registro sumiu.
+		CREATE TABLE IF NOT EXISTS zettel_types (
+			user_id            TEXT NOT NULL,
+			id                 TEXT NOT NULL,
+			name               TEXT NOT NULL,
+			slug               TEXT NOT NULL,
+			icon               TEXT NOT NULL,
+			color              TEXT NOT NULL,
+			template           TEXT NOT NULL DEFAULT '',
+			protected_sections TEXT NOT NULL DEFAULT '[]',
+			levels             TEXT NOT NULL DEFAULT '[]',
+			counts_progress    INTEGER NOT NULL DEFAULT 0,
+			updated_at         INTEGER NOT NULL,
+			synced_at          INTEGER NOT NULL,
+			deleted_at         INTEGER,
+			PRIMARY KEY (user_id, id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_zettel_types_synced ON zettel_types(user_id, synced_at);
+		-- Slug único só entre os tipos vivos: o de um tipo apagado pode ser reutilizado.
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_zettel_types_slug
+			ON zettel_types(user_id, slug) WHERE deleted_at IS NULL;
+
+		CREATE TABLE IF NOT EXISTS zettel_type_assignments (
+			user_id    TEXT NOT NULL,
+			zettel_id  TEXT NOT NULL,
+			type_id    TEXT NOT NULL,
+			level      TEXT NOT NULL DEFAULT '',
+			updated_at INTEGER NOT NULL,
+			synced_at  INTEGER NOT NULL,
+			deleted_at INTEGER,
+			PRIMARY KEY (user_id, zettel_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_type_assign_synced ON zettel_type_assignments(user_id, synced_at);
+		CREATE INDEX IF NOT EXISTS idx_type_assign_type ON zettel_type_assignments(user_id, type_id, level)
+			WHERE deleted_at IS NULL;
 	`)
 	return err
 }

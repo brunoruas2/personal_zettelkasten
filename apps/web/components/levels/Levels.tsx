@@ -18,6 +18,8 @@ import type { MenuAction } from '../galaxy/GalaxyTopBar';
 import { SettingsPanel } from '../panels/SettingsPanel';
 import { TagsPanel } from '../panels/TagsPanel';
 import { PasskeysPanel } from '../panels/PasskeysPanel';
+import { TypesPanel } from '../panels/TypesPanel';
+import { useTypesStore } from '../../store/useTypesStore';
 import { FocusScreen } from './FocusScreen';
 import { MemoryScreen, MemoryList } from './MemoryScreen';
 import { MapScreen } from './MapScreen';
@@ -67,7 +69,7 @@ function LevelsInner() {
   const editing = useLevelsStore((s) => s.editing);
   const actions = useLevelActions();
   const [search, setSearch] = useState<SearchFilters | null>(null);
-  const [modal, setModal] = useState<'settings' | 'tags' | 'passkeys' | null>(null);
+  const [modal, setModal] = useState<'settings' | 'tags' | 'types' | 'passkeys' | null>(null);
   const [capture, setCapture] = useState(false);
   const [palette, setPalette] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -82,6 +84,7 @@ function LevelsInner() {
   const clearExport = useExportRequestStore((s) => s.clear);
   const deleteMeta = useMemo(() => (deleteId ? (zettels.find((z) => z.id === deleteId) ?? null) : null), [deleteId, zettels]);
 
+  const types = useTypesStore((s) => s.types);
   const unplacedSet = useMemo(() => new Set(data.unplacedIds), [data.unplacedIds]);
 
   const showToast = useCallback((msg: string, action?: Toast['action']) => {
@@ -110,7 +113,7 @@ function LevelsInner() {
       else if (a === 'capture') setCapture(true);
       else if (a === 'search') setSearch({});
       else if (a === 'palette') setPalette(true);
-      else if (a === 'tags' || a === 'settings' || a === 'passkeys') setModal(a);
+      else if (a === 'tags' || a === 'types' || a === 'settings' || a === 'passkeys') setModal(a);
     },
     [onNew],
   );
@@ -152,6 +155,12 @@ function LevelsInner() {
 
   const paletteActions: PaletteAction[] = [
     { id: 'new', label: 'Novo zettel', run: onNew },
+    // Um atalho por tipo: o zettel nasce com o template e a atribuição do tipo.
+    ...types.slice(0, 12).map((t) => ({
+      id: `new-${t.id}`,
+      label: `Novo zettel: ${t.icon} ${t.name}`,
+      run: () => void createNote({ explicitEdit: isMobile, typeId: t.id }).catch(() => showToast('Não foi possível criar o zettel')),
+    })),
     { id: 'capture', label: 'Captura rápida', run: () => setCapture(true) },
     { id: 'search', label: 'Buscar', keys: 'Alt+B', run: () => setSearch({}) },
     ...(trailPrevId ? [{ id: 'prev', label: 'Voltar ao zettel anterior', keys: 'Alt+Z', run: () => void actions.focus(trailPrevId) }] : []),
@@ -161,6 +170,7 @@ function LevelsInner() {
     ...(focusId ? [{ id: 'delete-focus', label: 'Apagar zettel em foco', run: () => void actions.requestDelete(focusId) }] : []),
     ...(focusId ? [{ id: 'export-focus', label: 'Exportar PDF do zettel em foco', run: () => void actions.requestExport(focusId) }] : []),
     { id: 'tags', label: 'Tags', run: () => setModal('tags') },
+    { id: 'types', label: 'Tipos de zettel', run: () => setModal('types') },
     { id: 'settings', label: 'Configurações', keys: 'Alt+,', run: () => setModal('settings') },
     { id: 'passkeys', label: 'Passkeys', run: () => setModal('passkeys') },
   ];
@@ -262,6 +272,11 @@ function LevelsInner() {
               setSearch({ tags: [tag] });
             }}
           />
+        </GalaxyModal>
+      )}
+      {modal === 'types' && (
+        <GalaxyModal title="Tipos de zettel" onClose={() => setModal(null)}>
+          <TypesPanel embedded />
         </GalaxyModal>
       )}
       {modal === 'passkeys' && (

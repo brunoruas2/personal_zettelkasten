@@ -18,6 +18,7 @@ import (
 	mcpserver "github.com/brunofullstack/zettelkasten/api/internal/mcp"
 	"github.com/brunofullstack/zettelkasten/api/internal/portability"
 	"github.com/brunofullstack/zettelkasten/api/internal/positions"
+	"github.com/brunofullstack/zettelkasten/api/internal/types"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -68,13 +69,20 @@ func main() {
 	drawingHandler.WithNotify(func(ctx context.Context, userID, op, id string) {
 		broker.Publish(userID, events.Event{Kind: "drawing", Op: op, IDs: []string{id}, Source: auth.GetSource(ctx)})
 	})
+	// Tipos de zettel: definição (só JWT) e atribuição de tipo/nível.
+	typeRepo := types.NewRepository(database)
+	typeHandler := types.NewHandler(typeRepo).WithNotify(func(ctx context.Context, userID, op string, ids []string) {
+		broker.Publish(userID, events.Event{Kind: "type", Op: op, IDs: ids, Source: auth.GetSource(ctx)})
+	})
 	zettelService := zettel.NewService(zettelRepo, imageRepo).WithDrawings(drawingRepo).
+		WithTypes(typeRepo).
 		WithNotifier(events.ZettelNotifier{B: broker})
 	zettelHandler := zettel.NewHandlerWithService(zettelService)
 
 	portabilityHandler := portability.NewHandler(zettelRepo, authRepo, imageRepo).
 		WithDrawings(drawingRepo, drawingQuota).
 		WithPositions(positionRepo).
+		WithTypes(typeRepo).
 		WithSnapshot(dbPath)
 
 	startOrphanPurge(imageRepo, drawingRepo)
@@ -152,6 +160,14 @@ func main() {
 		r.Put("/api/positions", positionHandler.Put)
 		r.Post("/api/positions/init", positionHandler.Init)
 		r.Delete("/api/positions", positionHandler.Reset)
+
+		// Tipos de zettel e atribuições: inline, só JWT (a chave zk_ recebe 401;
+		// o agente atribui tipo pelo MCP).
+		r.Get("/api/types", typeHandler.List)
+		r.Put("/api/types", typeHandler.Put)
+		r.Delete("/api/types/{id}", typeHandler.Delete)
+		r.Get("/api/type-assignments", typeHandler.ListAssignments)
+		r.Put("/api/type-assignments", typeHandler.PutAssignments)
 
 		r.Get("/api/links", func(w http.ResponseWriter, req *http.Request) {
 			links, err := zettelRepo.GetAllLinks(auth.GetUserID(req))

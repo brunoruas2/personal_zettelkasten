@@ -139,6 +139,30 @@
   color: var(--zk-black);
 }
 
+/* Tipo e nível do zettel: seletor (inset, borda forte, VT323) e selo da barra de título.
+   Texto sempre por --zk-read-scale; o selo herda a cor do tipo (paleta fechada, sem ciano/âmbar/magenta). */
+.zk-type-select {
+  background: var(--zk-black);
+  border: 1.5px solid var(--zk-line-strong);
+  color: var(--zk-dim);
+  font-family: var(--font-vt323), monospace;
+  font-size: calc(20px * var(--zk-read-scale, 1));
+  line-height: 1;
+  padding: 0 8px;
+  min-height: 40px;
+  max-width: 14rem;
+  cursor: pointer;
+}
+.zk-type-select:hover,
+.zk-type-select:focus-visible {
+  border-color: var(--zk-cyan);
+  color: var(--zk-cyan);
+  outline: none;
+}
+.zk-type-stamp {
+  white-space: nowrap;
+}
+
 .zk-btn-hot {
   background: var(--zk-amber);
   border: 0;

@@ -7,6 +7,8 @@ import type {
   Link,
   DrawingRecord,
   PositionRecord,
+  TypeRecord,
+  AssignmentRecord,
   ZettelRepository as IZettelRepository,
   DrawingRepository as IDrawingRepository,
 } from '@zettelkasten/core';
@@ -45,6 +47,8 @@ class ZettelDb extends Dexie {
   images!: Table<ImageRecord, string>;
   drawings!: Table<DrawingRecord, string>;
   positions!: Table<PositionRecord, string>;
+  zettelTypes!: Table<TypeRecord, string>;
+  typeAssignments!: Table<AssignmentRecord, string>;
 
   constructor() {
     super('zettelkasten');
@@ -125,6 +129,20 @@ class ZettelDb extends Dexie {
           });
         await tx.table('bodies').bulkPut(bodies);
       });
+    // Tipos de zettel e atribuição de tipo/nível: tabelas novas, nada a
+    // converter — sem `.upgrade()`. A atribuição é tabela própria (id = id do
+    // zettel) pelo mesmo motivo das posições: mexer na linha do zettel
+    // reindexaria a busca e deixaria o corpo stale em todo aparelho.
+    this.version(19).stores({
+      zettels: 'id, title, updated_at',
+      bodies: 'id',
+      links: '[sourceId+targetId], sourceId, targetId',
+      images: 'id, syncState',
+      drawings: 'id, syncState, updatedAt',
+      positions: 'id, syncState, updatedAt',
+      zettelTypes: 'id, syncState, updatedAt',
+      typeAssignments: 'id, syncState, updatedAt',
+    });
   }
 }
 
@@ -263,15 +281,17 @@ export class ZettelRepository implements IZettelRepository {
   }
 
   async clearAll(): Promise<void> {
-    // Corpos, imagens, desenhos e posições entram aqui também: sem isso, o
-    // logout deixaria conteúdo de uma sessão visível na seguinte.
-    await db.transaction('rw', [db.zettels, db.bodies, db.links, db.images, db.drawings, db.positions], async () => {
+    // Corpos, imagens, desenhos, posições e tipos entram aqui também: sem isso,
+    // o logout deixaria conteúdo de uma sessão visível na seguinte.
+    await db.transaction('rw', [db.zettels, db.bodies, db.links, db.images, db.drawings, db.positions, db.zettelTypes, db.typeAssignments], async () => {
       await db.zettels.clear();
       await db.bodies.clear();
       await db.links.clear();
       await db.images.clear();
       await db.drawings.clear();
       await db.positions.clear();
+      await db.zettelTypes.clear();
+      await db.typeAssignments.clear();
     });
   }
 }
@@ -446,5 +466,91 @@ export class PositionStore {
 
   async clear(): Promise<void> {
     await db.positions.clear();
+  }
+}
+
+/**
+ * Tipos de zettel. `syncState` é a própria fila de envio; um tipo apagado fica
+ * como tombstone (`deletedAt`) até o servidor confirmar.
+ */
+export class TypeStore {
+  async getAll(): Promise<TypeRecord[]> {
+    return db.zettelTypes.toArray();
+  }
+
+  async get(id: string): Promise<TypeRecord | undefined> {
+    return db.zettelTypes.get(id);
+  }
+
+  async putMany(records: TypeRecord[]): Promise<void> {
+    if (records.length === 0) return;
+    await db.zettelTypes.bulkPut(records);
+  }
+
+  async listPending(): Promise<TypeRecord[]> {
+    return db.zettelTypes.where('syncState').equals('pending').toArray();
+  }
+
+  /** Só vira `synced` se o registro ainda é o enviado (mesmo `updatedAt`). */
+  async markState(id: string, updatedAt: number, state: 'synced' | 'rejected'): Promise<void> {
+    await db.transaction('rw', db.zettelTypes, async () => {
+      const row = await db.zettelTypes.get(id);
+      if (row && row.updatedAt === updatedAt && row.syncState === 'pending') {
+        await db.zettelTypes.update(id, { syncState: state });
+      }
+    });
+  }
+
+  async delete(id: string): Promise<void> {
+    await db.zettelTypes.delete(id);
+  }
+
+  async count(): Promise<number> {
+    return db.zettelTypes.count();
+  }
+
+  async clear(): Promise<void> {
+    await db.zettelTypes.clear();
+  }
+}
+
+/** Atribuição de tipo e nível a cada zettel (o `id` é o do zettel). */
+export class AssignmentStore {
+  async getAll(): Promise<AssignmentRecord[]> {
+    return db.typeAssignments.toArray();
+  }
+
+  async get(id: string): Promise<AssignmentRecord | undefined> {
+    return db.typeAssignments.get(id);
+  }
+
+  async putMany(records: AssignmentRecord[]): Promise<void> {
+    if (records.length === 0) return;
+    await db.typeAssignments.bulkPut(records);
+  }
+
+  async listPending(): Promise<AssignmentRecord[]> {
+    return db.typeAssignments.where('syncState').equals('pending').toArray();
+  }
+
+  async markState(id: string, updatedAt: number, state: 'synced' | 'rejected'): Promise<void> {
+    await db.transaction('rw', db.typeAssignments, async () => {
+      const row = await db.typeAssignments.get(id);
+      if (row && row.updatedAt === updatedAt && row.syncState === 'pending') {
+        await db.typeAssignments.update(id, { syncState: state });
+      }
+    });
+  }
+
+  async delete(id: string): Promise<void> {
+    await db.typeAssignments.delete(id);
+  }
+
+  async count(): Promise<number> {
+    return db.typeAssignments.count();
+  }
+
+  async clear(): Promise<void> {
+    await db.typeAssignments.clear();
   }
 }

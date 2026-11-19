@@ -17,6 +17,7 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/drawings"
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	mcpserver "github.com/brunofullstack/zettelkasten/api/internal/mcp"
+	"github.com/brunofullstack/zettelkasten/api/internal/types"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
@@ -28,6 +29,7 @@ const jwtSecret = "test-secret"
 type env struct {
 	url    string
 	svc    *zettel.Service
+	trepo  *types.Repository
 	userA  string
 	keyA   string
 	keyB   string
@@ -64,8 +66,9 @@ func newEnv(t *testing.T, n zettel.Notifier) *env {
 		t.Fatal(err)
 	}
 	drawingRepo := drawings.NewRepository(database)
+	trepo := types.NewRepository(database)
 	svc := zettel.NewService(zettel.NewRepository(database), images.NewRepository(database)).
-		WithDrawings(drawingRepo).WithNotifier(n)
+		WithDrawings(drawingRepo).WithTypes(trepo).WithNotifier(n)
 
 	r := chi.NewRouter()
 	r.Group(func(r chi.Router) {
@@ -79,7 +82,7 @@ func newEnv(t *testing.T, n zettel.Notifier) *env {
 		"sub": a.ID, "role": "member", "exp": time.Now().Add(time.Hour).Unix(),
 	})
 	tokenA, _ := tok.SignedString([]byte(jwtSecret))
-	return &env{url: srv.URL + "/api/mcp", svc: svc, userA: a.ID, keyA: keyA, keyB: keyB, tokenA: tokenA}
+	return &env{url: srv.URL + "/api/mcp", svc: svc, trepo: trepo, userA: a.ID, keyA: keyA, keyB: keyB, tokenA: tokenA}
 }
 
 type headerRT struct{ key string }
@@ -163,7 +166,8 @@ func TestInitializeAndToolList(t *testing.T) {
 	e := newEnv(t, nil)
 	cs := e.connect(t, e.keyA)
 	ins := cs.InitializeResult().Instructions
-	if !strings.Contains(ins, "[[título exato]]") || !strings.Contains(ins, "Busque antes de criar") {
+	if !strings.Contains(ins, "[[título exato]]") || !strings.Contains(ins, "Busque antes de criar") ||
+		!strings.Contains(ins, "list_types") || !strings.Contains(ins, "seção protegida") {
 		t.Fatalf("instructions sem as regras: %q", ins)
 	}
 	lt, err := cs.ListTools(context.Background(), nil)
@@ -171,7 +175,8 @@ func TestInitializeAndToolList(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"search_zettels", "read_zettel", "list_recent", "create_zettel", "edit_zettel", "set_tags",
-		"rename_zettel", "delete_zettel", "get_links", "list_tags", "read_drawing", "write_drawing"}
+		"rename_zettel", "delete_zettel", "get_links", "list_tags", "list_types", "set_type", "trail_progress",
+		"read_drawing", "write_drawing"}
 	got := map[string]*sdk.Tool{}
 	for _, tl := range lt.Tools {
 		got[tl.Name] = tl

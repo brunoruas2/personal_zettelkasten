@@ -18,6 +18,7 @@ import (
 	"github.com/brunofullstack/zettelkasten/api/internal/images"
 	"github.com/brunofullstack/zettelkasten/api/internal/portability"
 	"github.com/brunofullstack/zettelkasten/api/internal/positions"
+	"github.com/brunofullstack/zettelkasten/api/internal/types"
 	"github.com/brunofullstack/zettelkasten/api/internal/zettel"
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
@@ -35,6 +36,7 @@ type env struct {
 	srv     http.Handler
 	dRepo   *drawings.Repository
 	posRepo *positions.Repository
+	tRepo   *types.Repository
 	dbPath  string
 	userA   string
 	userB   string
@@ -64,11 +66,13 @@ func newEnv(t *testing.T, quota int64) *env {
 
 	dRepo := drawings.NewRepository(database)
 	posRepo := positions.NewRepository(database)
+	tRepo := types.NewRepository(database)
 	zRepo := zettel.NewRepository(database)
 	zHandler := zettel.NewHandler(zRepo, images.NewRepository(database)).WithDrawings(dRepo)
 	pHandler := portability.NewHandler(zRepo, authRepo, images.NewRepository(database)).
 		WithDrawings(dRepo, quota).
 		WithPositions(posRepo).
+		WithTypes(tRepo).
 		WithSnapshot(dbPath)
 
 	r := chi.NewRouter()
@@ -81,7 +85,7 @@ func newEnv(t *testing.T, quota int64) *env {
 		r.Use(auth.RequireAuth(jwtSecret))
 		r.Mount("/api", pHandler.Routes())
 	})
-	return &env{srv: r, dbPath: dbPath, dRepo: dRepo, posRepo: posRepo, userA: a.ID, userB: b.ID, tokenA: token(a.ID), tokenB: token(b.ID)}
+	return &env{srv: r, dbPath: dbPath, dRepo: dRepo, posRepo: posRepo, tRepo: tRepo, userA: a.ID, userB: b.ID, tokenA: token(a.ID), tokenB: token(b.ID)}
 }
 
 func (e *env) do(method, path, token string, body io.Reader) *httptest.ResponseRecorder {

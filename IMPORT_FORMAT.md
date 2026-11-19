@@ -25,6 +25,8 @@ O mesmo formato é produzido por `GET /api/export/json` e por
 | `zettels` | array | sim | As notas. Ver abaixo. |
 | `links` | array | não | **Ignorado na importação.** Ver [Links](#links). |
 | `positions` | array | não | Posição de cada zettel na galáxia. Ver [Posições](#posições). |
+| `types` | array | não | Tipos de zettel cadastrados (template, seções protegidas, níveis). Ver [Tipos](#tipos). |
+| `type_assignments` | array | não | Tipo e nível de cada zettel. Ver [Tipos](#tipos). |
 
 Limite de corpo da requisição: **50 MB**. Para cofres maiores, divida em vários arquivos —
 a importação é idempotente e pode ser repetida.
@@ -265,7 +267,20 @@ last-write-wins por `updated_at`, e ids que não existem como zettel são ignora
 **Campo opcional — ao converter de outra ferramenta, omita.** Zettels sem posição são
 posicionados automaticamente pelo app, perto dos zettels com que têm link.
 
-### Ciclo de vida
+### Tipos
+
+`types: [{ "id", "name", "slug", "icon", "color", "template", "protected_sections", "levels", "counts_progress", "updated_at" }]`
+e `type_assignments: [{ "zettel_id", "type_id", "level", "updated_at" }]` — os tipos de zettel do usuário e o tipo
+(e nível) de cada zettel. `levels` é a escada de maturidade do tipo, em ordem: `[{ "key", "label", "emoji", "user_only" }]`.
+`icon` e `color` precisam estar nas listas fechadas do app (o servidor valida). Vão no JSON e no `zettels.json` do ZIP,
+apenas os tipos **vivos**; o export Markdown não leva. Na importação os tipos são gravados antes das atribuições, com
+last-write-wins por `updated_at`. Um tipo inválido ou com `slug` já usado por outro tipo, e uma atribuição para zettel que
+não existe, vão para `errors` e não impedem o resto do import.
+
+**Campos opcionais — ao converter de outra ferramenta, omita.** Zettels sem tipo continuam livres, sem nenhuma regra
+de autoria.
+
+
 
 Uma imagem (ou desenho) que deixa de ser referenciada por **qualquer** zettel do usuário não é apagada na
 hora: ela é marcada como órfã e só é removida de fato depois de **30 dias**. Se voltar a ser
