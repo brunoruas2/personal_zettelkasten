@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ZettelMeta } from '@zettelkasten/core';
 import { useZettelStore } from '../../store/useZettelStore';
+import { typeInfoOf, useTypesStore } from '../../store/useTypesStore';
 import { searchZettels } from '../../lib/searchZettels';
 import { getRecentIds } from '../../lib/recentZettels';
 import { useZettelBody } from '../../hooks/useZettelBody';
@@ -17,6 +18,10 @@ const RECENT_LIMIT = 60;
 export interface SearchFilters {
   tags?: string[];
   unplacedOnly?: boolean;
+  /** Tipo do filtro (id). */
+  typeId?: string;
+  /** Nível do filtro: chave, '' = sem nível, ausente = qualquer. */
+  levelKey?: string;
 }
 
 type Sort = 'relevance' | 'recent';
@@ -65,6 +70,11 @@ export function GalaxySearch({
   const [unplacedOnly, setUnplacedOnly] = useState(initial.unplacedOnly ?? false);
   const [includeHidden, setIncludeHidden] = useState(false);
   const [sort, setSort] = useState<Sort>('relevance');
+  const [typeId, setTypeId] = useState(initial.typeId ?? '');
+  const [levelKey, setLevelKey] = useState<string | null>(initial.levelKey ?? null);
+  const types = useTypesStore((s) => s.types);
+  const typeById = useTypesStore((s) => s.typeById);
+  const assignments = useTypesStore((s) => s.assignments);
   const [tagMenu, setTagMenu] = useState(false);
   const [selected, setSelected] = useState(0);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -152,7 +162,7 @@ export function GalaxySearch({
   const results = useMemo(() => {
     // Sem filtro de texto mas com filtro de tag/avulso/sem lugar: parte da base
     // inteira, não só dos recentes.
-    const filtering = tags.length > 0 || orphansOnly || unplacedOnly || inboxOnly;
+    const filtering = tags.length > 0 || orphansOnly || unplacedOnly || inboxOnly || !!typeId;
     let list = found ?? (filtering ? zettels : recents);
     list = list.filter((z) => {
       if (!includeHidden && isHidden(z)) return false;
@@ -160,12 +170,17 @@ export function GalaxySearch({
       if (inboxOnly && !z.tags.includes('inbox')) return false;
       if (orphansOnly && (neighbors.get(z.id)?.size ?? 0) > 0) return false;
       if (unplacedOnly && !isUnplaced(z.id)) return false;
+      if (typeId) {
+        const a = assignments.get(z.id);
+        if (!a || a.typeId !== typeId) return false;
+        if (levelKey !== null && (a.level ?? '') !== levelKey) return false;
+      }
       return true;
     });
     if (sort === 'recent' || (!found && filtering)) list = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [found, zettels, recents, tags, orphansOnly, inboxOnly, unplacedOnly, includeHidden, sort, neighbors, excluded]);
+  }, [found, zettels, recents, tags, orphansOnly, inboxOnly, unplacedOnly, includeHidden, sort, neighbors, excluded, typeId, levelKey, assignments]);
 
   useEffect(() => setSelected(0), [results]);
 
@@ -252,6 +267,52 @@ export function GalaxySearch({
             </div>
           )}
         </div>
+        {types.length > 0 && (
+          <select
+            aria-label="Tipo"
+            value={typeId}
+            onChange={(e) => {
+              setTypeId(e.target.value);
+              setLevelKey(null);
+            }}
+            className={`${chip(!!typeId)} bg-transparent`}
+          >
+            <option value="">Qualquer tipo</option>
+            {types.map((t) => (
+              <option key={t.id} value={t.id} className="bg-[#0e121a]">
+                {t.icon} {t.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {typeId && (typeById.get(typeId)?.levels.length ?? 0) > 0 && (
+          <select
+            aria-label="Nível"
+            value={levelKey ?? '__any'}
+            onChange={(e) => setLevelKey(e.target.value === '__any' ? null : e.target.value)}
+            className={`${chip(levelKey !== null)} bg-transparent`}
+          >
+            <option value="__any" className="bg-[#0e121a]">Qualquer nível</option>
+            {typeById.get(typeId)!.levels.map((l) => (
+              <option key={l.key} value={l.key} className="bg-[#0e121a]">
+                {l.emoji ? `${l.emoji} ` : ''}{l.label}
+              </option>
+            ))}
+            <option value="" className="bg-[#0e121a]">Sem nível</option>
+          </select>
+        )}
+        {typeId && (
+          <button
+            type="button"
+            className={chip(false)}
+            onClick={() => {
+              setTypeId('');
+              setLevelKey(null);
+            }}
+          >
+            limpar tipo ×
+          </button>
+        )}
         <button type="button" className={chip(orphansOnly)} onClick={() => setOrphansOnly((v) => !v)}>
           Avulsos
         </button>
@@ -284,6 +345,7 @@ export function GalaxySearch({
               const degree = neighbors.get(z.id)?.size ?? 0;
               const hidden = isHidden(z);
               const unplaced = !hidden && isUnplaced(z.id);
+              const ti = typeInfoOf({ typeById, assignments }, z.id);
               return (
                 <button
                   key={z.id}
@@ -300,6 +362,12 @@ export function GalaxySearch({
                     {degree === 0 && <Badge>avulso</Badge>}
                     {unplaced && <Badge tone="amber">sem lugar</Badge>}
                     {hidden && <Badge>oculto</Badge>}
+                    {ti && (
+                      <Badge>
+                        {ti.type.icon} {ti.type.name}
+                        {ti.level ? ` · ${ti.level.emoji ?? ''} ${ti.level.label}` : ''}
+                      </Badge>
+                    )}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-[#6f7787]">
                     {z.tags.length ? z.tags.map((t) => `#${t}`).join(' ') : 'sem tags'}
