@@ -28,11 +28,8 @@ Use só as tools do MCP do Zettelkasten.
    - **Caça ao erro:** apresente uma afirmação com erro sutil para o usuário achar.
    - **Calibragem:** antes de responder, peça a confiança de 1 a 5; depois compare com o resultado.
 4. **Corrija** comparando com o zettel; aponte lacunas. Exercício de prática: só dicas.
-5. **Registre** no zettel `teste` do tema (**um por tema**, título como "Teste — SQL"; busque antes):
-   - não existe: `create_zettel` com `type: "teste"`, a sessão em `## Sessões`;
-   - existe: `edit_zettel` por trecho acrescentando a nova sessão; nunca reescreva as anteriores.
-   Cada sessão traz data, perguntas, resposta resumida, confiança, resultado e **lacunas** (abertas ou fechadas).
-6. **Ligue** `[[Teste — tema]]` em `## Testes` do conteúdo (por trecho; só essa seção) e o conteúdo no Teste.
+5. **Crie o Teste na primeira sessão** (um por tema, título como "Teste — SQL"; busque antes): `create_zettel` com `type: "teste"`. Nas seguintes ele já existe.
+6. **Registre com `log_test_session`** (não edite o corpo do Teste à mão): `test` (título do Teste), `result` (`passou`, `parcial` ou `nao_passou`), `confidence`, `questions` (técnica, pergunta, resposta resumida, acertou) e `gaps` (abertas ou fechadas), com os conteúdos testados em `concepts`. A tool acrescenta a sessão em `## Sessões` sem tocar nas anteriores e põe o link de volta em `## Testes` do conteúdo. O que ela listar como omitido, relate ao usuário.
 7. **Passou na bateria:** `set_type` do conteúdo para o nível `testado`. **Não passou:** o nível continua `semente`, as lacunas ficam no Teste e você sugere voltar ao conteúdo (`azm-tutor`).
 8. Acertou tudo: **não** tente `consolidado`. Diga que o conteúdo está pronto para a síntese do usuário.
 

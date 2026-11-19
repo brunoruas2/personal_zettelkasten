@@ -115,6 +115,11 @@ func (t *tools) register(s *sdk.Server) {
 			"Sem id cria um desenho novo. O desenho só aparece num zettel que o referencie com ![](zk:draw/<id>) (use edit_zettel).",
 		Annotations: writes("Gravar desenho", false, false),
 	}, t.writeDrawing)
+	sdk.AddTool(s, &sdk.Tool{
+		Name:        "log_test_session",
+		Description: "Registra uma sessão de teste no zettel de Teste do tema (tipo teste): acrescenta ao fim de ## Sessões, com formato fixo (data, resultado, confiança, perguntas, lacunas), sem reescrever as sessões anteriores, e liga o Teste aos conteúdos de concepts (link de volta no fim de ## Testes). Não muda tipo nem nível: para subir o conteúdo a testado use set_type. Crie o Teste antes com create_zettel (type teste).",
+		Annotations: writes("Registrar sessão de teste", false, false),
+	}, t.logTestSession)
 }
 
 // --- tipos de saída ---

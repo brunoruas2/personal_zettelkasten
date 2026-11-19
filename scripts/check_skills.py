@@ -25,7 +25,7 @@ CITED_RE = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:\(|`)")
 # snake_case que não é tool: parâmetros e campos do MCP.
 NOT_TOOLS = {
     "old_string", "new_string", "counts_progress", "user_only",
-    "protected_sections", "links_to", "linked_from",
+    "protected_sections", "links_to", "linked_from", "nao_passou", "caca-ao-erro",
 }
 
 

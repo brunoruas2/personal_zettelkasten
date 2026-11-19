@@ -176,7 +176,7 @@ func TestInitializeAndToolList(t *testing.T) {
 	}
 	want := []string{"search_zettels", "read_zettel", "list_recent", "create_zettel", "edit_zettel", "set_tags",
 		"rename_zettel", "delete_zettel", "get_links", "list_tags", "list_types", "set_type", "trail_progress",
-		"read_drawing", "write_drawing"}
+		"read_drawing", "write_drawing", "log_test_session"}
 	got := map[string]*sdk.Tool{}
 	for _, tl := range lt.Tools {
 		got[tl.Name] = tl

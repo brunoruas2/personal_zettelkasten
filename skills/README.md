@@ -44,7 +44,7 @@ Template do Conteúdo (literal):
 | `azm-trilha` | trilhas, conteúdos | zettel `trilha` |
 | `azm-captura` | conteúdos, fontes, trilha | `conteudo` (`## Captura`), `fonte` |
 | `azm-tutor` | conteúdo do tema | nada |
-| `azm-teste` | conteúdo, teste do tema | `teste` (sessões), `## Testes` do conteúdo, nível até `testado` |
+| `azm-teste` | conteúdo, teste do tema | `teste` (sessões, por `log_test_session`), `## Testes` do conteúdo, nível até `testado` |
 | `azm-consolidar` | conteúdos `testado`, testes | nada |
 | `azm-organizar` | tudo do estudo | links, títulos e seções, sempre com confirmação |
 
