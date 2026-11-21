@@ -34,3 +34,4 @@ export * from './models/ZettelType';
 export * from './services/SectionParser';
 export * from './services/TypeRules';
 export * from './services/Maturity';
+export * from './services/DocumentBinarize';

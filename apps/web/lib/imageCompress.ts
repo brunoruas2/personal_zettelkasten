@@ -5,7 +5,19 @@
 // acontece aqui, antes de qualquer I/O — nada grande chega a tocar o IndexedDB,
 // a rede ou o SQLite.
 
+import { binarizeAdaptive, binaryToRgba, rgbaToGray } from '@zettelkasten/core'
 import { getSavedCompressionLevel, type CompressionLevel } from './imageCompressLevel'
+
+/** `photo` usa o perfil salvo; `document` binariza (foto de caderno). */
+export type CompressionMode = 'photo' | 'document'
+
+export interface CompressOptions {
+  mode?: CompressionMode
+}
+
+/** Modo documento: teto com folga sob os 512 KB do servidor e degraus do lado maior. */
+export const DOCUMENT_MAX_BYTES = 400 * 1024
+export const DOCUMENT_DIMENSIONS = [2000, 1600, 1280, 1024, 800]
 
 export interface CompressionProfile {
   /** Lado maior alvo, em px. */
@@ -83,6 +95,7 @@ export function isImageFile(file: File): boolean {
 export async function compressImage(
   file: File,
   level: CompressionLevel = getSavedCompressionLevel(),
+  options: CompressOptions = {},
 ): Promise<CompressedImage> {
   const profile = COMPRESSION_PROFILES[level]
 
@@ -101,6 +114,14 @@ export async function compressImage(
     bitmap = await createImageBitmap(file)
   } catch {
     throw new ImageCompressError('Não foi possível ler esta imagem.')
+  }
+
+  if (options.mode === 'document') {
+    try {
+      return await compressDocument(bitmap)
+    } finally {
+      bitmap.close()
+    }
   }
 
   try {
@@ -127,6 +148,55 @@ export async function compressImage(
   } finally {
     bitmap.close()
   }
+}
+
+/**
+ * Foto de caderno: cinza + limiar adaptativo, WebP sem perda (duas cores
+ * comprimem muito). Reduz o lado maior em degraus até caber em DOCUMENT_MAX_BYTES.
+ */
+async function compressDocument(bitmap: ImageBitmap): Promise<CompressedImage> {
+  for (const maxDim of DOCUMENT_DIMENSIONS) {
+    const { width, height } = fitWithin(bitmap.width, bitmap.height, maxDim)
+    const blob = await drawBinarizeEncode(bitmap, width, height)
+    if (blob.size <= DOCUMENT_MAX_BYTES) {
+      return {
+        id: await hashId(blob),
+        blob,
+        mime: blob.type || 'image/webp',
+        width,
+        height,
+      }
+    }
+  }
+  throw new ImageCompressError(
+    'Não foi possível reduzir esta foto o bastante. Tente recortar mais ou fotografar com menos detalhe.',
+  )
+}
+
+async function drawBinarizeEncode(bitmap: ImageBitmap, width: number, height: number): Promise<Blob> {
+  const useOffscreen = typeof OffscreenCanvas !== 'undefined'
+  const canvas: OffscreenCanvas | HTMLCanvasElement = useOffscreen
+    ? new OffscreenCanvas(width, height)
+    : Object.assign(document.createElement('canvas'), { width, height })
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null
+  if (!ctx) throw new ImageCompressError('Canvas indisponível neste navegador.')
+  ctx.drawImage(bitmap, 0, 0, width, height)
+
+  const img = ctx.getImageData(0, 0, width, height)
+  const bin = binarizeAdaptive(rgbaToGray(img.data, width, height), width, height)
+  binaryToRgba(bin, img.data)
+  ctx.putImageData(img, 0, 0)
+
+  if (canvas instanceof OffscreenCanvas) {
+    return canvas.convertToBlob({ type: 'image/webp', quality: 1 })
+  }
+  return new Promise<Blob>((resolve, reject) => {
+    ;(canvas as HTMLCanvasElement).toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new ImageCompressError('Falha ao codificar a imagem.'))),
+      'image/webp',
+      1,
+    )
+  })
 }
 
 async function compressSvg(file: File, maxBytes: number): Promise<CompressedImage> {

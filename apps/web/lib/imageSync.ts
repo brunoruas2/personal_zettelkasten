@@ -1,6 +1,6 @@
 import { ImageStore, type ImageRecord } from '@zettelkasten/db-web'
 import { api, AuthError } from './api'
-import { compressImage, type CompressedImage } from './imageCompress'
+import { compressImage, type CompressedImage, type CompressionMode } from './imageCompress'
 
 export const imageStore = new ImageStore()
 
@@ -63,8 +63,11 @@ export interface ImageManifestEntry {
  * chamador não deve inserir a referência `zk:img/` no corpo nesse caso, ou o
  * zettel apontaria para bytes que só existem neste aparelho.
  */
-export async function importImage(file: File): Promise<CompressedImage> {
-  const compressed = await compressImage(file)
+export async function importImage(
+  file: File,
+  options: { mode?: CompressionMode } = {},
+): Promise<CompressedImage> {
+  const compressed = await compressImage(file, undefined, options)
 
   await imageStore.put({
     id: compressed.id,

@@ -36,7 +36,8 @@ import { generateId, type ZettelMeta as Zettel } from '@zettelkasten/core';
 import { PlantUmlBlock } from './PlantUmlBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { useDiagramLayout } from '../lib/diagramLayout';
-import { isImageFile, ImageCompressError } from '../lib/imageCompress';
+import { isImageFile, ImageCompressError, type CompressionMode } from '../lib/imageCompress';
+import { PhotoCropModal } from './PhotoCropModal';
 import { importImage, ImageUploadError } from '../lib/imageSync';
 import { ZK_IMG_PREFIX } from './ZettelImage';
 import { DrawingBlock, DrawingEditContext, ZK_DRAW_PREFIX } from './DrawingBlock';
@@ -127,6 +128,8 @@ export interface TipTapEditorHandle {
   insertCodeBlock: (language: string, template?: string) => void;
   /** Abre o seletor de arquivos de imagem (usado pela toolbar mobile). */
   pickImages: () => void;
+  /** Abre a câmera, passa pelo recorte e insere a foto (toolbar mobile). */
+  pickCamera: () => void;
   /** Insere uma referência a um desenho novo no cursor e abre o editor de desenho (toolbar mobile). */
   insertDrawing: () => void;
 }
@@ -494,6 +497,7 @@ async function insertImageFiles(
   dropPos: number | null,
   onPendingDelta: (delta: number) => void,
   onError: (msg: string) => void,
+  mode?: CompressionMode,
 ): Promise<void> {
   const images = files.filter(isImageFile);
   if (images.length === 0) return;
@@ -502,7 +506,7 @@ async function insertImageFiles(
   for (const file of images) {
     onPendingDelta(1);
     try {
-      const { id } = await importImage(file);
+      const { id } = await importImage(file, { mode });
       const content = { type: 'image', attrs: { src: `${ZK_IMG_PREFIX}${id}`, alt: '' } };
       if (pos === null) {
         editor.chain().focus().insertContent(content).run();
@@ -1067,6 +1071,12 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
     const pickImagesRef = useRef<() => void>(() => {});
     pickImagesRef.current = () => fileInputRef.current?.click();
 
+    // Câmera → recorte → inserção. O arquivo só entra no pipeline depois do "Usar".
+    const cameraInputRef = useRef<HTMLInputElement>(null);
+    const [cropFile, setCropFile] = useState<File | null>(null);
+    const pickCameraRef = useRef<() => void>(() => {});
+    pickCameraRef.current = () => cameraInputRef.current?.click();
+
     const onPendingImagesChangeRef = useRef(onPendingImagesChange);
     onPendingImagesChangeRef.current = onPendingImagesChange;
 
@@ -1514,6 +1524,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
           .run();
       },
       pickImages() { pickImagesRef.current(); },
+      pickCamera() { pickCameraRef.current(); },
       insertDrawing() { if (editor) startDrawingRef.current(editor); },
     }), [editor, pickImagesRef]);
 
@@ -1564,6 +1575,28 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, Props>(
             }
           }}
         />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) setCropFile(file);
+          }}
+        />
+        {cropFile && (
+          <PhotoCropModal
+            file={cropFile}
+            onCancel={() => setCropFile(null)}
+            onConfirm={(cropped, mode) => {
+              setCropFile(null);
+              if (editor) void insertImageFiles(editor, [cropped], null, bumpPending, setImageError, mode);
+            }}
+          />
+        )}
         {imageError && (
           <div
             role="alert"

@@ -449,6 +449,7 @@ export const InplaceEditor = forwardRef<
           editor={editor}
           onInsertLink={() => setLinkPickerOpen(true)}
           onInsertImage={() => editorRef.current?.pickImages()}
+          onInsertCamera={() => editorRef.current?.pickCamera()}
           onInsertDrawing={() => editorRef.current?.insertDrawing()}
           onOpenCheatsheet={() => setCheatsheetOpen(true)}
           fontSize={fontSize}

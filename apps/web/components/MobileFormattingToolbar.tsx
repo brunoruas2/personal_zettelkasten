@@ -10,6 +10,8 @@ interface Props {
   editor: Editor | null;
   onInsertLink: () => void;
   onInsertImage: () => void;
+  /** Abre a câmera (foto → recorte → inserção). Sem a prop, o botão não aparece. */
+  onInsertCamera?: () => void;
   onInsertDrawing: () => void;
   onOpenCheatsheet: () => void;
   fontSize: number;
@@ -72,6 +74,7 @@ export function MobileFormattingToolbar({
   editor,
   onInsertLink,
   onInsertImage,
+  onInsertCamera,
   onInsertDrawing,
   onOpenCheatsheet,
   fontSize,
@@ -176,6 +179,11 @@ export function MobileFormattingToolbar({
           <button onMouseDown={noFocusSteal} onClick={onInsertDrawing} aria-label="Inserir desenho" className={`${c} ${inactive} text-brand text-xl leading-none`}>
             ✏️
           </button>
+          {onInsertCamera && (
+            <button onMouseDown={noFocusSteal} onClick={onInsertCamera} aria-label="Tirar foto" className={`${c} ${inactive} text-brand text-lg leading-none`}>
+              📷
+            </button>
+          )}
           <button onMouseDown={noFocusSteal} onClick={insertSlash} aria-label="Inserir bloco" className={`${c} ${inactive} text-brand text-lg leading-none`}>
             /
           </button>
@@ -272,6 +280,16 @@ export function MobileFormattingToolbar({
         >
           🖼
         </button>
+        {onInsertCamera && (
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onInsertCamera}
+            aria-label="Tirar foto"
+            className={`${base} ${inactive} text-brand text-xl leading-none`}
+          >
+            📷
+          </button>
+        )}
         <button
           onMouseDown={(e) => e.preventDefault()}
           onClick={onInsertDrawing}
