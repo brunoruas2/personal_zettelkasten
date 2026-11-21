@@ -30,6 +30,19 @@ import { useLevelsSync } from './useLevelsSync';
 import { useLevelActions, deleteFromLevels } from './actions';
 import { captureNote, createNote } from './newNote';
 import { useReadingScale, zkFont } from '../../lib/readingFontSize';
+
+/**
+ * Contêineres com `overflow-clip` não rolam nem por código, mas se algum navegador
+ * ainda os rolar (scrollIntoView ao focar o editor), devolve a posição a 0: a
+ * navegação entre níveis é só `translateY`, então o scroll deles é sempre 0.
+ */
+const keepUnscrolled = (e: React.UIEvent<HTMLElement>) => {
+  const t = e.currentTarget;
+  if (t.scrollTop !== 0 || t.scrollLeft !== 0) {
+    t.scrollTop = 0;
+    t.scrollLeft = 0;
+  }
+};
 import { useAgentActivityStore } from '../../store/useAgentActivityStore';
 
 const LEVEL_KEYS: Record<string, Level> = { Digit1: 'focus', Digit2: 'memory', Digit3: 'map' };
@@ -184,10 +197,10 @@ function LevelsInner() {
   ];
 
   return (
-    <div className="zk-root fixed inset-0 flex flex-col overflow-hidden" style={{ height: '100dvh' }} data-mobile={isMobile ? '' : undefined}>
+    <div className="zk-root fixed inset-0 flex flex-col overflow-clip" onScroll={keepUnscrolled} style={{ height: '100dvh' }} data-mobile={isMobile ? '' : undefined}>
       {/* Paisagem curta + edição: só o editor e a barra de formatação (o slot do filho fica, o resto da árvore não remonta). */}
       {!(isLandscape && editing !== null) && <LevelsTopBar onSearch={() => setSearch({})} onNew={onNew} onMenu={onMenu} />}
-      <div className="relative min-h-0 flex-1 overflow-hidden">{isMobile ? <MobileLevels /> : <DesktopLevels />}</div>
+      <div className="relative min-h-0 flex-1 overflow-clip" onScroll={keepUnscrolled}>{isMobile ? <MobileLevels /> : <DesktopLevels />}</div>
       <Vignette />
 
       {toast && (
@@ -379,18 +392,18 @@ function MobileLevels(): ReactNode {
 
   return (
     <div className={`absolute inset-0 flex ${isLandscape ? 'flex-row' : 'flex-col'}`}>
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-clip" onScroll={keepUnscrolled}>
         <div
           className="zk-levels-track absolute inset-x-0 top-0"
           style={{ height: '300%', transform: `translateY(-${(idx * 100) / 3}%)`, transition: TRACK_TRANSITION }}
         >
-          <section aria-label="Foco" aria-hidden={level !== 'focus'} className="zk-desk h-1/3 overflow-hidden p-2">
+          <section aria-label="Foco" aria-hidden={level !== 'focus'} className="zk-desk h-1/3 overflow-clip p-2" onScroll={keepUnscrolled}>
             <FocusScreen />
           </section>
-          <section aria-label="Mesa" aria-hidden={level !== 'memory'} className="zk-desk h-1/3 overflow-hidden p-2">
+          <section aria-label="Mesa" aria-hidden={level !== 'memory'} className="zk-desk h-1/3 overflow-clip p-2" onScroll={keepUnscrolled}>
             <MemoryScreen />
           </section>
-          <section aria-label="Mapa" aria-hidden={level !== 'map'} className="zk-desk h-1/3 overflow-hidden p-2">
+          <section aria-label="Mapa" aria-hidden={level !== 'map'} className="zk-desk h-1/3 overflow-clip p-2" onScroll={keepUnscrolled}>
             <MapScreen />
           </section>
         </div>

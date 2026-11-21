@@ -69,12 +69,11 @@ export function PhotoCropModal({ file, onCancel, onConfirm }: Props) {
   const [loadError, setLoadError] = React.useState(false)
   const [rot, setRot] = React.useState(0)
   const [mode, setMode] = React.useState<CompressionMode>('document')
-  const [preview, setPreview] = React.useState(false)
+  const [binCanvas, setBinCanvas] = React.useState<HTMLCanvasElement | null>(null)
   const [size, setSize] = React.useState({ w: 0, h: 0 })
   // Recorte em px da imagem girada.
   const [crop, setCrop] = React.useState<Rect | null>(null)
   const dragRef = React.useRef<Drag | null>(null)
-  const previewCanvasRef = React.useRef<HTMLCanvasElement | null>(null)
 
   // Carrega respeitando a orientação EXIF (foto de iPhone em pé).
   React.useEffect(() => {
@@ -115,13 +114,14 @@ export function PhotoCropModal({ file, onCancel, onConfirm }: Props) {
   const ox = (size.w - rs.w * scale) / 2
   const oy = (size.h - rs.h * scale) / 2
 
-  // Prévia binarizada do recorte (só quando ligada).
+  // Imagem inteira girada e binarizada, uma vez por bitmap/giro (não por recorte).
   React.useEffect(() => {
-    previewCanvasRef.current = null
-    if (!preview || !bitmap || !crop) return
-    const s = Math.min(1, PREVIEW_MAX / Math.max(crop.w, crop.h))
-    const w = Math.max(1, Math.round(crop.w * s))
-    const h = Math.max(1, Math.round(crop.h * s))
+    setBinCanvas(null)
+    if (!bitmap) return
+    const { w: rw, h: rh } = rotatedSize(bitmap.width, bitmap.height, rot)
+    const s = Math.min(1, PREVIEW_MAX / Math.max(rw, rh))
+    const w = Math.max(1, Math.round(rw * s))
+    const h = Math.max(1, Math.round(rh * s))
     const c = document.createElement('canvas')
     c.width = w
     c.height = h
@@ -129,12 +129,12 @@ export function PhotoCropModal({ file, onCancel, onConfirm }: Props) {
     if (!ctx) return
     ctx.fillStyle = '#fff'
     ctx.fillRect(0, 0, w, h)
-    drawRotated(ctx, bitmap, rot, -crop.x * s, -crop.y * s, s)
+    drawRotated(ctx, bitmap, rot, 0, 0, s)
     const img = ctx.getImageData(0, 0, w, h)
     binaryToRgba(binarizeAdaptive(rgbaToGray(img.data, w, h), w, h), img.data)
     ctx.putImageData(img, 0, 0)
-    previewCanvasRef.current = c
-  }, [preview, bitmap, crop, rot])
+    setBinCanvas(c)
+  }, [bitmap, rot])
 
   // Pintura.
   React.useEffect(() => {
@@ -153,17 +153,17 @@ export function PhotoCropModal({ file, onCancel, onConfirm }: Props) {
     const cw = crop.w * scale
     const ch = crop.h * scale
 
-    if (preview && previewCanvasRef.current) {
-      ctx.drawImage(previewCanvasRef.current, cx, cy, cw, ch)
+    if (mode === 'document' && binCanvas) {
+      ctx.drawImage(binCanvas, ox, oy, rs.w * scale, rs.h * scale)
     } else {
       drawRotated(ctx, bitmap, rot, ox, oy, scale)
-      // Escurece fora do recorte.
-      ctx.fillStyle = 'rgba(0,0,0,0.55)'
-      ctx.fillRect(ox, oy, rs.w * scale, cy - oy)
-      ctx.fillRect(ox, cy + ch, rs.w * scale, oy + rs.h * scale - (cy + ch))
-      ctx.fillRect(ox, cy, cx - ox, ch)
-      ctx.fillRect(cx + cw, cy, ox + rs.w * scale - (cx + cw), ch)
     }
+    // Escurece fora do recorte.
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    ctx.fillRect(ox, oy, rs.w * scale, cy - oy)
+    ctx.fillRect(ox, cy + ch, rs.w * scale, oy + rs.h * scale - (cy + ch))
+    ctx.fillRect(ox, cy, cx - ox, ch)
+    ctx.fillRect(cx + cw, cy, ox + rs.w * scale - (cx + cw), ch)
 
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 2
@@ -172,7 +172,7 @@ export function PhotoCropModal({ file, onCancel, onConfirm }: Props) {
     for (const [px, py] of [[cx, cy], [cx + cw, cy], [cx, cy + ch], [cx + cw, cy + ch]]) {
       ctx.fillRect(px - 7, py - 7, 14, 14)
     }
-  }, [bitmap, crop, rot, preview, size, scale, ox, oy, rs.w, rs.h])
+  }, [bitmap, crop, rot, mode, binCanvas, size, scale, ox, oy, rs.w, rs.h])
 
   const toImage = (clientX: number, clientY: number) => {
     const r = canvasRef.current!.getBoundingClientRect()
@@ -180,7 +180,7 @@ export function PhotoCropModal({ file, onCancel, onConfirm }: Props) {
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (!crop || preview) return
+    if (!crop) return
     const r = canvasRef.current!.getBoundingClientRect()
     const px = e.clientX - r.left
     const py = e.clientY - r.top
@@ -321,24 +321,11 @@ export function PhotoCropModal({ file, onCancel, onConfirm }: Props) {
         <button
           type="button"
           className={`${btn} ${mode === 'photo' ? on : ''}`}
-          onClick={() => {
-            setMode('photo')
-            setPreview(false)
-          }}
+          onClick={() => setMode('photo')}
           aria-pressed={mode === 'photo'}
         >
           Foto
         </button>
-        {mode === 'document' && (
-          <button
-            type="button"
-            className={`${btn} ${preview ? on : ''}`}
-            onClick={() => setPreview((v) => !v)}
-            aria-pressed={preview}
-          >
-            Prévia
-          </button>
-        )}
         <div className="flex w-full justify-end gap-2 pt-1">
           <button type="button" className={btn} onClick={onCancel}>
             Cancelar
