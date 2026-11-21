@@ -314,13 +314,13 @@ function DesktopLevels() {
   const level = useLevelsStore((s) => s.level);
   const focusId = useLevelsStore((s) => s.focusId);
   const consulted = useLevelsStore((s) => s.consulted);
-  const maximized = useLevelsStore((s) => s.mapMaximized);
+  const maximized = level === 'map';
   const actions = useLevelActions();
   const zettels = useZettelStore((s) => s.zettels);
   const focusTitle = useMemo(() => zettels.find((z) => z.id === focusId)?.title.trim() || 'Sem título', [zettels, focusId]);
   const second = level !== 'focus';
 
-  // Esc restaura o mapa maximizado (fora de campo de texto e sem edição).
+  // Esc volta do mapa expandido (nível Mapa) à Mesa (fora de campo de texto e sem edição).
   useEffect(() => {
     if (!maximized) return;
     const onKey = (e: KeyboardEvent) => {
@@ -328,11 +328,11 @@ function DesktopLevels() {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (useLevelsStore.getState().editing !== null) return;
-      useLevelsStore.getState().setMapMaximized(false);
+      void actions.go('memory');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [maximized]);
+  }, [maximized, actions]);
 
   return (
     <div

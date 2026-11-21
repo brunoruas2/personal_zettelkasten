@@ -35,8 +35,6 @@ interface LevelsActions {
   consult: (id: string) => void;
   dismiss: (id: string) => void;
   go: (level: Level) => void;
-  /** Desktop: mapa ocupa toda a área das Referências (esconde abertos e viewer). Só UI. */
-  setMapMaximized: (v: boolean) => void;
   /** Filtro do HUD de maturidade. Só UI: não persiste; o `ConnectionMap` o zera ao desmontar (sair do Mapa). */
   setMaturityFilter: (f: MaturityFilter | null) => void;
   startEdit: (where: EditingIn) => void;
@@ -70,9 +68,8 @@ function isVisibleFn(): (id: string) => boolean {
   };
 }
 
-export const useLevelsStore = create<LevelsState & LevelsActions & { mapMaximized: boolean; maturityFilter: MaturityFilter | null }>((set, get) => ({
+export const useLevelsStore = create<LevelsState & LevelsActions & { maturityFilter: MaturityFilter | null }>((set, get) => ({
   ...initialLevels,
-  mapMaximized: false,
   maturityFilter: null,
 
   setFocus: (id) => {
@@ -82,8 +79,7 @@ export const useLevelsStore = create<LevelsState & LevelsActions & { mapMaximize
   },
   consult: (id) => set(consult(get(), id)),
   dismiss: (id) => set(dismiss(get(), id)),
-  go: (level) => set({ ...goLevel(get(), level), ...(level === 'focus' ? { mapMaximized: false } : {}) }),
-  setMapMaximized: (v) => set({ mapMaximized: v }),
+  go: (level) => set(goLevel(get(), level)),
   setMaturityFilter: (f) => set({ maturityFilter: f }),
   startEdit: (where) => set(startEditing(get(), where)),
   stopEdit: () => set(stopEditing(get())),
