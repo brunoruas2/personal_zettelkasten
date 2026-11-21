@@ -69,7 +69,7 @@ export function GalaxySearch({
   const [inboxOnly, setInboxOnly] = useState(false);
   const [unplacedOnly, setUnplacedOnly] = useState(initial.unplacedOnly ?? false);
   const [includeHidden, setIncludeHidden] = useState(false);
-  const [sort, setSort] = useState<Sort>('relevance');
+  const [sort, setSort] = useState<Sort>('recent');
   const [typeId, setTypeId] = useState(initial.typeId ?? '');
   const [levelKey, setLevelKey] = useState<string | null>(initial.levelKey ?? null);
   const types = useTypesStore((s) => s.types);
