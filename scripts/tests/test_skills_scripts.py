@@ -1,8 +1,12 @@
 """Testes de check_skills.py e install_skills.py. Rodar: python -m unittest discover scripts/tests"""
+import contextlib
+import io
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -72,6 +76,19 @@ class CheckSkills(Base):
         rc = check_skills.main(["--skills", str(self.skills), "--tools-dir", str(self.tools)])
         self.assertEqual(rc, 1)
 
+    def test_pasta_removida_reaparece(self):
+        self.add("azm-x", skill())
+        for name in check_skills.REMOVED_SKILLS:
+            self.add(name, skill(name=name))
+            self.assertTrue(any(name in p and "removida" in p for p in self.run_check()), name)
+            import shutil
+            shutil.rmtree(self.skills / name)
+        self.assertEqual(self.run_check(), [])
+
+    def test_chaves_de_nivel_nao_sao_tools(self):
+        self.add("azm-x", skill(body="Nivel `em-teste`, `iniciado`, `internalizado`.\n"))
+        self.assertEqual(self.run_check(), [])
+
     def test_repo_real(self):
         """As skills versionadas passam na validação."""
         if not (check_skills.ROOT / "skills").is_dir():
@@ -113,6 +130,106 @@ class InstallSkills(Base):
         install_skills.install(self.skills, self.dest)
         self.assertFalse((self.dest / "azm-vazia").exists())
         self.assertFalse((self.dest / "outra").exists())
+
+    # --- agente/harness, escopo, MCP, obsoletas ---
+
+    def run_main(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = install_skills.main(["--skills", str(self.skills), "--dest", str(self.dest), *args])
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_destino_por_agente_harness_escopo(self):
+        root = Path("/repo")
+        home = Path.home()
+        self.assertEqual(install_skills.resolve_dest("claude", "cli", False, root), home / ".claude" / "skills")
+        self.assertEqual(install_skills.resolve_dest("claude", "cli", True, root), root / ".claude" / "skills")
+        for h in ("cli", "vscode"):
+            self.assertEqual(install_skills.resolve_dest("copilot", h, False, root), home / ".copilot" / "skills")
+            self.assertEqual(install_skills.resolve_dest("copilot", h, True, root), root / ".github" / "skills")
+
+    def test_flags_completas_sem_prompt(self):
+        with mock.patch("builtins.input", side_effect=AssertionError("não deveria perguntar")):
+            rc, out, _ = self.run_main("--agent", "copilot", "--harness", "cli", "--yes")
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.dest / "azm-a" / "SKILL.md").is_file())
+        self.assertIn("mcpServers", out)
+
+    def test_yes_usa_padroes_claude(self):
+        rc, out, _ = self.run_main("--yes")
+        self.assertEqual(rc, 0)
+        self.assertIn("claude mcp add --transport http", out)
+
+    def test_sem_tty_nao_bloqueia(self):
+        # stdin de teste não é TTY: usa os padrões sem perguntar
+        old = sys.stdin
+        sys.stdin = io.StringIO("")
+        try:
+            rc, out, _ = self.run_main()
+        finally:
+            sys.stdin = old
+        self.assertEqual(rc, 0)
+        self.assertIn("claude mcp add", out)
+
+    def test_agente_e_harness_desconhecidos(self):
+        rc, _, err = self.run_main("--agent", "outro", "--yes")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("claude", err)
+        rc, _, err = self.run_main("--agent", "claude", "--harness", "xyz", "--yes")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("cli", err)
+
+    def test_dry_run_main_nao_grava_nem_remove(self):
+        (self.dest / "azm-captura").mkdir(parents=True)
+        rc, out, _ = self.run_main("--dry-run", "--yes")
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.dest / "azm-captura").exists())
+        self.assertFalse((self.dest / "azm-a").exists())
+        self.assertIn("removeria (obsoleta)", out)
+
+    def test_remove_so_obsoletas_conhecidas(self):
+        for name in ("azm-captura", "azm-tutor", "azm-consolidar", "azm-minha-skill", "outra"):
+            (self.dest / name).mkdir(parents=True)
+        rc, out, _ = self.run_main("--yes")
+        self.assertEqual(rc, 0)
+        for name in install_skills.OBSOLETE:
+            self.assertFalse((self.dest / name).exists())
+            self.assertIn(name, out)
+        self.assertTrue((self.dest / "azm-minha-skill").exists())
+        self.assertTrue((self.dest / "outra").exists())
+        self.assertIn("aviso: azm-minha-skill", out)
+
+    def test_idempotente_main(self):
+        self.run_main("--yes")
+        rc, _, _ = self.run_main("--yes")
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.dest / "azm-b" / "SKILL.md").is_file())
+
+    def test_destino_nao_verificado_avisa(self):
+        key = ("claude", "cli")
+        old = install_skills.TARGETS[key]
+        install_skills.TARGETS[key] = {**old, "verified": False}
+        try:
+            _, out, _ = self.run_main("--yes")
+        finally:
+            install_skills.TARGETS[key] = old
+        self.assertIn("não verificado", out)
+
+    def test_mcp_sem_chave_real(self):
+        fake = "zk_" + "a" * 64
+        old = os.environ.get("ZETTEL_API_KEY")
+        os.environ["ZETTEL_API_KEY"] = fake
+        try:
+            outs = [self.run_main("--agent", a, "--harness", h, "--yes")[1]
+                    for a, h in install_skills.TARGETS]
+        finally:
+            if old is None:
+                del os.environ["ZETTEL_API_KEY"]
+            else:
+                os.environ["ZETTEL_API_KEY"] = old
+        for out in outs:
+            self.assertNotIn(fake, out)
+        self.assertTrue(any("<SUA_CHAVE_zk_>" in o for o in outs))
 
 
 if __name__ == "__main__":

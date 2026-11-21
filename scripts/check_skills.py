@@ -4,6 +4,7 @@
 Confere, para cada skill:
   - frontmatter com `name` igual ao nome da pasta e `description` de até 1024 caracteres;
   - corpo de até 200 linhas;
+  - nenhuma das skills removidas (azm-captura, azm-tutor, azm-consolidar) existe;
   - toda tool citada como `nome_da_tool` existe no MCP (apps/api/internal/mcp/*.go).
 
 Sai com código 1 e lista os problemas se algo falhar. Só biblioteca padrão.
@@ -25,8 +26,10 @@ CITED_RE = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:\(|`)")
 # snake_case que não é tool: parâmetros e campos do MCP.
 NOT_TOOLS = {
     "old_string", "new_string", "counts_progress", "user_only",
-    "protected_sections", "links_to", "linked_from", "nao_passou", "caca-ao-erro",
+    "protected_sections", "links_to", "linked_from",
 }
+# Skills removidas pela change azm-skills-v2: as pastas não podem voltar.
+REMOVED_SKILLS = ("azm-captura", "azm-tutor", "azm-consolidar")
 
 
 def load_tools(tools_dir: Path) -> set:
@@ -82,6 +85,9 @@ def check(skills_dir: Path, tools_dir: Path) -> list:
     if not tools:
         return [f"nenhuma tool encontrada em {tools_dir}"]
     problems = []
+    for name in REMOVED_SKILLS:
+        if (skills_dir / name).exists():
+            problems.append(f"{name}: skill removida não pode existir em {skills_dir}")
     folders = sorted(p for p in skills_dir.glob("azm-*") if p.is_dir())
     if not folders:
         return [f"nenhuma pasta azm-* em {skills_dir}"]

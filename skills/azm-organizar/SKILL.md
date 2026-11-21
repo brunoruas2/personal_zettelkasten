@@ -12,7 +12,7 @@ Use só as tools do MCP do Zettelkasten.
 ## Regras de autoria
 
 - Nunca edite `## Minha síntese` (o servidor recusa).
-- Nunca marque nível `consolidado` (reservado ao usuário).
+- Nunca marque nem desfaça o nível `internalizado` (reservado à pessoa).
 - Nunca renomeie nem apague sem confirmação **individual**.
 - Nunca entregue a resposta de exercício que o usuário deve resolver.
 - Edite por trecho (`edit_zettel` com `old_string`/`new_string`).
@@ -20,20 +20,22 @@ Use só as tools do MCP do Zettelkasten.
 
 ## Auditoria (só leitura)
 
-`list_types` e depois `search_zettels` por `type` (`conteudo`, `trilha`, `teste`, `fonte`, `pratica`), `list_recent`, `get_links` e `read_zettel` onde precisar. Procure:
+`list_types` e depois `search_zettels` por `type` (`trilha`, `conteudo`, `hubnode`, `teste`, `pratica`), `list_recent`, `get_links` e `read_zettel` onde precisar. Procure:
 
 1. **Duplicatas ou quase duplicatas** de título.
 2. **Órfãos:** zettel de estudo sem ligação (nem de entrada nem de saída).
-3. **Hierarquia:** conteúdo sem `[[^trilha]]`; ciclo de pais.
+3. **Hierarquia:** capítulo fora da trilha; conceito sem `[[^pai]]`; ciclo de pais; `hubnode` sem links de saída.
 4. **Títulos pouco claros** (vagos, longos, com número solto).
 5. **Seções fixas ausentes** num Conteúdo (`## Captura`, `## Minha síntese`, `## Testes`).
 6. **Testes sem link de volta** para o conteúdo, ou conteúdo sem o Teste em `## Testes`.
+
+O tipo `hubnode` é nota de referência (visão rasa com links) e **não tem nível**: nunca o reporte como conteúdo sem nível. Níveis de `conteudo`: `iniciado`, `em-teste`, `internalizado`; zettel de `conteudo` sem nível é capítulo ainda não estudado, e não erro.
 
 Apresente por categoria, com títulos e a correção proposta. Base sem problemas: diga que está íntegra.
 
 ## Correção (só depois do "sim")
 
-- Ligar órfão à trilha: `edit_zettel` por trecho acrescentando `[[^trilha]]`.
+- Ligar órfão ao pai (trilha, capítulo): `edit_zettel` por trecho acrescentando `[[^pai]]`.
 - Seção ausente: `edit_zettel` acrescentando só o cabeçalho, no fim; nunca preencha `## Minha síntese`.
 - Título: `rename_zettel` **somente** depois do "sim" para aquele zettel; informe quantos links foram reescritos.
 - Duplicata: `delete_zettel` **somente** com confirmação daquele zettel, avisando quem o citava (a resposta lista). Prefira mesclar o que faltar no que fica, por trecho, antes.
