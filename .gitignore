@@ -76,3 +76,7 @@ apps/web/public/worker-*.js
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
