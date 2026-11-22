@@ -20,7 +20,6 @@ import { TagsPanel } from '../panels/TagsPanel';
 import { PasskeysPanel } from '../panels/PasskeysPanel';
 import { TypesPanel } from '../panels/TypesPanel';
 import { useTypesStore } from '../../store/useTypesStore';
-import { OPEN_TYPES_EVENT } from './MaturityHud';
 import { FocusScreen } from './FocusScreen';
 import { MemoryScreen, MemoryList } from './MemoryScreen';
 import { MapScreen } from './MapScreen';
@@ -131,13 +130,6 @@ function LevelsInner() {
     },
     [onNew],
   );
-
-  // O HUD de maturidade pede o painel de tipos quando não há tipo de conteúdo.
-  useEffect(() => {
-    const open = () => setModal('types');
-    window.addEventListener(OPEN_TYPES_EVENT, open);
-    return () => window.removeEventListener(OPEN_TYPES_EVENT, open);
-  }, []);
 
   const overlayOpen = !!search || !!modal || capture || palette || !!deleteMeta || !!exportId;
 

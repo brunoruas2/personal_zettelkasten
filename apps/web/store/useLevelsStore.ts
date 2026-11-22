@@ -18,12 +18,6 @@ import {
 import { useZettelStore } from './useZettelStore';
 import { pushRecent } from '../lib/recentZettels';
 
-/** Filtro de maturidade do Mapa: tipo + nível ('' = sem nível; null = qualquer nível do tipo). */
-export interface MaturityFilter {
-  typeId: string;
-  levelKey: string | null;
-}
-
 /**
  * Estado da navegação em três níveis (Foco, Mesa, Mapa). A lógica das
  * transições é pura e mora em `@zettelkasten/core` (`Levels.ts`, testada);
@@ -35,8 +29,6 @@ interface LevelsActions {
   consult: (id: string) => void;
   dismiss: (id: string) => void;
   go: (level: Level) => void;
-  /** Filtro do HUD de maturidade. Só UI: não persiste; o `ConnectionMap` o zera ao desmontar (sair do Mapa). */
-  setMaturityFilter: (f: MaturityFilter | null) => void;
   startEdit: (where: EditingIn) => void;
   stopEdit: () => void;
   /** Aplica um estado inteiro (voltar do sistema). */
@@ -68,9 +60,8 @@ function isVisibleFn(): (id: string) => boolean {
   };
 }
 
-export const useLevelsStore = create<LevelsState & LevelsActions & { maturityFilter: MaturityFilter | null }>((set, get) => ({
+export const useLevelsStore = create<LevelsState & LevelsActions>((set, get) => ({
   ...initialLevels,
-  maturityFilter: null,
 
   setFocus: (id) => {
     const { links } = useZettelStore.getState();
@@ -80,7 +71,6 @@ export const useLevelsStore = create<LevelsState & LevelsActions & { maturityFil
   consult: (id) => set(consult(get(), id)),
   dismiss: (id) => set(dismiss(get(), id)),
   go: (level) => set(goLevel(get(), level)),
-  setMaturityFilter: (f) => set({ maturityFilter: f }),
   startEdit: (where) => set(startEditing(get(), where)),
   stopEdit: () => set(stopEditing(get())),
   apply: (state) => set(state),
